@@ -23,8 +23,8 @@ def home():
 def api_search():
     """
     GET /api/search?q=apple
-    Retourne une liste JSON [{ticker, shortName}, …]
-    Branché sur utils/ticker_search.py — inchangé depuis Streamlit.
+    Retourne [{ticker, shortName, exchange}] — format attendu par search.js.
+    ticker_search.py retourne 'nom' ; on renomme ici pour ne pas toucher au module.
     """
     q = request.args.get("q", "").strip()
     if len(q) < 2:
@@ -33,7 +33,13 @@ def api_search():
     try:
         from utils.ticker_search import search_tickers
         df = search_tickers(q)
-        return jsonify([] if df.empty else df.to_dict(orient="records"))
+        if df.empty:
+            return jsonify([])
+
+        # Renomme 'nom' → 'shortName' pour search.js
+        df = df.rename(columns={"nom": "shortName"})
+        return jsonify(df[["ticker", "shortName", "exchange"]].to_dict(orient="records"))
+
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 

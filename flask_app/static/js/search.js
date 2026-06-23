@@ -103,13 +103,17 @@
   function renderDropdown(items) {
     dropdown.innerHTML = "";
     items.slice(0, 8).forEach(function (item) {
-      const ticker = (item.ticker || item.symbol || "").toUpperCase();
-      const name   = item.shortName || item.longName || ticker;
-      const li     = document.createElement("li");
-      li.className = "list-group-item list-group-item-action d-flex justify-content-between align-items-center";
+      const ticker   = (item.ticker || item.symbol || "").toUpperCase();
+      const name     = item.shortName || item.longName || ticker;
+      const exchange = item.exchange ? " · " + item.exchange : "";
+      const li       = document.createElement("li");
+      li.className   = "list-group-item list-group-item-action d-flex justify-content-between align-items-center";
       li.innerHTML =
         '<span class="text-truncate me-2">' + escHtml(name) + '</span>' +
-        '<span class="text-muted small flex-shrink-0">' + escHtml(ticker) + '</span>';
+        '<span class="text-muted small flex-shrink-0 text-end">' +
+          escHtml(ticker) +
+          '<span style="font-size:.7rem;opacity:.6">' + escHtml(exchange) + '</span>' +
+        '</span>';
       li.addEventListener("click", function () { selectTicker(ticker, name); });
       dropdown.appendChild(li);
     });
