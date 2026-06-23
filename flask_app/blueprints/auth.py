@@ -2,6 +2,7 @@
 # Remplace streamlit-authenticator + extra-streamlit-components.
 # Conserve users.yaml + bcrypt inchangés.
 
+import re
 from flask import Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import UserMixin, login_user, logout_user, login_required, current_user
 from pathlib import Path
@@ -10,19 +11,18 @@ import bcrypt
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
 
-USERS_FILE = Path(__file__).parent.parent.parent / "auth" / "users.yaml"
+USERS_FILE   = Path(__file__).parent.parent.parent / "auth" / "users.yaml"
+_RE_USERNAME = re.compile(r"^[a-zA-Z0-9_]{3,32}$")
 
 
 # ── Modèle utilisateur ────────────────────────────────────────────────────────
 
 class User(UserMixin):
-    """Représente un utilisateur chargé depuis users.yaml."""
-
     def __init__(self, username: str, name: str, email: str):
-        self.id = username          # Flask-Login utilise .id comme clé de session
+        self.id       = username
         self.username = username
-        self.name = name
-        self.email = email
+        self.name     = name
+        self.email    = email
 
 
 # ── Helpers YAML ──────────────────────────────────────────────────────────────
@@ -37,12 +37,11 @@ def _save_config(config: dict) -> None:
         yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
 
 
-# ── Callback Flask-Login ──────────────────────────────────────────────────────
+# ── Callback Flask-Login (appelé à chaque requête authentifiée) ───────────────
 
 def load_user(username: str):
-    """Reconstruit un User depuis la session — appelé par Flask-Login à chaque requête."""
     config = _load_config()
-    users = config.get("credentials", {}).get("usernames", {})
+    users  = config.get("credentials", {}).get("usernames", {})
     if username not in users:
         return None
     u = users[username]
@@ -56,23 +55,37 @@ def login():
     if current_user.is_authenticated:
         return redirect(url_for("stock.home"))
 
+    errors  = {}
+    prefill = {}
+
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-        config   = _load_config()
-        users    = config.get("credentials", {}).get("usernames", {})
-        data     = users.get(username)
+        username    = request.form.get("username", "").strip()
+        password    = request.form.get("password", "")
+        remember_me = bool(request.form.get("remember_me"))
+        prefill["username"] = username
 
-        if data and bcrypt.checkpw(password.encode(), data["password"].encode()):
-            user = User(username, data.get("name", username), data.get("email", ""))
-            login_user(user, remember=True)
-            flash(f"Bienvenue, {user.name} !", "success")
-            next_page = request.args.get("next") or url_for("stock.home")
-            return redirect(next_page)
+        # ── Validation champs ─────────────────────────────────
+        if not username:
+            errors["username"] = "L'identifiant est requis."
+        if not password:
+            errors["password"] = "Le mot de passe est requis."
 
-        flash("Identifiant ou mot de passe incorrect.", "danger")
+        # ── Vérification credentials ──────────────────────────
+        if not errors:
+            config = _load_config()
+            users  = config.get("credentials", {}).get("usernames", {})
+            data   = users.get(username)
 
-    return render_template("auth/login.html")
+            if data and bcrypt.checkpw(password.encode(), data["password"].encode()):
+                user = User(username, data.get("name", username), data.get("email", ""))
+                login_user(user, remember=remember_me)
+                flash(f"Bienvenue, {user.name} !", "success")
+                next_page = request.args.get("next") or url_for("stock.home")
+                return redirect(next_page)
+
+            errors["general"] = "Identifiant ou mot de passe incorrect."
+
+    return render_template("auth/login.html", errors=errors, prefill=prefill)
 
 
 @bp.route("/register", methods=["GET", "POST"])
@@ -80,32 +93,50 @@ def register():
     if current_user.is_authenticated:
         return redirect(url_for("stock.home"))
 
+    errors  = {}
+    prefill = {}
+
     if request.method == "POST":
         username = request.form.get("username", "").strip()
-        name     = request.form.get("name", "").strip()
-        email    = request.form.get("email", "").strip()
+        name     = request.form.get("name",     "").strip()
+        email    = request.form.get("email",    "").strip()
         password = request.form.get("password", "")
-        confirm  = request.form.get("confirm", "")
+        confirm  = request.form.get("confirm",  "")
 
-        if password != confirm:
-            flash("Les mots de passe ne correspondent pas.", "warning")
-            return render_template("auth/register.html")
+        prefill = {"username": username, "name": name, "email": email}
 
-        config = _load_config()
-        users  = config.setdefault("credentials", {}).setdefault("usernames", {})
+        # ── Validation ────────────────────────────────────────
+        if not username:
+            errors["username"] = "L'identifiant est requis."
+        elif not _RE_USERNAME.match(username):
+            errors["username"] = "3–32 caractères : lettres, chiffres ou _"
 
-        if username in users:
-            flash("Cet identifiant est déjà pris.", "warning")
-            return render_template("auth/register.html")
+        if not name:
+            errors["name"] = "Le nom affiché est requis."
 
-        hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-        users[username] = {"name": name, "email": email, "password": hashed}
-        _save_config(config)
+        if not password:
+            errors["password"] = "Le mot de passe est requis."
+        elif len(password) < 6:
+            errors["password"] = "Minimum 6 caractères."
 
-        flash("Compte créé avec succès ! Vous pouvez vous connecter.", "success")
-        return redirect(url_for("auth.login"))
+        if password and confirm != password:
+            errors["confirm"] = "Les mots de passe ne correspondent pas."
 
-    return render_template("auth/register.html")
+        # ── Unicité identifiant ───────────────────────────────
+        if "username" not in errors:
+            config = _load_config()
+            users  = config.setdefault("credentials", {}).setdefault("usernames", {})
+            if username in users:
+                errors["username"] = "Cet identifiant est déjà pris."
+
+        if not errors:
+            hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+            users[username] = {"name": name, "email": email, "password": hashed}
+            _save_config(config)
+            flash("Compte créé avec succès ! Connectez-vous.", "success")
+            return redirect(url_for("auth.login"))
+
+    return render_template("auth/register.html", errors=errors, prefill=prefill)
 
 
 @bp.route("/logout")

@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-
 {% block title %}SDE — Inscription{% endblock %}
 
 {% block content %}
@@ -10,40 +9,89 @@
     <p class="text-muted small mb-4">Gratuit — aucune carte bancaire requise.</p>
 
     <form method="POST" action="{{ url_for('auth.register') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
+      <!-- Identifiant -->
       <div class="mb-3">
         <label for="username" class="form-label small fw-semibold">Identifiant</label>
         <input type="text" id="username" name="username"
-               class="form-control" required autofocus
-               placeholder="ex : jean_dupont">
-        <div class="form-text">Lettres, chiffres et _ uniquement.</div>
+               class="form-control form-control-sm {% if errors.username %}is-invalid{% endif %}"
+               value="{{ prefill.username | default('') }}"
+               required autofocus placeholder="ex : jean_dupont">
+        {% if errors.username %}
+        <div class="invalid-feedback">{{ errors.username }}</div>
+        {% else %}
+        <div class="form-text sde-caption">3–32 caractères : lettres, chiffres ou _</div>
+        {% endif %}
       </div>
 
+      <!-- Nom affiché -->
       <div class="mb-3">
         <label for="name" class="form-label small fw-semibold">Nom affiché</label>
         <input type="text" id="name" name="name"
-               class="form-control" required placeholder="Jean Dupont">
+               class="form-control form-control-sm {% if errors.name %}is-invalid{% endif %}"
+               value="{{ prefill.name | default('') }}"
+               required placeholder="Jean Dupont">
+        {% if errors.name %}
+        <div class="invalid-feedback">{{ errors.name }}</div>
+        {% endif %}
       </div>
 
+      <!-- Email -->
       <div class="mb-3">
-        <label for="email" class="form-label small fw-semibold">Email</label>
+        <label for="email" class="form-label small fw-semibold">
+          Email <span class="text-muted fw-normal">(optionnel)</span>
+        </label>
         <input type="email" id="email" name="email"
-               class="form-control" placeholder="jean@exemple.com">
+               class="form-control form-control-sm"
+               value="{{ prefill.email | default('') }}"
+               placeholder="jean@exemple.com">
       </div>
 
+      <!-- Mot de passe -->
       <div class="mb-3">
         <label for="password" class="form-label small fw-semibold">Mot de passe</label>
-        <input type="password" id="password" name="password"
-               class="form-control" required placeholder="••••••••" minlength="6">
+        <div class="input-group input-group-sm">
+          <input type="password" id="password" name="password"
+                 class="form-control {% if errors.password %}is-invalid{% endif %}"
+                 required placeholder="••••••••" minlength="6"
+                 oninput="checkStrength(this.value)">
+          <button class="btn btn-outline-secondary" type="button"
+                  onclick="togglePwd('password', 'pwd-eye')" title="Afficher / masquer">
+            <i class="bi bi-eye" id="pwd-eye"></i>
+          </button>
+          {% if errors.password %}
+          <div class="invalid-feedback">{{ errors.password }}</div>
+          {% endif %}
+        </div>
+        <!-- Barre de force du mot de passe -->
+        <div class="progress mt-1" style="height:3px">
+          <div id="pwd-strength-bar" class="progress-bar" role="progressbar"
+               style="width:0%;transition:width .3s,background .3s"></div>
+        </div>
+        <div id="pwd-strength-label" class="form-text sde-caption mt-1"></div>
       </div>
 
+      <!-- Confirmation -->
       <div class="mb-4">
-        <label for="confirm" class="form-label small fw-semibold">Confirmer le mot de passe</label>
-        <input type="password" id="confirm" name="confirm"
-               class="form-control" required placeholder="••••••••" minlength="6">
+        <label for="confirm" class="form-label small fw-semibold">
+          Confirmer le mot de passe
+        </label>
+        <div class="input-group input-group-sm">
+          <input type="password" id="confirm" name="confirm"
+                 class="form-control {% if errors.confirm %}is-invalid{% endif %}"
+                 required placeholder="••••••••" minlength="6">
+          <button class="btn btn-outline-secondary" type="button"
+                  onclick="togglePwd('confirm', 'conf-eye')" title="Afficher / masquer">
+            <i class="bi bi-eye" id="conf-eye"></i>
+          </button>
+          {% if errors.confirm %}
+          <div class="invalid-feedback">{{ errors.confirm }}</div>
+          {% endif %}
+        </div>
       </div>
 
-      <button type="submit" class="btn btn-sde-teal w-100">
+      <button type="submit" class="btn btn-sde-teal btn-sm w-100">
         <i class="bi bi-person-plus me-1"></i>Créer mon compte
       </button>
     </form>
@@ -56,4 +104,45 @@
     </p>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function togglePwd(fieldId, eyeId) {
+  const inp = document.getElementById(fieldId);
+  const eye = document.getElementById(eyeId);
+  if (inp.type === "password") {
+    inp.type = "text";
+    eye.classList.replace("bi-eye", "bi-eye-slash");
+  } else {
+    inp.type = "password";
+    eye.classList.replace("bi-eye-slash", "bi-eye");
+  }
+}
+
+function checkStrength(pwd) {
+  const bar   = document.getElementById("pwd-strength-bar");
+  const label = document.getElementById("pwd-strength-label");
+  if (!bar) return;
+  let score = 0;
+  if (pwd.length >= 6)  score++;
+  if (pwd.length >= 10) score++;
+  if (/[A-Z]/.test(pwd)) score++;
+  if (/[0-9]/.test(pwd)) score++;
+  if (/[^A-Za-z0-9]/.test(pwd)) score++;
+
+  const levels = [
+    { pct: 0,   color: "",          text: "" },
+    { pct: 20,  color: "#D85A30",   text: "Très faible" },
+    { pct: 40,  color: "#BA7517",   text: "Faible" },
+    { pct: 60,  color: "#BA7517",   text: "Moyen" },
+    { pct: 80,  color: "#1D9E75",   text: "Bon" },
+    { pct: 100, color: "#15803d",   text: "Excellent" },
+  ];
+  const lvl = levels[score] || levels[0];
+  bar.style.width      = lvl.pct + "%";
+  bar.style.background = lvl.color;
+  label.textContent    = lvl.text;
+}
+</script>
 {% endblock %}
