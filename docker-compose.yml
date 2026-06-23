@@ -1,0 +1,18 @@
+services:
+  sde_flask:
+    build: .
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    volumes:
+      # Persistance des données utilisateurs hors de l'image
+      - ./watchlist:/app/watchlist
+      - ./auth:/app/auth
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

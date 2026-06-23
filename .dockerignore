@@ -1,0 +1,46 @@
+# .dockerignore — exclut les fichiers inutiles de l'image Docker
+
+# Git
+.git/
+.gitignore
+
+# Environnement virtuel local
+.venv/
+venv/
+env/
+
+# Secrets (montés via variables d'environnement en production)
+.env
+.env.local
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Données utilisateurs (montées via volumes Docker)
+watchlist/watchlist.json
+watchlist/last_scores.json
+auth/users.yaml
+
+# IDE et OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Modèles NLP lourds (non inclus par défaut)
+models/
+*.bin
+*.pt
+*.safetensors
+
+# Logs
+*.log
+logs/
+
+# Tests et docs
+tests/
+*.md
