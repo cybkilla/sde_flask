@@ -101,6 +101,14 @@ def analyze(ticker: str):
         row["horizon"] = _horizons.get(row["composante"], "")
         scores_list.append(row)
 
+    # ── Graphiques ────────────────────────────────────────
+    charts = {}
+    try:
+        from flask_app.charts_helpers import build_charts
+        charts = build_charts(market["history"], ticker)
+    except Exception:
+        pass
+
     return render_template(
         "analysis.html",
         ticker       = ticker,
@@ -112,6 +120,7 @@ def analyze(ticker: str):
         signals_list = signals_list,
         news_list    = news_list,
         insider_list = insider_list,
+        charts       = charts,
     )
 
 

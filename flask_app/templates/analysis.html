@@ -307,10 +307,62 @@
 
 <hr class="sde-divider mb-3">
 
-<!-- ══ GRAPHIQUES (placeholder J6) ═════════════════════════════════════════ -->
-<div class="card border-0 shadow-sm p-4 mb-3 sde-placeholder-block" id="sde-charts-placeholder">
-  <i class="bi bi-bar-chart-line fs-1 text-muted"></i>
-  <p class="text-muted mt-2 mb-0">Graphiques prix / RSI / Chandelier — Jour 6</p>
+<!-- ══ GRAPHIQUES ═══════════════════════════════════════════════════════════ -->
+<div class="card border-0 shadow-sm p-4 mb-3">
+  <p class="sde-section-label">Graphiques</p>
+
+  <!-- Onglets -->
+  <ul class="nav nav-tabs nav-tabs-sm mb-3" id="chartTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="tab-price-btn" data-bs-toggle="tab"
+              data-bs-target="#tab-price" type="button" role="tab">
+        <i class="bi bi-graph-up me-1"></i>Prix / Volume
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab-rsi-btn" data-bs-toggle="tab"
+              data-bs-target="#tab-rsi" type="button" role="tab">
+        RSI
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab-candle-btn" data-bs-toggle="tab"
+              data-bs-target="#tab-candle" type="button" role="tab">
+        <i class="bi bi-candlestick me-1"></i>Chandeliers
+      </button>
+    </li>
+  </ul>
+
+  <div class="tab-content" id="chartTabsContent">
+
+    <!-- Prix + Volume -->
+    <div class="tab-pane fade show active" id="tab-price" role="tabpanel">
+      {% if charts.price_b64 %}
+      <img src="{{ charts.price_b64 }}" alt="Cours 30j" class="img-fluid w-100" loading="lazy">
+      {% else %}
+      <p class="text-muted small text-center py-4">Graphique indisponible</p>
+      {% endif %}
+    </div>
+
+    <!-- RSI -->
+    <div class="tab-pane fade" id="tab-rsi" role="tabpanel">
+      {% if charts.rsi_b64 %}
+      <img src="{{ charts.rsi_b64 }}" alt="RSI 14j" class="img-fluid w-100" loading="lazy">
+      {% else %}
+      <p class="text-muted small text-center py-4">Graphique indisponible</p>
+      {% endif %}
+    </div>
+
+    <!-- Chandeliers Plotly -->
+    <div class="tab-pane fade" id="tab-candle" role="tabpanel">
+      {% if charts.candle_json %}
+      <div id="sde-candle-chart" style="height:460px"></div>
+      {% else %}
+      <p class="text-muted small text-center py-4">Graphique indisponible</p>
+      {% endif %}
+    </div>
+
+  </div><!-- /tab-content -->
 </div>
 
 <!-- ══ SIGNAUX DÉTAILLÉS ════════════════════════════════════════════════════ -->
@@ -448,10 +500,31 @@
 
 {% block scripts %}
 <script>
-/* Masque l'overlay de chargement dès que la page est rendue */
 document.addEventListener("DOMContentLoaded", function () {
+  /* Masque l'overlay de chargement dès que la page est rendue */
   const overlay = document.getElementById("sde-page-loading");
   if (overlay) overlay.remove();
+
+  {% if charts.candle_json %}
+  /* Rendu Plotly chandeliers au clic sur l'onglet (lazy) */
+  const candleData = {{ charts.candle_json | safe }};
+  let candleRendered = false;
+
+  function renderCandle() {
+    if (candleRendered) return;
+    const el = document.getElementById("sde-candle-chart");
+    if (!el || typeof Plotly === "undefined") return;
+    Plotly.newPlot(el, candleData.data, candleData.layout, {
+      responsive: true,
+      displayModeBar: false,
+    });
+    candleRendered = true;
+  }
+
+  /* Déclenche au clic sur l'onglet Chandeliers */
+  const tabBtn = document.getElementById("tab-candle-btn");
+  if (tabBtn) tabBtn.addEventListener("shown.bs.tab", renderCandle);
+  {% endif %}
 });
 </script>
 {% endblock %}
