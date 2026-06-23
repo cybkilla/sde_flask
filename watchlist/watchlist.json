@@ -1,0 +1,26 @@
+{
+  "admin": [
+    {
+      "ticker": "GOOG",
+      "company": "Alphabet Inc.",
+      "added_at": "2026-06-03 13:17"
+    },
+    {
+      "ticker": "TMC",
+      "company": "",
+      "added_at": "2026-06-04 11:15"
+    },
+    {
+      "ticker": "SPCX",
+      "company": "Space Exploration Tech Corp",
+      "added_at": "2026-06-08 15:36"
+    }
+  ],
+  "cyb1": [
+    {
+      "ticker": "GOOG",
+      "company": "Alphabet Inc.",
+      "added_at": "2026-06-03 09:13"
+    }
+  ]
+}

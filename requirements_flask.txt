@@ -1,0 +1,9 @@
+# Dépendances Flask (à ajouter à requirements.txt existant)
+# pip install -r requirements_flask.txt
+
+flask>=3.0.0
+flask-login>=0.6.3
+flask-wtf>=1.2.1        # CSRF protection sur les formulaires
+flask-caching>=2.3.0    # remplace le cache.py custom (optionnel)
+flask-session>=0.8.0    # sessions serveur-side (filesystem)
+WTForms>=3.1.2

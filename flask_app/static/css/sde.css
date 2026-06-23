@@ -1,0 +1,110 @@
+/* sde.css — palette Anthropic : teal / coral / amber / blue / green */
+
+/* ── Variables ──────────────────────────────────────────────────────────────── */
+:root {
+  --sde-teal:        #1D9E75;
+  --sde-teal-dark:   #15803d;
+  --sde-teal-light:  #E1F5EE;
+  --sde-coral:       #D85A30;
+  --sde-coral-light: #FAECE7;
+  --sde-amber:       #BA7517;
+  --sde-amber-light: #FAEEDA;
+  --sde-blue:        #0C447C;
+  --sde-blue-light:  #E6F1FB;
+  --sde-green:       #27500A;
+  --sde-green-light: #EAF3DE;
+  --sde-navbar-bg:   #111827;
+  --sde-sidebar-bg:  #f8f9fa;
+  --sde-border:      #e5e7eb;
+}
+
+/* ── Global ─────────────────────────────────────────────────────────────────── */
+body.sde-body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 0.9rem;
+  background: #ffffff;
+  color: #111827;
+}
+
+/* ── Navbar ─────────────────────────────────────────────────────────────────── */
+.sde-navbar {
+  background-color: var(--sde-navbar-bg) !important;
+  border-bottom: 1px solid #374151;
+  min-height: 52px;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────────── */
+.sde-sidebar {
+  background-color: var(--sde-sidebar-bg);
+  border-right: 1px solid var(--sde-border);
+  min-height: calc(100vh - 52px);
+}
+
+/* ── Bouton principal ────────────────────────────────────────────────────────── */
+.btn-sde-teal {
+  background-color: var(--sde-teal);
+  border-color:     var(--sde-teal);
+  color: #fff;
+}
+.btn-sde-teal:hover,
+.btn-sde-teal:focus {
+  background-color: var(--sde-teal-dark);
+  border-color:     var(--sde-teal-dark);
+  color: #fff;
+}
+.btn-sde-teal:disabled {
+  background-color: #9ca3af;
+  border-color:     #9ca3af;
+  opacity: 0.7;
+}
+
+/* ── Liens SDE ───────────────────────────────────────────────────────────────── */
+.sde-link {
+  color: var(--sde-teal);
+  text-decoration: none;
+}
+.sde-link:hover { color: var(--sde-teal-dark); text-decoration: underline; }
+
+.text-sde-teal { color: var(--sde-teal) !important; }
+.text-sde-coral { color: var(--sde-coral) !important; }
+.text-sde-amber { color: var(--sde-amber) !important; }
+
+/* ── Séparateur ─────────────────────────────────────────────────────────────── */
+.sde-divider {
+  border-color: var(--sde-border);
+  margin: 0.75rem 0;
+}
+
+/* ── Cartes composantes (score) ─────────────────────────────────────────────── */
+.sde-card-blue  { background: var(--sde-blue-light);  border: 1px solid #85B7EB; }
+.sde-card-green { background: var(--sde-green-light); border: 1px solid #97C459; }
+.sde-card-amber { background: var(--sde-amber-light); border: 1px solid #EF9F27; }
+
+/* ── Placeholder blocks (stubs jours suivants) ──────────────────────────────── */
+.sde-placeholder-block {
+  background: #f9fafb;
+  border: 1.5px dashed var(--sde-border) !important;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.text-placeholder { color: #d1d5db; }
+
+/* ── Autocomplete dropdown (J4) ─────────────────────────────────────────────── */
+#sde-search-dropdown .list-group-item {
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.75rem;
+  border-left: none;
+  border-right: none;
+}
+#sde-search-dropdown .list-group-item:hover {
+  background: var(--sde-teal-light);
+  color: var(--sde-teal-dark);
+}
+
+/* ── Utilitaires ─────────────────────────────────────────────────────────────── */
+.x-small { font-size: 0.72rem; }

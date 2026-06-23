@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environnements virtuels
+.venv/
+venv/
+env/
+.env
+
+# Flask sessions (filesystem)
+.flask_sessions/
+
+# Variables d'environnement (clés API)
+.env
+.env.local
+*.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Modèles NLP lourds (FinBERT)
+models/
+*.bin
+*.pt
+*.safetensors
+
+# Données temporaires
+data/cache/
+*.cache

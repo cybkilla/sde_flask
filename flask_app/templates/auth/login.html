@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}SDE — Connexion{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-center align-items-center" style="min-height:70vh">
+  <div class="card border-0 shadow-sm p-4" style="width:100%;max-width:420px">
+
+    <h4 class="fw-bold mb-1">Connexion</h4>
+    <p class="text-muted small mb-4">Accédez à votre watchlist et à vos préférences.</p>
+
+    <form method="POST" action="{{ url_for('auth.login') }}">
+      <!-- CSRF protégé par Flask-WTF si activé — ajout J3 -->
+
+      <div class="mb-3">
+        <label for="username" class="form-label small fw-semibold">Identifiant</label>
+        <input type="text" id="username" name="username"
+               class="form-control" required autofocus
+               placeholder="votre_identifiant">
+      </div>
+
+      <div class="mb-4">
+        <label for="password" class="form-label small fw-semibold">Mot de passe</label>
+        <input type="password" id="password" name="password"
+               class="form-control" required placeholder="••••••••">
+      </div>
+
+      <button type="submit" class="btn btn-sde-teal w-100">
+        <i class="bi bi-box-arrow-in-right me-1"></i>Se connecter
+      </button>
+    </form>
+
+    <hr class="sde-divider my-3">
+
+    <p class="text-center text-muted small mb-0">
+      Pas encore de compte ?
+      <a href="{{ url_for('auth.register') }}" class="sde-link">S'inscrire</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

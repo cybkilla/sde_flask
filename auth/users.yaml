@@ -1,0 +1,22 @@
+cookie:
+  expiry_days: 30
+  key: stockengine_secret_key_changez_moi
+  name: stockengine_auth
+credentials:
+  usernames:
+    admin:
+      email: cybkilla@gmail.com
+      name: Admin
+      password: $2b$12$fL793t8bFt.lef6HublsnuCzL3LKKTzV74ZNeIfsEv4B6VHZpjufa
+    cyb1:
+      email: cybkilla@gmail.com
+      name: vladimir.andriana
+      password: $2b$12$RoIwV42Axme2Nzz4UsbYheDE.KW8nLY8zVU.HSKUqXatUOymyI2kG
+    cybkilla:
+      email: cybkilla@gmail.com
+      name: Vlad Andriana
+      password: $2b$12$Kl8tcoC27/dhE8YzAmSeteVqduWKc4s7Y539QkpvSbQw5Iv3fyGb.
+    vlad:
+      email: cybkilla@gmail.com
+      name: Vlad
+      password: $2b$12$fL793t8bFt.lef6HublsnuCzL3LKKTzV74ZNeIfsEv4B6VHZpjufa

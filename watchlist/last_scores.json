@@ -1,0 +1,26 @@
+{
+  "GOOG": {
+    "score": 66.1,
+    "reco": "ACHETER",
+    "updated": "2026-06-15 18:27",
+    "prix": 369.5
+  },
+  "AAPL": {
+    "score": 55.3,
+    "reco": "ACHETER",
+    "updated": "2026-06-15 18:27",
+    "prix": 295.07
+  },
+  "TMC": {
+    "score": 50.6,
+    "reco": "NEUTRE",
+    "updated": "2026-06-15 18:27",
+    "prix": 5.41
+  },
+  "SPCX": {
+    "score": 59.1,
+    "reco": "ACHETER",
+    "updated": "2026-06-15 18:27",
+    "prix": 184.95
+  }
+}
