@@ -15,7 +15,7 @@
 <div id="sde-loading-done" class="d-none"></div>
 
 <!-- ══ EN-TÊTE ══════════════════════════════════════════════════════════════ -->
-<div class="d-flex align-items-baseline gap-2 mb-1 flex-wrap">
+<div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
   <h4 class="fw-bold mb-0">{{ res.company_name }}</h4>
   <span class="text-muted">·</span>
   <span class="fw-semibold" style="color:{{ th.main }}">{{ ticker }}</span>
@@ -24,6 +24,18 @@
         style="background:#f3f4f6;color:#6b7280;font-weight:500;font-size:.72rem">
     {{ market.sector }}
   </span>
+  {% endif %}
+
+  {% if current_user.is_authenticated %}
+  <button id="sde-wl-btn"
+          class="btn btn-sm ms-auto {% if in_watchlist %}btn-warning{% else %}btn-outline-secondary{% endif %}"
+          data-ticker="{{ ticker }}"
+          data-company="{{ res.company_name | e }}"
+          data-in="{{ 'true' if in_watchlist else 'false' }}"
+          title="{% if in_watchlist %}Retirer de la watchlist{% else %}Ajouter à la watchlist{% endif %}">
+    <i class="bi {% if in_watchlist %}bi-bookmark-star-fill{% else %}bi-bookmark-star{% endif %} me-1"></i>
+    <span>{% if in_watchlist %}Dans la watchlist{% else %}Ajouter{% endif %}</span>
+  </button>
   {% endif %}
 </div>
 <p class="text-muted small mb-3">

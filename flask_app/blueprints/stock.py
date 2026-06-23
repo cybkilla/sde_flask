@@ -109,6 +109,17 @@ def analyze(ticker: str):
     except Exception:
         pass
 
+    # ── Watchlist : ticker déjà présent ? ─────────────────
+    in_watchlist = False
+    if current_user.is_authenticated:
+        try:
+            from watchlist.watchlist import get_watchlist
+            in_watchlist = any(
+                i["ticker"] == ticker for i in get_watchlist(current_user.id)
+            )
+        except Exception:
+            pass
+
     return render_template(
         "analysis.html",
         ticker       = ticker,
@@ -121,40 +132,39 @@ def analyze(ticker: str):
         news_list    = news_list,
         insider_list = insider_list,
         charts       = charts,
+        in_watchlist = in_watchlist,
     )
 
 
-# ── J7 : Watchlist (stubs AJAX) ───────────────────────────────────────────────
+# ── Watchlist (AJAX) ─────────────────────────────────────────────────────────
 
 @bp.route("/watchlist/add", methods=["POST"])
 @login_required
 def watchlist_add():
-    """POST JSON {ticker, company} → ajoute à la watchlist."""
-    # TODO J7
-    data   = request.get_json(silent=True) or {}
-    ticker = data.get("ticker", "").strip().upper()
+    data    = request.get_json(silent=True) or {}
+    ticker  = data.get("ticker", "").strip().upper()
+    company = data.get("company", "").strip()
     if not ticker:
         return jsonify({"error": "ticker manquant"}), 400
-    # from watchlist.watchlist import add_ticker
-    # add_ticker(current_user.username, ticker, data.get("company", ""))
+    from watchlist.watchlist import add_ticker
+    add_ticker(current_user.id, ticker, company)
     return jsonify({"ok": True, "ticker": ticker})
 
 
 @bp.route("/watchlist/remove", methods=["POST"])
 @login_required
 def watchlist_remove():
-    """POST JSON {ticker} → retire de la watchlist."""
-    # TODO J7
     data   = request.get_json(silent=True) or {}
     ticker = data.get("ticker", "").strip().upper()
+    if not ticker:
+        return jsonify({"error": "ticker manquant"}), 400
+    from watchlist.watchlist import remove_ticker
+    remove_ticker(current_user.id, ticker)
     return jsonify({"ok": True, "ticker": ticker})
 
 
 @bp.route("/watchlist")
 @login_required
 def watchlist_list():
-    """GET → retourne la watchlist de l'utilisateur connecté."""
-    # TODO J7
-    # from watchlist.watchlist import get_watchlist
-    # items = get_watchlist(current_user.username)
-    return jsonify([])
+    from watchlist.watchlist import get_watchlist
+    return jsonify(get_watchlist(current_user.id))

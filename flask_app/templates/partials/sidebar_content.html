@@ -96,8 +96,9 @@
 
     {% if current_user.is_authenticated %}
       <div id="sde-watchlist">
-        <!-- J7 : rempli par AJAX ou Jinja2 -->
-        <p class="sde-caption">Migration watchlist — Jour 7</p>
+        <p class="sde-caption text-center py-1">
+          <span class="spinner-border spinner-border-sm text-secondary" role="status"></span>
+        </p>
       </div>
     {% else %}
       <p class="sde-caption">
