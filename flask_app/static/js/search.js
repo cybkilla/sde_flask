@@ -49,8 +49,26 @@
   btn.addEventListener("click", function () {
     const ticker = selectedTicker
       || (directInput && directInput.value.trim().toUpperCase());
-    if (ticker) window.location.href = "/analyze/" + encodeURIComponent(ticker);
+    if (!ticker) return;
+    showLoadingOverlay(ticker);
+    window.location.href = "/analyze/" + encodeURIComponent(ticker);
   });
+
+  function showLoadingOverlay(ticker) {
+    const div = document.createElement("div");
+    div.id = "sde-page-loading";
+    div.innerHTML =
+      '<div style="position:fixed;inset:0;background:rgba(255,255,255,.88);' +
+      'display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+      'z-index:9999;gap:16px">' +
+      '<div class="spinner-border text-success" style="width:2.5rem;height:2.5rem" role="status">' +
+      '<span class="visually-hidden">Chargement…</span></div>' +
+      '<div style="font-size:.95rem;color:#374151;font-weight:500">' +
+      'Analyse de <strong>' + ticker + '</strong> en cours…</div>' +
+      '<div style="font-size:.75rem;color:#9ca3af">Données marché · actualités · IA</div>' +
+      '</div>';
+    document.body.appendChild(div);
+  }
 
   // ── Saisie recherche → AJAX ───────────────────────────────────────────────
   input.addEventListener("input", function () {

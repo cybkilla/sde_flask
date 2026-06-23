@@ -1,72 +1,457 @@
 {% extends "base.html" %}
-
 {% block title %}SDE — {{ ticker }}{% endblock %}
+
+{# Macros couleur selon recommandation #}
+{% set reco_theme = {
+  'ACHETER': {'main':'#1D9E75','bg':'#E1F5EE','bd':'#5DCAA5','txt':'#085041','icon':'▲'},
+  'VENDRE':  {'main':'#D85A30','bg':'#FAECE7','bd':'#F0997B','txt':'#4A1B0C','icon':'▼'},
+  'NEUTRE':  {'main':'#BA7517','bg':'#FAEEDA','bd':'#EF9F27','txt':'#412402','icon':'◆'},
+} %}
+{% set th = reco_theme.get(res.recommandation, reco_theme['NEUTRE']) %}
 
 {% block content %}
 
-<!-- En-tête ticker -->
-<div class="d-flex align-items-center gap-3 mb-4">
-  <h2 class="fw-bold mb-0">{{ ticker }}</h2>
-  {% if result %}
-    <span class="badge bg-secondary">{{ result.info.company_name | default('') }}</span>
+<!-- ══ CHARGEMENT INITIAL (masqué après rendu) ══════════════════════════════ -->
+<div id="sde-loading-done" class="d-none"></div>
+
+<!-- ══ EN-TÊTE ══════════════════════════════════════════════════════════════ -->
+<div class="d-flex align-items-baseline gap-2 mb-1 flex-wrap">
+  <h4 class="fw-bold mb-0">{{ res.company_name }}</h4>
+  <span class="text-muted">·</span>
+  <span class="fw-semibold" style="color:{{ th.main }}">{{ ticker }}</span>
+  {% if market.sector %}
+  <span class="badge rounded-pill"
+        style="background:#f3f4f6;color:#6b7280;font-weight:500;font-size:.72rem">
+    {{ market.sector }}
+  </span>
   {% endif %}
 </div>
+<p class="text-muted small mb-3">
+  CEO : {{ res.ceo_name or '—' }}
+  {% if market.industry %} · {{ market.industry }}{% endif %}
+</p>
 
-{% if result is none %}
-<!-- ── STUB J5 ──────────────────────────────────────────────────────────────── -->
-<div class="alert alert-info">
-  <i class="bi bi-hourglass-split me-2"></i>
-  <strong>J5 :</strong> Le pipeline d'analyse sera branché ici. Ticker reçu : <code>{{ ticker }}</code>
-</div>
+<hr class="sde-divider mb-3">
 
-<div class="row g-3">
-  <!-- Métriques placeholder -->
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm p-3 text-center">
-      <div class="text-muted small">Prix</div>
-      <div class="fs-4 fw-bold text-placeholder">—</div>
+<!-- ══ PRIX + MÉTRIQUES ══════════════════════════════════════════════════════ -->
+<div class="row g-2 mb-3">
+
+  <!-- Prix live -->
+  {% set var  = market.var_1d %}
+  {% set cvar = '#1D9E75' if var >= 0 else '#D85A30' %}
+  {% set arr  = '▲' if var >= 0 else '▼' %}
+  <div class="col-12 col-md-5">
+    <div class="card border-0 shadow-sm p-3">
+      <div class="text-muted small mb-1">Prix live</div>
+      <div style="font-size:2.2rem;font-weight:600;color:{{ cvar }};line-height:1">
+        {{ sym }}{{ "%.2f"|format(market.price) }}
+        <span style="font-size:.9rem;font-weight:500;margin-left:8px;vertical-align:middle">
+          {{ arr }} {{ "%+.2f"|format(var) }}%
+        </span>
+      </div>
+      <div class="text-muted" style="font-size:.72rem;margin-top:4px">
+        {% if market.prev_close %}
+          Clôt. préc. <strong>{{ sym }}{{ "%.2f"|format(market.prev_close) }}</strong>
+        {% endif %}
+        {% if market.pre_market %}
+          &nbsp;·&nbsp; Pré-marché
+          <strong>{{ sym }}{{ "%.2f"|format(market.pre_market) }}</strong>
+        {% elif market.post_market %}
+          &nbsp;·&nbsp; Post-marché
+          <strong>{{ sym }}{{ "%.2f"|format(market.post_market) }}</strong>
+        {% endif %}
+      </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm p-3 text-center">
-      <div class="text-muted small">RSI (14)</div>
-      <div class="fs-4 fw-bold text-placeholder">—</div>
+
+  <!-- RSI -->
+  {% set rsi = market.rsi %}
+  {% set rsi_c = '#D85A30' if rsi > 70 else '#1D9E75' if rsi < 30 else '#374151' %}
+  <div class="col-4 col-md">
+    <div class="card border-0 shadow-sm p-3 text-center h-100">
+      <div class="text-muted small">RSI 14j</div>
+      <div style="font-size:1.6rem;font-weight:600;color:{{ rsi_c }}">
+        {{ "%.1f"|format(rsi) }}
+      </div>
+      <div class="text-muted" style="font-size:.7rem">
+        {{ 'Suracheté' if rsi > 70 else 'Survendu' if rsi < 30 else 'Neutre' }}
+      </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm p-3 text-center">
+
+  <!-- Var 5j -->
+  {% set v5 = market.var_5d %}
+  <div class="col-4 col-md">
+    <div class="card border-0 shadow-sm p-3 text-center h-100">
       <div class="text-muted small">Var. 5j</div>
-      <div class="fs-4 fw-bold text-placeholder">—</div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm p-3 text-center">
-      <div class="text-muted small">Volume</div>
-      <div class="fs-4 fw-bold text-placeholder">—</div>
+      <div style="font-size:1.6rem;font-weight:600;color:{{ '#1D9E75' if v5>=0 else '#D85A30' }}">
+        {{ "%+.2f"|format(v5) }}%
+      </div>
     </div>
   </div>
 
-  <!-- Gauge placeholder (J5/J8) -->
-  <div class="col-12 col-md-6">
-    <div class="card border-0 shadow-sm p-4 text-center sde-placeholder-block">
-      <i class="bi bi-speedometer2 fs-1 text-muted"></i>
-      <p class="text-muted mt-2 mb-0">Jauge score global — J8</p>
-    </div>
-  </div>
-
-  <!-- Charts placeholder (J6) -->
-  <div class="col-12 col-md-6">
-    <div class="card border-0 shadow-sm p-4 text-center sde-placeholder-block">
-      <i class="bi bi-bar-chart-line fs-1 text-muted"></i>
-      <p class="text-muted mt-2 mb-0">Graphiques prix / RSI / Chandelier — J6</p>
+  <!-- Vol. ratio -->
+  <div class="col-4 col-md">
+    <div class="card border-0 shadow-sm p-3 text-center h-100">
+      <div class="text-muted small">Vol. ratio</div>
+      <div style="font-size:1.6rem;font-weight:600;color:#374151">
+        {{ "%.1f"|format(market.vol_ratio) }}×
+      </div>
     </div>
   </div>
 </div>
 
-{% else %}
-<!-- ── VRAI RENDU J5 (décommenté quand pipeline branché) ──────────────────── -->
-{# TODO J5 : utiliser result.score, result.info, result.tech, etc. #}
-<p class="text-muted">Pipeline result disponible — décommentez les blocs J5.</p>
+<!-- ══ FONDAMENTAUX ══════════════════════════════════════════════════════════ -->
+<div class="card border-0 shadow-sm p-3 mb-3">
+  <div class="sde-section-label mb-2">Données fondamentales</div>
+  <div class="row g-2 text-center">
+    {% for label, val in [
+        ('P/E',        market.pe_ratio),
+        ('EPS',        market.eps),
+        ('Dette/Cap.', market.debt_equity),
+        ('Croiss. CA', market.revenue_growth),
+    ] %}
+    <div class="col-6 col-md-3">
+      <div class="text-muted" style="font-size:.72rem">{{ label }}</div>
+      <div class="fw-semibold">{{ val if val not in [None, '', 'N/A'] else '—' }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<hr class="sde-divider mb-3">
+
+<!-- ══ SCORES + RECOMMANDATION ══════════════════════════════════════════════ -->
+<div class="row g-3 mb-3">
+
+  <!-- Recommandation -->
+  <div class="col-12 col-md-4">
+    <div class="card border-0 shadow-sm p-3 h-100">
+      <div class="sde-section-label mb-3">Recommandation</div>
+      <div style="display:inline-block;padding:8px 20px;border-radius:8px;
+                  background:{{ th.bg }};border:0.5px solid {{ th.bd }};margin-bottom:8px">
+        <span style="font-size:2rem;font-weight:500;color:{{ th.txt }}">
+          {{ th.icon }} {{ res.recommandation }}
+        </span>
+      </div>
+      <div class="text-muted small">
+        Confiance&nbsp;: {{ "%.2f"|format(res.score_global) }}/100
+        &nbsp;·&nbsp; Sentiment&nbsp;: {{ res.sentiment.label }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Jauge score (placeholder J8) + composantes -->
+  <div class="col-12 col-md-8">
+    <div class="card border-0 shadow-sm p-3 h-100">
+      <div class="sde-section-label mb-2">Score global — {{ "%.2f"|format(res.score_global) }}/100</div>
+
+      <!-- Barre score global -->
+      <div class="mb-3">
+        <div class="d-flex justify-content-between small text-muted mb-1">
+          <span>0</span><span>50</span><span>100</span>
+        </div>
+        <div class="progress" style="height:8px;border-radius:4px">
+          <div class="progress-bar" role="progressbar"
+               style="width:{{ res.score_global }}%;background:{{ th.main }};border-radius:4px">
+          </div>
+        </div>
+      </div>
+
+      <!-- 3 composantes -->
+      <div class="row g-2">
+        {% set comp_themes = [
+          ('Technique',   res.score_tech,  '#0C447C','#E6F1FB','#85B7EB','40%'),
+          ('Fondamental', res.score_fund,  '#27500A','#EAF3DE','#97C459','35%'),
+          ('Médiatique',  res.score_media, '#633806','#FAEEDA','#EF9F27','25%'),
+        ] %}
+        {% for label, score, ctxt, cbg, cbd, poids in comp_themes %}
+        <div class="col-4">
+          <div style="background:{{ cbg }};border:0.5px solid {{ cbd }};
+                      border-radius:8px;padding:10px 12px">
+            <div class="d-flex justify-content-between align-items-baseline mb-1">
+              <span style="font-size:.75rem;font-weight:500;color:{{ ctxt }}">{{ label }}</span>
+              <span style="font-size:.65rem;color:{{ ctxt }};border:0.5px solid {{ cbd }};
+                           border-radius:3px;padding:0 5px">{{ poids }}</span>
+            </div>
+            <div style="font-size:1.5rem;font-weight:500;color:{{ ctxt }};line-height:1">
+              {{ "%.1f"|format(score) }}
+            </div>
+            <div style="height:3px;background:#e5e7eb;border-radius:2px;margin-top:6px">
+              <div style="height:3px;width:{{ score }}%;background:{{ ctxt }};border-radius:2px"></div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ZONES DE TRADING ══════════════════════════════════════════════════════ -->
+{% if zones %}
+<div class="card border-0 shadow-sm p-3 mb-3">
+  <div class="sde-section-label mb-2">Zones de Trading</div>
+  <div class="row g-2 mb-2">
+
+    <!-- Zone d'entrée -->
+    <div class="col-12 col-md-4">
+      <div style="background:{{ th.bg }};border:0.5px solid {{ th.bd }};border-radius:8px;padding:12px 14px">
+        <div style="font-size:.7rem;font-weight:500;color:{{ th.txt }};text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Zone d'entrée</div>
+        <div style="font-size:1.4rem;font-weight:500;color:{{ th.main }};line-height:1">
+          {{ sym }}{{ "%.2f"|format(zones.entry_low) }}
+        </div>
+        <div style="font-size:.82rem;color:{{ th.main }};margin:2px 0 6px">
+          → {{ sym }}{{ "%.2f"|format(zones.entry_high) }}
+        </div>
+        <div style="height:.5px;background:{{ th.bd }};margin-bottom:6px"></div>
+        <div style="font-size:.7rem;color:#6b7280;line-height:1.4">{{ zones.motif_entree }}</div>
+      </div>
+    </div>
+
+    <!-- Objectif cible -->
+    <div class="col-12 col-md-4">
+      {% set pct_t = zones.pct_target %}
+      {% set tc = '#1D9E75' if (pct_t or 0) > 0 else '#D85A30' %}
+      <div style="background:#f8fafc;border:0.5px solid #e5e7eb;border-radius:8px;padding:12px 14px">
+        <div style="font-size:.7rem;font-weight:500;color:#374151;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Objectif cible</div>
+        <div style="font-size:1.4rem;font-weight:500;color:#374151;line-height:1">
+          {{ sym }}{{ "%.2f"|format(zones.target_low) }}
+        </div>
+        <div style="font-size:.82rem;color:#374151;margin:2px 0 6px">
+          → {{ sym }}{{ "%.2f"|format(zones.target_high) }}
+          {% if pct_t is not none %}
+          <span style="color:{{ tc }};font-size:.7rem">({{ "%+.1f"|format(pct_t) }}%)</span>
+          {% endif %}
+        </div>
+        <div style="height:.5px;background:#e5e7eb;margin-bottom:6px"></div>
+        <div style="font-size:.7rem;color:#6b7280;line-height:1.4">{{ zones.motif_cible }}</div>
+      </div>
+    </div>
+
+    <!-- Stop-loss -->
+    <div class="col-12 col-md-4">
+      {% if zones.stop_loss is not none %}
+      {% set pct_s = zones.pct_stop %}
+      <div style="background:#FEF2F2;border:0.5px solid #FECACA;border-radius:8px;padding:12px 14px">
+        <div style="font-size:.7rem;font-weight:500;color:#991b1b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Stop-loss</div>
+        <div style="font-size:1.4rem;font-weight:500;color:#DC2626;line-height:1">
+          {{ sym }}{{ "%.2f"|format(zones.stop_loss) }}
+        </div>
+        <div style="font-size:.82rem;color:#DC2626;margin:2px 0 6px">
+          {% if pct_s is not none %}({{ "%+.1f"|format(pct_s) }}%){% endif %}
+        </div>
+        <div style="height:.5px;background:#FECACA;margin-bottom:6px"></div>
+        <div style="font-size:.7rem;color:#6b7280;line-height:1.4">
+          Invalidation du signal
+          {% if zones.rr_ratio %}<br><strong>R/R : {{ "%.1f"|format(zones.rr_ratio) }}:1</strong>{% endif %}
+        </div>
+      </div>
+      {% elif zones.support_ref is not none %}
+      <div style="background:#FAEEDA;border:0.5px solid #EF9F27;border-radius:8px;padding:12px 14px">
+        <div style="font-size:.7rem;font-weight:500;color:#412402;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Support (BB)</div>
+        <div style="font-size:1.4rem;font-weight:500;color:#BA7517;line-height:1">
+          {{ sym }}{{ "%.2f"|format(zones.support_ref) }}
+        </div>
+        <div style="height:.5px;background:#EF9F27;margin:10px 0 6px"></div>
+        <div style="font-size:.7rem;color:#6b7280;line-height:1.4">Niveau de support · pas de stop directionnel</div>
+      </div>
+      {% else %}
+      <div style="background:#f8fafc;border:0.5px solid #e5e7eb;border-radius:8px;padding:12px 14px">
+        <div style="font-size:.7rem;font-weight:500;color:#9ca3af;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Stop-loss</div>
+        <div style="font-size:1.4rem;font-weight:500;color:#d1d5db;line-height:1">—</div>
+        <div style="height:.5px;background:#e5e7eb;margin:10px 0 6px"></div>
+        <div style="font-size:.7rem;color:#9ca3af;line-height:1.4">Signal neutre · pas de direction</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ATR / support / résistance -->
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-1">
+    <span style="font-size:.7rem;color:#9ca3af">
+      ATR(14) : {{ sym }}{{ "%.2f"|format(zones.atr) }}
+      &nbsp;·&nbsp; Support 20j : {{ sym }}{{ "%.2f"|format(zones.support) }}
+      &nbsp;·&nbsp; Résistance 20j : {{ sym }}{{ "%.2f"|format(zones.resistance) }}
+    </span>
+    <span style="font-size:.7rem;font-weight:600;color:#92400E;background:#FEF3C7;
+                 border:1px solid #F59E0B;border-radius:4px;padding:2px 8px;white-space:nowrap">
+      ⚠ Indicatif uniquement · Pas un conseil financier
+    </span>
+  </div>
+</div>
 {% endif %}
 
+<!-- ══ EXPLICATION LLM ══════════════════════════════════════════════════════ -->
+<div class="card border-0 shadow-sm p-3 mb-3">
+  <div class="sde-section-label mb-2">Analyse par IA</div>
+  {% set exp = res.explication %}
+  <div style="border:0.5px solid {{ th.bd }};border-left:4px solid {{ th.main }};
+              border-radius:8px;padding:12px 16px;font-size:.875rem;
+              line-height:1.6;background:{{ th.bg }}">
+    {{ exp.texte if exp else 'Explication non disponible.' }}
+  </div>
+  <div class="d-flex align-items-center justify-content-between mt-2">
+    <span class="text-muted" style="font-size:.72rem">
+      {% if exp %}
+        {% set src_labels = {'groq':'Généré par LLaMA 3.3 70B via Groq','ollama':'Généré par Mistral en local (Ollama)','fallback':'Texte généré localement (LLM indisponible)'} %}
+        {{ src_labels.get(exp.source, exp.source) }}
+      {% endif %}
+    </span>
+    <a href="{{ url_for('stock.analyze', ticker=ticker) }}?nocache=1"
+       class="btn btn-outline-secondary btn-sm py-0">
+      Régénérer
+    </a>
+  </div>
+</div>
+
+<hr class="sde-divider mb-3">
+
+<!-- ══ GRAPHIQUES (placeholder J6) ═════════════════════════════════════════ -->
+<div class="card border-0 shadow-sm p-4 mb-3 sde-placeholder-block" id="sde-charts-placeholder">
+  <i class="bi bi-bar-chart-line fs-1 text-muted"></i>
+  <p class="text-muted mt-2 mb-0">Graphiques prix / RSI / Chandelier — Jour 6</p>
+</div>
+
+<!-- ══ SIGNAUX DÉTAILLÉS ════════════════════════════════════════════════════ -->
+{% if signals_list %}
+<div class="accordion mb-3" id="accordionSignals">
+  <div class="accordion-item border-0 shadow-sm">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed py-2" type="button"
+              data-bs-toggle="collapse" data-bs-target="#collapseSignals">
+        <span class="sde-section-label mb-0 me-2">Signaux détaillés</span>
+        <span class="badge bg-secondary rounded-pill">{{ signals_list|length }}</span>
+      </button>
+    </h2>
+    <div id="collapseSignals" class="accordion-collapse collapse">
+      <div class="accordion-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0" style="font-size:.8rem">
+            <thead class="table-light">
+              <tr>
+                {% for col in signals_list[0].keys() %}
+                <th>{{ col }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in signals_list %}
+              <tr>
+                {% for k, v in row.items() %}
+                <td {% if k == 'sens' %}
+                    style="color:{{'#166534' if v=='haussier' else '#991b1b' if v=='baissier' else '#374151'}};font-weight:500"
+                    {% endif %}>{{ v if v is not none else '—' }}</td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ══ INSIDER ══════════════════════════════════════════════════════════════ -->
+<div class="accordion mb-3" id="accordionInsider">
+  <div class="accordion-item border-0 shadow-sm">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed py-2" type="button"
+              data-bs-toggle="collapse" data-bs-target="#collapseInsider">
+        <span class="sde-section-label mb-0 me-2">Activité des insiders</span>
+        <span class="badge bg-secondary rounded-pill">{{ insider_list|length }}</span>
+      </button>
+    </h2>
+    <div id="collapseInsider" class="accordion-collapse collapse">
+      <div class="accordion-body p-0">
+        {% if insider_list %}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0" style="font-size:.8rem">
+            <thead class="table-light">
+              <tr>{% for col in insider_list[0].keys() %}<th>{{ col }}</th>{% endfor %}</tr>
+            </thead>
+            <tbody>
+              {% for row in insider_list %}
+              <tr>{% for v in row.values() %}<td>{{ v if v is not none else '—' }}</td>{% endfor %}</tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="p-3 text-muted small">Aucune transaction insider récente.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ACTUALITÉS ═══════════════════════════════════════════════════════════ -->
+<div class="accordion mb-3" id="accordionNews">
+  <div class="accordion-item border-0 shadow-sm">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed py-2" type="button"
+              data-bs-toggle="collapse" data-bs-target="#collapseNews">
+        <span class="sde-section-label mb-0 me-2">Actualités analysées</span>
+        <span class="badge bg-secondary rounded-pill">{{ news_list|length }}</span>
+      </button>
+    </h2>
+    <div id="collapseNews" class="accordion-collapse collapse">
+      <div class="accordion-body p-0">
+        {% if news_list %}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0" style="font-size:.78rem">
+            <thead class="table-light">
+              <tr>
+                <th>Origine</th><th>Titre</th><th>Lien</th>
+                <th>Sentiment</th><th>Score</th><th>Date</th><th>Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for n in news_list %}
+              {% set sc = n.get('sentiment_label','') %}
+              <tr>
+                <td class="text-muted">{{ n.get('type','') }}</td>
+                <td>{{ n.get('titre','') }}</td>
+                <td>
+                  {% if n.get('url') %}
+                  <a href="{{ n.url }}" target="_blank" rel="noopener"
+                     class="sde-link">↗</a>
+                  {% endif %}
+                </td>
+                <td>
+                  <span style="font-size:.72rem;padding:1px 6px;border-radius:3px;
+                    {% if sc=='positive' %}background:#dcfce7;color:#166534
+                    {% elif sc=='negative' %}background:#fee2e2;color:#991b1b
+                    {% else %}background:#f3f4f6;color:#6b7280{% endif %}">
+                    {{ sc }}
+                  </span>
+                </td>
+                <td>{{ "%.2f"|format(n.get('sentiment_score') or 0) }}</td>
+                <td class="text-muted">{{ n.get('date','') }}</td>
+                <td class="text-muted">{{ n.get('source','') }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="p-3 text-muted small">Aucun article collecté.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* Masque l'overlay de chargement dès que la page est rendue */
+document.addEventListener("DOMContentLoaded", function () {
+  const overlay = document.getElementById("sde-page-loading");
+  if (overlay) overlay.remove();
+});
+</script>
 {% endblock %}
