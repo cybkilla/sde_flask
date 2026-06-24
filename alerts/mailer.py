@@ -3,6 +3,9 @@ import os
 import resend
 
 
+SDE_BASE_URL = "https://sde-flask.onrender.com"
+
+
 def send_alert(to_email: str, username: str,
                ticker: str, company: str,
                old_reco: str, new_reco: str,
@@ -121,11 +124,18 @@ def send_alert(to_email: str, username: str,
         {context}
       </div>''' if context else ''}
 
-      <p style="color:#9ca3af;font-size:11px;
-                border-top:1px solid #e5e7eb;padding-top:12px">
-        Cet email a été envoyé automatiquement par StockDecisionEngine.
-        Outil éducatif — pas un conseil financier.
-      </p>
+      <div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:4px">
+        <a href="{SDE_BASE_URL}/analyze/{ticker}"
+           style="display:inline-block;background:#1D9E75;color:#fff;
+                  font-size:13px;font-weight:600;text-decoration:none;
+                  padding:8px 18px;border-radius:6px;margin-bottom:10px">
+          Voir l'analyse complète de {ticker} →
+        </a>
+        <p style="color:#9ca3af;font-size:11px;margin:0">
+          Cet email a été envoyé automatiquement par StockDecisionEngine.
+          Outil éducatif — pas un conseil financier.
+        </p>
+      </div>
     </div>
     """
 
