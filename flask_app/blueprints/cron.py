@@ -71,21 +71,35 @@ def test_email():
     if not to_email:
         return jsonify({"error": "Aucune adresse email trouvée. Passez ?to=votre@email.com"}), 400
 
-    import traceback
+    import os, traceback
+
+    # Lecture directe de l'environnement (bypass cache config.py)
+    api_key  = os.getenv("RESEND_API_KEY", "")
+    from_addr = os.getenv("RESEND_FROM", "SDE StockDecisionEngine <onboarding@resend.dev>")
+    # Variables RESEND présentes dans l'env (noms uniquement, pas les valeurs)
+    resend_keys_found = [k for k in os.environ if "RESEND" in k.upper()]
+
+    if not api_key:
+        return jsonify({
+            "ok": False,
+            "error": "RESEND_API_KEY vide dans l'environnement Render",
+            "resend_keys_found": resend_keys_found,
+        }), 500
+
     try:
         import resend as _resend
-        from config import RESEND_API_KEY, RESEND_FROM
-
-        if not RESEND_API_KEY:
-            return jsonify({"ok": False, "error": "RESEND_API_KEY absente dans les variables Render"}), 500
-
-        _resend.api_key = RESEND_API_KEY
+        _resend.api_key = api_key
         result = _resend.Emails.send({
-            "from":    RESEND_FROM,
+            "from":    from_addr,
             "to":      [to_email],
             "subject": "[SDE] Test email Resend",
             "html":    "<p>Test Resend OK — si vous recevez cet email, la configuration fonctionne.</p>",
         })
-        return jsonify({"ok": True, "to": to_email, "resend_from": RESEND_FROM, "resend_response": str(result)}), 200
+        return jsonify({
+            "ok": True,
+            "to": to_email,
+            "from": from_addr,
+            "resend_response": str(result),
+        }), 200
     except Exception as e:
         return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
