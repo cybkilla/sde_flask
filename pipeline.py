@@ -46,30 +46,45 @@ def run(ticker: str, use_cache: bool = True) -> dict:
         if cached:
             return cached
 
-    # ── Étape 1 : données marché ──────────────────────────
+    # ── Étape 1 : données marché (critique) ──────────────
     market = get_market_data(ticker)
 
-    # ── Étape 2 : actualités + sentiment ─────────────────
-    # News entreprise (type = "ticker") + news sectorielles (type = "secteur")
-    df_company = get_all_news(market["company_name"], ticker)
-    if not df_company.empty:
-        df_company["type"] = "ticker"
+    # ── Étape 2 : actualités + sentiment (non-critique) ──
+    try:
+        df_company = get_all_news(market["company_name"], ticker)
+        if not df_company.empty:
+            df_company["type"] = "ticker"
+    except Exception as e:
+        print(f"[Pipeline] News entreprise indisponibles : {e}")
+        df_company = pd.DataFrame()
 
-    df_sector  = get_sector_news(market.get("sector", ""), market.get("industry", ""))
-    # Exclure les articles sectoriels qui mentionnent déjà le ticker/société
-    # (évite le double comptage avec les news entreprise)
-    if not df_sector.empty and not df_company.empty:
-        company_titles = set(df_company["titre"].str.lower())
-        df_sector = df_sector[
-            ~df_sector["titre"].str.lower().isin(company_titles)
-        ]
+    try:
+        df_sector = get_sector_news(market.get("sector", ""), market.get("industry", ""))
+        if not df_sector.empty and not df_company.empty:
+            company_titles = set(df_company["titre"].str.lower())
+            df_sector = df_sector[
+                ~df_sector["titre"].str.lower().isin(company_titles)
+            ]
+    except Exception as e:
+        print(f"[Pipeline] News sectorielles indisponibles : {e}")
+        df_sector = pd.DataFrame()
 
     df_news   = pd.concat([df_company, df_sector], ignore_index=True)
     sentiment = analyze_sentiment(df_news)
 
-    # ── Étape 3 : insider + événements dirigeants ─────────
-    df_tx     = get_insider_transactions(ticker)
-    df_events = get_executive_events(market["ceo_name"], ticker)
+    # ── Étape 3 : insider + événements dirigeants (non-critique) ──
+    try:
+        df_tx = get_insider_transactions(ticker)
+    except Exception as e:
+        print(f"[Pipeline] Transactions insiders indisponibles : {e}")
+        df_tx = pd.DataFrame()
+
+    try:
+        df_events = get_executive_events(market["ceo_name"], ticker)
+    except Exception as e:
+        print(f"[Pipeline] Événements dirigeants indisponibles : {e}")
+        df_events = pd.DataFrame()
+
     ins_score = get_insider_score(df_tx)
 
     # ── Étape 4 : calcul des 3 scores ─────────────────────
