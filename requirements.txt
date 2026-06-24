@@ -41,6 +41,9 @@ matplotlib>=3.8.0
 # ── LLM ───────────────────────────────────────────────────
 groq>=0.9.0
 
+# ── Email transactionnel (HTTP — fonctionne sur Render) ───
+resend>=2.0.0
+
 # ── Serveur WSGI production ───────────────────────────────
 gunicorn>=22.0.0
 python-dotenv>=1.0.0

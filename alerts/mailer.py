@@ -1,12 +1,6 @@
-# alerts/mailer.py
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text      import MIMEText
-from config               import (
-    SMTP_HOST, SMTP_PORT,
-    SMTP_USER, SMTP_PASSWORD,
-    SMTP_FROM,
-)
+# alerts/mailer.py — envoi d'emails via Resend (HTTP, port 443 — fonctionne sur Render)
+import resend
+from config import RESEND_API_KEY, RESEND_FROM
 
 
 def send_alert(to_email: str, username: str,
@@ -65,11 +59,8 @@ def send_alert(to_email: str, username: str,
         </span>
       </div>"""
 
-    # ── Ligne recommandation dans le tableau ──────────────────
-    # Affichée seulement si la reco N'a PAS changé (simple info)
-    # ou si elle a changé (déjà dans le bandeau, on la répète sobrement)
     if reco_changed:
-        reco_row = ""   # déjà affiché dans le bandeau, inutile de doubler
+        reco_row = ""
     else:
         reco_row = f"""
         <tr>
@@ -138,15 +129,15 @@ def send_alert(to_email: str, username: str,
     </div>
     """
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"]          = subject
-    msg["From"]             = SMTP_FROM
-    msg["To"]               = to_email
-    msg["X-Priority"]       = "1"
-    msg["X-MSMail-Priority"]= "High"
-    msg["Importance"]       = "High"
-    msg.attach(MIMEText(body, "html"))
+    if not RESEND_API_KEY:
+        print(f"[Mailer] RESEND_API_KEY manquante — email non envoyé à {to_email}", flush=True)
+        return
 
-    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as smtp:
-        smtp.login(SMTP_USER, SMTP_PASSWORD)
-        smtp.sendmail(SMTP_FROM, to_email, msg.as_string())
+    resend.api_key = RESEND_API_KEY
+    resend.Emails.send({
+        "from":    RESEND_FROM,
+        "to":      [to_email],
+        "subject": subject,
+        "html":    body,
+    })
+    print(f"[Mailer] Email envoyé à {to_email} ({ticker})", flush=True)

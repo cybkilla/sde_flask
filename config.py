@@ -114,14 +114,12 @@ LLM_MAX_TOKENS = 220     # marge pour 3 phrases complètes (~60 mots)
 LLM_TIMEOUT    = 15      # secondes avant abandon
 LLM_ENABLED    = True    # False = désactive le LLM, fallback systématique
 
-# ── SMTP — envoi d'emails d'alerte ───────────────────────
-# Utilise Gmail avec un "App Password" (pas ton mdp Google)
-# Générer : myaccount.google.com → Sécurité → Mots de passe d'application
-SMTP_HOST     = "smtp.gmail.com"
-SMTP_PORT     = 465
-SMTP_USER     = "stockdecisionengine@gmail.com"       # 
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM     = "SDE StockDecisionEngine <stockdecisionengine@gmail.com>"
+# ── Resend — envoi d'emails d'alerte (HTTP, port 443) ────
+# Compte gratuit : https://resend.com/ → API Keys
+# RESEND_FROM doit être une adresse vérifiée sur Resend.
+# Sans domaine propre, utiliser l'adresse test : onboarding@resend.dev
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+RESEND_FROM    = os.getenv("RESEND_FROM", "SDE StockDecisionEngine <onboarding@resend.dev>")
  
 # ── Alertes — seuils de déclenchement ────────────────────
 # Variation minimale du cours (en %) pour envoyer une alerte
