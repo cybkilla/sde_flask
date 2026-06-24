@@ -5,19 +5,17 @@
 # Lancer depuis le dossier stockengine/ : python alerts/scheduler.py
 
 import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 import time
-import json
 import yaml
-from datetime         import datetime, timedelta
-from pathlib          import Path
-from pipeline         import run
-from watchlist.watchlist import (get_watchlist, get_last_score,
-                                    save_last_score)
-from alerts.mailer    import send_alert
-from config           import ALERT_VAR_THRESHOLD, CHECK_INTERVAL_MIN
+from datetime import datetime, timedelta
+from pathlib  import Path
+
+# Assure que la racine du projet est dans sys.path (utile en mode one-shot)
+_ROOT = Path(__file__).parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from config import ALERT_VAR_THRESHOLD, CHECK_INTERVAL_MIN
 
 USERS_FILE = Path(__file__).parent.parent / "auth" / "users.yaml"
 
@@ -30,13 +28,17 @@ def get_all_users() -> dict:
             rows = find("users", {})
             if rows:
                 return {r["username"]: r.get("email", "") for r in rows}
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Scheduler] Supabase get_all_users erreur : {e}", flush=True)
     # Fallback YAML (dev local sans Supabase)
-    with open(USERS_FILE) as f:
-        config = yaml.safe_load(f)
-    users = config.get("credentials", {}).get("usernames", {})
-    return {u: d.get("email", "") for u, d in users.items()}
+    try:
+        with open(USERS_FILE) as f:
+            config = yaml.safe_load(f) or {}
+        users = config.get("credentials", {}).get("usernames", {})
+        return {u: d.get("email", "") for u, d in users.items()}
+    except FileNotFoundError:
+        print(f"[Scheduler] users.yaml introuvable et Supabase vide — aucun utilisateur", flush=True)
+        return {}
 
 
 def check_all():
@@ -46,12 +48,16 @@ def check_all():
       - La recommandation a changé depuis la dernière vérification
       - La variation du cours dépasse ALERT_VAR_THRESHOLD (défaut 5%)
     """
+    from pipeline            import run
+    from watchlist.watchlist import get_watchlist, get_last_score, save_last_score
+    from alerts.mailer       import send_alert
+
     users = get_all_users()
     now  = datetime.now()
     next_run = now + timedelta(minutes=CHECK_INTERVAL_MIN)
     print(f"[Scheduler] Vérification de {len(users)} utilisateur(s)…  "
           f"| Exécution : {now.strftime('%Y-%m-%d %H:%M')}  "
-          f"| Prochaine : {next_run.strftime('%Y-%m-%d %H:%M')}")
+          f"| Prochaine : {next_run.strftime('%Y-%m-%d %H:%M')}", flush=True)
 
     for username, email in users.items():
         watchlist = get_watchlist(username)

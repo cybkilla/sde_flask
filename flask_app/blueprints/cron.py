@@ -25,11 +25,16 @@ def run_scheduler():
         return jsonify({"ok": False, "message": "Scheduler déjà en cours d'exécution"}), 429
 
     def _run():
+        import sys, traceback
         try:
+            print("[Cron] Thread scheduler démarré", flush=True)
             from alerts.scheduler import check_all
             check_all()
+            print("[Cron] Thread scheduler terminé", flush=True)
         except Exception as e:
-            print(f"[Cron] Erreur scheduler : {e}")
+            sys.stderr.write(f"[Cron] ERREUR : {e}\n")
+            sys.stderr.write(traceback.format_exc())
+            sys.stderr.flush()
         finally:
             _lock.release()
 
