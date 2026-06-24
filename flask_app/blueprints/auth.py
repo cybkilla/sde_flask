@@ -2,6 +2,7 @@
 # Auth Flask-Login — stockage Supabase (si SUPABASE_URL défini) ou YAML local (dev)
 
 import re
+from urllib.parse import urlparse, urljoin
 from flask import Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import UserMixin, login_user, logout_user, login_required, current_user
 from pathlib import Path
@@ -132,7 +133,11 @@ def login():
                 user = User(data["username"], data.get("name", username), data.get("email", ""))
                 login_user(user, remember=remember_me)
                 flash(f"Bienvenue, {user.name} !", "success")
-                next_page = request.args.get("next") or url_for("stock.home")
+                next_page = request.args.get("next", "")
+                # Rejette tout redirect vers un hôte externe (open redirect)
+                parsed = urlparse(urljoin(request.host_url, next_page))
+                if not next_page or parsed.netloc != urlparse(request.host_url).netloc:
+                    next_page = url_for("stock.home")
                 return redirect(next_page)
             errors["general"] = "Identifiant ou mot de passe incorrect."
 
