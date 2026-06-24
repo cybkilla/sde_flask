@@ -78,6 +78,81 @@ def analyze(ticker: str):
     except Exception:
         pass
 
+    # ── Explication figure chartiste (dernier pattern détecté) ────
+    candle_pattern = None
+    try:
+        from analysis.candle_patterns import detect_patterns
+        _pat_df = detect_patterns(market["history"].tail(60))
+        if not _pat_df.empty:
+            last   = _pat_df.iloc[-1]
+            signal = last["signal"]
+            reco   = res["recommandation"]
+            score  = res["score_global"]
+
+            jours = (market["history"].index[-1].date() - last["date"].date()).days
+            delai = "aujourd'hui" if jours == 0 else f"il y a {jours} jour{'s' if jours > 1 else ''}"
+
+            _ico = {"bullish": "📈", "bearish": "📉", "neutre": "🔶"}
+            p1 = (
+                f"{_ico.get(signal, '🔶')} **{last['pattern']}** détecté {delai} "
+                f"*(signal court terme, 1–5 jours)* — {last['description']}."
+            )
+
+            agrees     = (signal == "bullish" and reco == "ACHETER") or \
+                         (signal == "bearish" and reco == "VENDRE")
+            contradicts = (signal == "bullish" and reco == "VENDRE") or \
+                          (signal == "bearish" and reco == "ACHETER")
+
+            if signal == "neutre":
+                p2 = (
+                    f"La recommandation moyen terme (14–50 j) reste **{reco}** "
+                    f"({score:.0f}/100) — cette indécision court terme ne remet pas en cause la tendance de fond."
+                )
+            elif agrees:
+                p2 = (
+                    f"Ce signal renforce la recommandation **{reco}** ({score:.0f}/100) "
+                    f"issue du score moyen terme (14–50 j) — les deux horizons convergent."
+                )
+            elif contradicts:
+                if signal == "bearish":
+                    p2 = (
+                        f"La recommandation moyen terme (14–50 j) reste **{reco}** "
+                        f"({score:.0f}/100) — ce repli court terme peut être une consolidation "
+                        f"temporaire avant reprise, à surveiller sans paniquer."
+                    )
+                else:
+                    p2 = (
+                        f"La recommandation moyen terme (14–50 j) reste **{reco}** "
+                        f"({score:.0f}/100) — ce rebond court terme peut être technique "
+                        f"et non durable, prudence avant de renforcer."
+                    )
+            else:
+                if reco == "NEUTRE":
+                    p2 = (
+                        f"Le score global est **NEUTRE** ({score:.0f}/100, horizon 14–50 j) — "
+                        f"ce signal court terme est à surveiller, mais une confirmation "
+                        f"sur plusieurs jours est recommandée avant d'agir."
+                    )
+                else:
+                    p2 = (
+                        f"La recommandation moyen terme est **{reco}** "
+                        f"({score:.0f}/100, horizon 14–50 j) — l'indécision court terme "
+                        f"ne modifie pas cette perspective."
+                    )
+
+            import re as _re
+            def _md_bold(s):
+                return _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', s)
+
+            candle_pattern = {
+                "signal":  signal,
+                "pattern": last["pattern"],
+                "p1":      _md_bold(p1),
+                "p2":      _md_bold(p2),
+            }
+    except Exception:
+        pass
+
     # ── News — nettoyage colonnes ─────────────────────────
     _news_cols = ["type", "titre", "url", "sentiment_label", "sentiment_score", "date", "source"]
     df_news = res["df_news"][[c for c in _news_cols if c in res["df_news"].columns]].copy()
@@ -131,8 +206,9 @@ def analyze(ticker: str):
         signals_list = signals_list,
         news_list    = news_list,
         insider_list = insider_list,
-        charts       = charts,
-        in_watchlist = in_watchlist,
+        charts         = charts,
+        in_watchlist   = in_watchlist,
+        candle_pattern = candle_pattern,
     )
 
 
