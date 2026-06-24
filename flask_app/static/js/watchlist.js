@@ -43,14 +43,31 @@
       const li      = document.createElement("li");
       li.className  = "sde-wl-item";
       li.dataset.ticker = ticker;
-      li.innerHTML =
-        '<a href="/analyze/' + encodeURIComponent(ticker) + '" ' +
-        'style="font-weight:600;color:var(--sde-navy);flex-shrink:0;text-decoration:none">' +
-        escHtml(ticker) + '</a>' +
-        '<span class="co" title="' + escHtml(company) + '">' +
-        (company && company !== ticker ? escHtml(company) : '') +
-        '</span>' +
-        '<button class="sde-wl-rm" data-ticker="' + escHtml(ticker) + '" title="Retirer">✕</button>';
+      const a = document.createElement("a");
+      a.href  = "/analyze/" + encodeURIComponent(ticker);
+      a.style.cssText = "font-weight:600;color:var(--sde-navy);flex-shrink:0;text-decoration:none";
+      a.textContent   = ticker;
+      a.addEventListener("click", function (e) {
+        e.preventDefault();
+        if (window.sdeShowOverlay) window.sdeShowOverlay("Analyse de " + ticker + "…");
+        else document.body.classList.add("sde-loading");
+        window.location.href = this.href;
+      });
+
+      const co  = document.createElement("span");
+      co.className = "co";
+      co.title     = company;
+      co.textContent = (company && company !== ticker) ? company : "";
+
+      const rm  = document.createElement("button");
+      rm.className      = "sde-wl-rm";
+      rm.dataset.ticker = ticker;
+      rm.title          = "Retirer";
+      rm.textContent    = "✕";
+
+      li.appendChild(a);
+      li.appendChild(co);
+      li.appendChild(rm);
       ul.appendChild(li);
     });
 

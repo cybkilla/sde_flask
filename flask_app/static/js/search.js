@@ -12,7 +12,8 @@
     window.location.href = "/analyze/" + encodeURIComponent(ticker);
   }
 
-  function showLoadingOverlay(ticker) {
+  function showLoadingOverlay(label) {
+    document.body.classList.add("sde-loading");
     const existing = document.getElementById("sde-page-loading");
     if (existing) return;
     const div = document.createElement("div");
@@ -21,17 +22,20 @@
       '<div class="spinner-border" style="width:2.5rem;height:2.5rem;color:var(--sde-teal)" role="status">' +
       '<span class="visually-hidden">Chargement…</span></div>' +
       '<div style="font-size:.95rem;font-weight:500;color:var(--sde-text)">' +
-      'Analyse de <strong>' + escHtml(ticker) + '</strong>…</div>' +
+      escHtml(label) + '</div>' +
       '<div style="font-size:.75rem;color:var(--sde-muted)">Données marché · actualités · IA</div>';
     document.body.appendChild(div);
   }
 
+  // Exposé globalement pour watchlist.js et les liens "Actualiser"
+  window.sdeShowOverlay = showLoadingOverlay;
+
   // Nettoie l'overlay si le navigateur restaure la page depuis le bfcache
-  // (back-forward cache : la page est remise en état sans recharger le HTML)
   window.addEventListener("pageshow", function (e) {
     if (e.persisted) {
       var overlay = document.getElementById("sde-page-loading");
       if (overlay) overlay.remove();
+      document.body.classList.remove("sde-loading");
     }
   });
 

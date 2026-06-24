@@ -443,6 +443,12 @@ a:hover { text-decoration: underline; }
   gap: 14px;
 }
 
+/* Curseur d'attente global (ajouté par JS sur body) */
+body.sde-loading,
+body.sde-loading * {
+  cursor: wait !important;
+}
+
 /* ── Responsive tweaks ────────────────────────────────────── */
 @media (max-width: 767px) {
   .sde-search-wrap { max-width: none; }

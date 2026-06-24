@@ -51,7 +51,8 @@
     </button>
     {% endif %}
     <a href="{{ url_for('stock.analyze', ticker=ticker) }}?nocache=1"
-       class="sde-nav-btn" title="Régénérer l'analyse">
+       class="sde-nav-btn" title="Régénérer l'analyse"
+       data-sde-loading="Analyse de {{ ticker }}…">
       <i class="bi bi-arrow-clockwise"></i>
     </a>
   </div>
