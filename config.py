@@ -1,6 +1,12 @@
 # config.py — centralise tous les paramètres du projet
 import os
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # ── Clés API ──────────────────────────────────────────
 # Définir ces variables dans un fichier .env (voir .env.example)
 NEWS_API_KEY = os.getenv("NEWS_API_KEY", "")
