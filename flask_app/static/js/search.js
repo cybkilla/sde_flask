@@ -12,6 +12,32 @@
     window.location.href = "/analyze/" + encodeURIComponent(ticker);
   }
 
+  var _STEPS = [
+    "Récupération des données marché…",
+    "Calcul des indicateurs · RSI · MACD · Bollinger…",
+    "Collecte des actualités & presse financière…",
+    "Analyse des transactions dirigeants…",
+    "Scoring · technique · fondamental · médiatique…",
+    "Analyse IA · génération de la recommandation…",
+  ];
+  // Délai (ms) avant de passer à l'étape suivante
+  var _STEP_DELAYS = [2200, 2200, 2500, 2500, 3000];
+
+  function _cycleSteps(el) {
+    var i = 1;
+    function next() {
+      if (i >= _STEPS.length || !document.getElementById("sde-page-loading")) return;
+      el.style.opacity = "0";
+      setTimeout(function () {
+        el.textContent  = _STEPS[i];
+        el.style.opacity = "1";
+        i++;
+        if (i < _STEPS.length) setTimeout(next, _STEP_DELAYS[i - 1] || 2500);
+      }, 350);
+    }
+    setTimeout(next, _STEP_DELAYS[0]);
+  }
+
   function showLoadingOverlay(label) {
     document.body.classList.add("sde-loading");
     const existing = document.getElementById("sde-page-loading");
@@ -23,8 +49,10 @@
       '<span class="visually-hidden">Chargement…</span></div>' +
       '<div style="font-size:.95rem;font-weight:500;color:var(--sde-text)">' +
       escHtml(label) + '</div>' +
-      '<div style="font-size:.75rem;color:var(--sde-muted)">Données marché · actualités · IA</div>';
+      '<div id="sde-step-label" style="font-size:.75rem;color:var(--sde-muted);transition:opacity .35s ease">' +
+      _STEPS[0] + '</div>';
     document.body.appendChild(div);
+    _cycleSteps(document.getElementById("sde-step-label"));
   }
 
   // Exposé globalement pour watchlist.js et les liens "Actualiser"
