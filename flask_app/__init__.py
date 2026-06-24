@@ -41,6 +41,7 @@ def create_app() -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(stock_bp)
+    csrf.exempt(cron_bp)          # pas de token CSRF — le blueprint a son propre secret
     app.register_blueprint(cron_bp)
 
     # Handlers d'erreurs personnalisés
