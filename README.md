@@ -27,7 +27,7 @@ Application web d'aide à la décision boursière. Analyse n'importe quelle acti
 | Framework web | Flask 3 + Blueprints |
 | Auth | Flask-Login, Flask-WTF (CSRF), bcrypt, YAML |
 | Base de données | Supabase (PostgreSQL) via REST HTTPS — fallback YAML/JSON local |
-| Données marché | yfinance |
+| Données marché | yfinance (primaire) · Finnhub + Twelve Data (fallback cloud) |
 | NLP / Sentiment | VADER (défaut), FinBERT (optionnel GPU) |
 | LLM | Groq API (LLaMA 3.3 70B) + Ollama (fallback local) |
 | Graphiques | matplotlib (PNG base64), Plotly (JSON → JS) |
@@ -64,6 +64,9 @@ Variables requises dans `.env` :
 FLASK_SECRET_KEY=une_cle_aleatoire_longue
 NEWS_API_KEY=votre_cle_newsapi
 GROQ_API_KEY=votre_cle_groq
+# Données marché — fallback cloud (Render) si Yahoo Finance est bloqué
+FINNHUB_API_KEY=votre_cle_finnhub
+TWELVE_DATA_API_KEY=votre_cle_twelvedata
 # Supabase (laisser vide → fallback YAML/JSON local)
 SUPABASE_URL=https://xxxxx.supabase.co
 SUPABASE_KEY=eyJhbGci...            # clé anon (publique)
@@ -72,6 +75,8 @@ SMTP_PASSWORD=app_password_gmail    # optionnel, pour les alertes email
 
 - **NewsAPI** : clé gratuite sur [newsapi.org](https://newsapi.org)
 - **Groq** : clé gratuite sur [console.groq.com](https://console.groq.com)
+- **Finnhub** : clé gratuite sur [finnhub.io](https://finnhub.io) — quote temps réel + fondamentaux (60 req/min)
+- **Twelve Data** : clé gratuite sur [twelvedata.com](https://twelvedata.com) — historique OHLCV NASDAQ/NYSE (800 req/jour)
 - **Supabase** : projet gratuit sur [supabase.com](https://supabase.com) — voir `doc/SUPABASE.md`
 - **SMTP** : mot de passe d'application Gmail (Compte → Sécurité → Mots de passe d'applications)
 

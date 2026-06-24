@@ -647,6 +647,80 @@ debug  = os.getenv("FLASK_DEBUG", "0") == "1"
 
 ---
 
+## Finnhub — Quote & Fondamentaux
+
+Plan gratuit : 60 appels/min, fonctionne sur Render et tout cloud.  
+Utilisé en **fallback** si Yahoo Finance est bloqué sur l'IP du serveur.
+
+```python
+import finnhub
+import os
+
+client = finnhub.Client(api_key=os.getenv("FINNHUB_API_KEY", ""))
+
+# Prix temps réel (c=current, pc=previous close, h=high, l=low)
+q = client.quote("AAPL")
+# {"c": 193.5, "pc": 191.2, "h": 194.1, "l": 190.5, "t": 1718000000}
+prix      = q["c"]   # cours actuel
+prev      = q["pc"]  # clôture précédente
+var_pct   = (prix - prev) / prev * 100
+
+# Profil entreprise (nom, secteur, devise, bourse)
+p = client.company_profile2(symbol="AAPL")
+# {"name": "Apple Inc", "finnhubIndustry": "Technology", "currency": "USD", ...}
+
+# Fondamentaux (P/E, EPS, debt/equity, market cap…)
+data    = client.company_basic_financials("AAPL", "all")
+metrics = data["metric"]
+pe      = metrics.get("peBasicExclExtraTTM")   # P/E trailing
+eps     = metrics.get("epsBasicExclExtraTTM")
+mktcap  = metrics.get("marketCapitalization")   # en millions → × 1_000_000
+
+# Recherche de ticker par nom
+res   = client.symbol_lookup("apple")
+items = res["result"]   # [{"symbol": "AAPL", "description": "Apple Inc", "type": "Common Stock"}, ...]
+
+# Dirigeants
+execs = client.company_executives("AAPL")
+persons = execs["executive"]   # [{"name": "Tim Cook", "title": "CEO", ...}, ...]
+```
+
+---
+
+## Twelve Data — Historique OHLCV
+
+Plan gratuit : 800 appels/jour, 8/min — marchés NASDAQ/NYSE uniquement.  
+Utilisé en **fallback** pour l'historique des cours (yfinance bloqué sur cloud).
+
+```python
+from twelvedata import TDClient
+import os
+
+td = TDClient(apikey=os.getenv("TWELVE_DATA_API_KEY", ""))
+
+# Historique journalier (90 jours, ordre chronologique)
+ts = td.time_series(
+    symbol    = "AAPL",
+    interval  = "1day",
+    outputsize= 90,       # nombre de points
+    order     = "ASC",    # du plus ancien au plus récent
+).as_pandas()
+
+# ts est un DataFrame avec colonnes : open, high, low, close, volume
+# → renommer en Open, High, Low, Close, Volume pour compatibilité pandas
+
+ts = ts.rename(columns={
+    "open": "Open", "high": "High",
+    "low":  "Low",  "close": "Close", "volume": "Volume"
+})
+ts.index = pd.to_datetime(ts.index)
+ts["Close"] = pd.to_numeric(ts["Close"])
+
+# Autres intervalles disponibles : "1min", "5min", "1h", "1week", "1month"
+```
+
+---
+
 ## Supabase — Base de données
 
 ```python
