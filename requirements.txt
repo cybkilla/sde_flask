@@ -1,6 +1,10 @@
 # SDE Flask — dépendances
 # pip install -r requirements.txt
 
+# ── Base de données NoSQL ─────────────────────────────────
+pymongo>=4.6.0        # driver MongoDB
+dnspython>=2.6.0      # requis pour les URI mongodb+srv://
+
 # ── Données boursières ────────────────────────────────────
 yfinance>=1.0.0
 pandas==2.2.2

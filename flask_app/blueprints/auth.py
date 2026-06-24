@@ -1,12 +1,10 @@
-# flask_app/blueprints/auth.py — J3 : authentification Flask-Login
-# Remplace streamlit-authenticator + extra-streamlit-components.
-# Conserve users.yaml + bcrypt inchangés.
+# flask_app/blueprints/auth.py
+# Auth Flask-Login — stockage MongoDB (si MONGO_URI défini) ou YAML local (dev)
 
 import re
 from flask import Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import UserMixin, login_user, logout_user, login_required, current_user
 from pathlib import Path
-import yaml
 import bcrypt
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
@@ -25,27 +23,77 @@ class User(UserMixin):
         self.email    = email
 
 
-# ── Helpers YAML ──────────────────────────────────────────────────────────────
+# ── Backends de stockage ──────────────────────────────────────────────────────
 
-def _load_config() -> dict:
+def _mongo_col():
+    """Retourne la collection 'users' MongoDB, ou None si non dispo."""
+    try:
+        from db import get_db
+        db = get_db()
+        return db["users"] if db is not None else None
+    except Exception:
+        return None
+
+
+def _yaml_load() -> dict:
+    import yaml
+    if not USERS_FILE.exists():
+        return {"credentials": {"usernames": {}}}
     with open(USERS_FILE) as f:
-        return yaml.safe_load(f)
+        return yaml.safe_load(f) or {"credentials": {"usernames": {}}}
 
 
-def _save_config(config: dict) -> None:
+def _yaml_save(config: dict) -> None:
+    import yaml
+    USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(USERS_FILE, "w") as f:
         yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
 
 
-# ── Callback Flask-Login (appelé à chaque requête authentifiée) ───────────────
+def _find_user(username: str) -> dict | None:
+    """Cherche un utilisateur par username. Retourne un dict ou None."""
+    col = _mongo_col()
+    if col is not None:
+        return col.find_one({"username": username}, {"_id": 0})
+    # Fallback YAML
+    config = _yaml_load()
+    data   = config.get("credentials", {}).get("usernames", {}).get(username)
+    if data:
+        return {"username": username, "name": data.get("name", username),
+                "email": data.get("email", ""), "password": data["password"]}
+    return None
+
+
+def _create_user(username: str, name: str, email: str, hashed: str) -> None:
+    """Crée un utilisateur."""
+    col = _mongo_col()
+    if col is not None:
+        col.insert_one({"username": username, "name": name,
+                        "email": email, "password": hashed})
+        return
+    # Fallback YAML
+    config = _yaml_load()
+    config.setdefault("credentials", {}).setdefault("usernames", {})[username] = {
+        "name": name, "email": email, "password": hashed,
+    }
+    _yaml_save(config)
+
+
+def _username_exists(username: str) -> bool:
+    col = _mongo_col()
+    if col is not None:
+        return col.count_documents({"username": username}) > 0
+    config = _yaml_load()
+    return username in config.get("credentials", {}).get("usernames", {})
+
+
+# ── Callback Flask-Login ──────────────────────────────────────────────────────
 
 def load_user(username: str):
-    config = _load_config()
-    users  = config.get("credentials", {}).get("usernames", {})
-    if username not in users:
+    data = _find_user(username)
+    if not data:
         return None
-    u = users[username]
-    return User(username, u.get("name", username), u.get("email", ""))
+    return User(data["username"], data.get("name", username), data.get("email", ""))
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -64,25 +112,19 @@ def login():
         remember_me = bool(request.form.get("remember_me"))
         prefill["username"] = username
 
-        # ── Validation champs ─────────────────────────────────
         if not username:
             errors["username"] = "L'identifiant est requis."
         if not password:
             errors["password"] = "Le mot de passe est requis."
 
-        # ── Vérification credentials ──────────────────────────
         if not errors:
-            config = _load_config()
-            users  = config.get("credentials", {}).get("usernames", {})
-            data   = users.get(username)
-
+            data = _find_user(username)
             if data and bcrypt.checkpw(password.encode(), data["password"].encode()):
-                user = User(username, data.get("name", username), data.get("email", ""))
+                user = User(data["username"], data.get("name", username), data.get("email", ""))
                 login_user(user, remember=remember_me)
                 flash(f"Bienvenue, {user.name} !", "success")
                 next_page = request.args.get("next") or url_for("stock.home")
                 return redirect(next_page)
-
             errors["general"] = "Identifiant ou mot de passe incorrect."
 
     return render_template("auth/login.html", errors=errors, prefill=prefill)
@@ -105,7 +147,6 @@ def register():
 
         prefill = {"username": username, "name": name, "email": email}
 
-        # ── Validation ────────────────────────────────────────
         if not username:
             errors["username"] = "L'identifiant est requis."
         elif not _RE_USERNAME.match(username):
@@ -122,17 +163,12 @@ def register():
         if password and confirm != password:
             errors["confirm"] = "Les mots de passe ne correspondent pas."
 
-        # ── Unicité identifiant ───────────────────────────────
-        if "username" not in errors:
-            config = _load_config()
-            users  = config.setdefault("credentials", {}).setdefault("usernames", {})
-            if username in users:
-                errors["username"] = "Cet identifiant est déjà pris."
+        if "username" not in errors and _username_exists(username):
+            errors["username"] = "Cet identifiant est déjà pris."
 
         if not errors:
             hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-            users[username] = {"name": name, "email": email, "password": hashed}
-            _save_config(config)
+            _create_user(username, name, email, hashed)
             flash("Compte créé avec succès ! Connectez-vous.", "success")
             return redirect(url_for("auth.login"))
 
