@@ -53,10 +53,12 @@ def _find_user(username: str) -> dict | None:
     if _db_ok():
         try:
             from db import find_one
-            return find_one("users", {"username": username}, {"_id": 0})
+            result = find_one("users", {"username": username}, {"_id": 0})
+            if result:
+                return result
         except Exception:
             pass
-    # Fallback YAML
+    # Fallback YAML (aussi si Supabase connecté mais utilisateur absent en base)
     config = _yaml_load()
     data   = config.get("credentials", {}).get("usernames", {}).get(username)
     if data:

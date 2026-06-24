@@ -42,7 +42,8 @@ def get_watchlist(username: str) -> list:
         try:
             from db import find
             docs = find("watchlist", {"username": username}, {"_id": 0, "username": 0})
-            return docs
+            if docs is not None:   # liste vide [] est valide — on reste sur Supabase
+                return docs
         except Exception:
             pass
     return _jload(WL_FILE).get(username, [])
