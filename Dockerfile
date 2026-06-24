@@ -8,7 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libpng-dev \
         pkg-config \
         ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && sed -i 's/SECLEVEL=2/SECLEVEL=1/' /etc/ssl/openssl.cnf || true
 
 WORKDIR /app
 
