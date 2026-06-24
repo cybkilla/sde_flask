@@ -19,10 +19,10 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Données utilisateurs (montées via volumes Docker)
+# Données dynamiques (montées via volumes en docker-compose local)
 watchlist/watchlist.json
 watchlist/last_scores.json
-auth/users.yaml
+# auth/users.yaml est inclus dans l'image (seed utilisateurs sur Render sans volume)
 
 # IDE et OS
 .vscode/
