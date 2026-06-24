@@ -20,8 +20,10 @@ def get_db():
         return None
 
     try:
+        import certifi
         from pymongo import MongoClient
-        client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+        client = MongoClient(uri, serverSelectionTimeoutMS=5000,
+                             tlsCAFile=certifi.where())
         client.admin.command("ping")
         _db = client["sde"]
         print("[DB] Connecté à MongoDB Atlas ✓")
