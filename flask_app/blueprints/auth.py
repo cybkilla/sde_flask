@@ -25,14 +25,12 @@ class User(UserMixin):
 
 # ── Backends de stockage ──────────────────────────────────────────────────────
 
-def _mongo_col():
-    """Retourne la collection 'users' MongoDB, ou None si non dispo."""
+def _db_ok() -> bool:
     try:
-        from db import get_db
-        db = get_db()
-        return db["users"] if db is not None else None
+        from db import is_available
+        return is_available()
     except Exception:
-        return None
+        return False
 
 
 def _yaml_load() -> dict:
@@ -52,9 +50,12 @@ def _yaml_save(config: dict) -> None:
 
 def _find_user(username: str) -> dict | None:
     """Cherche un utilisateur par username. Retourne un dict ou None."""
-    col = _mongo_col()
-    if col is not None:
-        return col.find_one({"username": username}, {"_id": 0})
+    if _db_ok():
+        try:
+            from db import find_one
+            return find_one("users", {"username": username}, {"_id": 0})
+        except Exception:
+            pass
     # Fallback YAML
     config = _yaml_load()
     data   = config.get("credentials", {}).get("usernames", {}).get(username)
@@ -66,11 +67,14 @@ def _find_user(username: str) -> dict | None:
 
 def _create_user(username: str, name: str, email: str, hashed: str) -> None:
     """Crée un utilisateur."""
-    col = _mongo_col()
-    if col is not None:
-        col.insert_one({"username": username, "name": name,
-                        "email": email, "password": hashed})
-        return
+    if _db_ok():
+        try:
+            from db import insert_one
+            insert_one("users", {"username": username, "name": name,
+                                 "email": email, "password": hashed})
+            return
+        except Exception:
+            pass
     # Fallback YAML
     config = _yaml_load()
     config.setdefault("credentials", {}).setdefault("usernames", {})[username] = {
@@ -80,9 +84,12 @@ def _create_user(username: str, name: str, email: str, hashed: str) -> None:
 
 
 def _username_exists(username: str) -> bool:
-    col = _mongo_col()
-    if col is not None:
-        return col.count_documents({"username": username}) > 0
+    if _db_ok():
+        try:
+            from db import count_documents
+            return count_documents("users", {"username": username}) > 0
+        except Exception:
+            pass
     config = _yaml_load()
     return username in config.get("credentials", {}).get("usernames", {})
 

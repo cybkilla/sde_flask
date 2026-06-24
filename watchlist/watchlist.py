@@ -10,24 +10,14 @@ WL_FILE    = Path(__file__).parent / "watchlist.json"
 SCORE_FILE = Path(__file__).parent / "last_scores.json"
 
 
-# ── Backend MongoDB ───────────────────────────────────────────────────────────
+# ── Backend MongoDB (Data API) ────────────────────────────────────────────────
 
-def _col_wl():
+def _db_ok() -> bool:
     try:
-        from db import get_db
-        db = get_db()
-        return db["watchlist"] if db is not None else None
+        from db import is_available
+        return is_available()
     except Exception:
-        return None
-
-
-def _col_scores():
-    try:
-        from db import get_db
-        db = get_db()
-        return db["scores"] if db is not None else None
-    except Exception:
-        return None
+        return False
 
 
 # ── Backend JSON local (fallback dev) ─────────────────────────────────────────
@@ -48,28 +38,31 @@ def _jsave(path: Path, data: dict):
 # ── Watchlist ─────────────────────────────────────────────────────────────────
 
 def get_watchlist(username: str) -> list:
-    col = _col_wl()
-    if col is not None:
-        docs = col.find({"username": username}, {"_id": 0, "username": 0})
-        return list(docs)
+    if _db_ok():
+        try:
+            from db import find
+            docs = find("watchlist", {"username": username}, {"_id": 0, "username": 0})
+            return docs
+        except Exception:
+            pass
     return _jload(WL_FILE).get(username, [])
 
 
 def add_ticker(username: str, ticker: str, company: str = ""):
     ticker = ticker.upper()
-    col = _col_wl()
-    if col is not None:
-        col.update_one(
-            {"username": username, "ticker": ticker},
-            {"$setOnInsert": {
-                "username": username,
-                "ticker":   ticker,
-                "company":  company,
-                "added_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            }},
-            upsert=True,
-        )
-        return
+    if _db_ok():
+        try:
+            from db import find_one, insert_one
+            existing = find_one("watchlist", {"username": username, "ticker": ticker})
+            if not existing:
+                insert_one("watchlist", {
+                    "username": username, "ticker": ticker,
+                    "company":  company,
+                    "added_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                })
+            return
+        except Exception:
+            pass
     data  = _jload(WL_FILE)
     items = data.get(username, [])
     if ticker not in [i["ticker"] for i in items]:
@@ -81,10 +74,13 @@ def add_ticker(username: str, ticker: str, company: str = ""):
 
 def remove_ticker(username: str, ticker: str):
     ticker = ticker.upper()
-    col = _col_wl()
-    if col is not None:
-        col.delete_one({"username": username, "ticker": ticker})
-        return
+    if _db_ok():
+        try:
+            from db import delete_one
+            delete_one("watchlist", {"username": username, "ticker": ticker})
+            return
+        except Exception:
+            pass
     data = _jload(WL_FILE)
     data[username] = [i for i in data.get(username, []) if i["ticker"] != ticker]
     _jsave(WL_FILE, data)
@@ -101,10 +97,13 @@ def get_watchlist_df(username: str) -> pd.DataFrame:
 
 def get_last_score(ticker: str) -> dict:
     ticker = ticker.upper()
-    col = _col_scores()
-    if col is not None:
-        doc = col.find_one({"ticker": ticker}, {"_id": 0, "ticker": 0})
-        return doc or {}
+    if _db_ok():
+        try:
+            from db import find_one
+            doc = find_one("scores", {"ticker": ticker}, {"_id": 0, "ticker": 0})
+            return doc or {}
+        except Exception:
+            pass
     return _jload(SCORE_FILE).get(ticker, {})
 
 
@@ -115,10 +114,13 @@ def save_last_score(ticker: str, score: float, reco: str, prix: float = None):
     if prix is not None:
         entry["prix"] = round(prix, 4)
 
-    col = _col_scores()
-    if col is not None:
-        col.update_one({"ticker": ticker}, {"$set": entry}, upsert=True)
-        return
+    if _db_ok():
+        try:
+            from db import update_one
+            update_one("scores", {"ticker": ticker}, {"$set": entry}, upsert=True)
+            return
+        except Exception:
+            pass
     data = _jload(SCORE_FILE)
     data[ticker] = entry
     _jsave(SCORE_FILE, data)
