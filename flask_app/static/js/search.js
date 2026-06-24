@@ -26,6 +26,15 @@
     document.body.appendChild(div);
   }
 
+  // Nettoie l'overlay si le navigateur restaure la page depuis le bfcache
+  // (back-forward cache : la page est remise en état sans recharger le HTML)
+  window.addEventListener("pageshow", function (e) {
+    if (e.persisted) {
+      var overlay = document.getElementById("sde-page-loading");
+      if (overlay) overlay.remove();
+    }
+  });
+
   function escHtml(s) {
     return String(s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;")
