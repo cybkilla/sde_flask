@@ -14,14 +14,14 @@
   <div class="sde-home-search">
     <i class="bi bi-search sde-search-icon"></i>
     <input id="sde-hero-input" type="text"
-           placeholder="Apple, LVMH, Tesla, Airbus…"
+           placeholder="Apple, Tesla, NVIDIA, Amazon…"
            autocomplete="off" spellcheck="false">
     <ul id="sde-hero-drop" class="sde-search-dropdown d-none"></ul>
   </div>
 
   <!-- Chips — exemples rapides -->
   <div class="sde-home-chips">
-    {% for ex in ["Apple", "LVMH", "Tesla", "Airbus", "NVIDIA", "TotalEnergies", "Amazon"] %}
+    {% for ex in ["Apple", "Tesla", "NVIDIA", "Amazon", "Microsoft", "Meta"] %}
     <button class="sde-example-chip" onclick="heroFill('{{ ex }}')">{{ ex }}</button>
     {% endfor %}
   </div>
