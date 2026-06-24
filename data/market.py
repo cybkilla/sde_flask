@@ -1,6 +1,8 @@
 # data/market.py — collecte et enrichissement Pandas
+import time
 import yfinance as yf
 import pandas  as pd
+from yfinance.exceptions import YFRateLimitError
 from utils.indicators import add_indicators
 from config import HISTORY_DAYS
 
@@ -40,21 +42,35 @@ def _safe(val, default=None):
         return val
 
 # ── Fonction principale ───────────────────────────────
-def get_market_data(ticker: str) -> dict:
+def get_market_data(ticker: str, _attempt: int = 0) -> dict:
     """
     Collecte toutes les données marché via yfinance.
     Retourne un dict avec :
       - 'history' : DataFrame enrichi (OHLCV + indicateurs)
       - clés scalaires pour le scoring et l'affichage
+    Retry automatique (2×) si Yahoo Finance renvoie un 429.
     """
     ticker = ticker.upper().strip()
-    stock  = yf.Ticker(ticker)
+    try:
+        stock = yf.Ticker(ticker)
+    except YFRateLimitError:
+        if _attempt < 2:
+            time.sleep(5 * (_attempt + 1))
+            return get_market_data(ticker, _attempt + 1)
+        raise
 
     # ── 1. Données brutes → DataFrame ─────────────────
     # Fallback sur des périodes plus courtes pour les tickers récents
     hist: pd.DataFrame = pd.DataFrame()
     for period in [HISTORY_DAYS, "30d", "5d", "1d"]:
-        hist = stock.history(period=period)
+        try:
+            hist = stock.history(period=period)
+        except YFRateLimitError:
+            if _attempt < 2:
+                print(f"[Market] Rate limit yfinance — attente {5*(_attempt+1)}s…")
+                time.sleep(5 * (_attempt + 1))
+                return get_market_data(ticker, _attempt + 1)
+            raise
         if not hist.empty:
             break
 

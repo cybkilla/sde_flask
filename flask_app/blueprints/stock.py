@@ -53,7 +53,15 @@ def analyze(ticker: str):
         from pipeline import run
         res = run(ticker, use_cache=not nocache)
     except Exception as exc:
-        flash(f"Erreur lors de l'analyse de {ticker} : {exc}", "danger")
+        from yfinance.exceptions import YFRateLimitError
+        if isinstance(exc, YFRateLimitError):
+            flash(
+                f"Yahoo Finance limite les requêtes pour {ticker}. "
+                "Patientez 1–2 minutes puis réessayez.",
+                "warning",
+            )
+        else:
+            flash(f"Erreur lors de l'analyse de {ticker} : {exc}", "danger")
         return redirect(url_for("stock.home"))
 
     market = res["market"]
