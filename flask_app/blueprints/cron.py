@@ -71,24 +71,21 @@ def test_email():
     if not to_email:
         return jsonify({"error": "Aucune adresse email trouvée. Passez ?to=votre@email.com"}), 400
 
+    import traceback
     try:
-        from alerts.mailer import send_alert
-        send_alert(
-            to_email      = to_email,
-            username      = "test_user",
-            ticker        = "AAPL",
-            company       = "Apple Inc.",
-            old_reco      = "NEUTRE",
-            new_reco      = "ACHETER",
-            score         = 72.5,
-            prix          = 213.49,
-            variation     = 6.3,
-            reco_changed  = True,
-            var_triggered = True,
-            context       = "Test de l'envoi email via Resend. Si vous recevez cet email, la configuration fonctionne correctement.",
-        )
-        print(f"[Cron] Email de test envoyé à {to_email}", flush=True)
-        return jsonify({"ok": True, "message": f"Email de test envoyé à {to_email}"}), 200
+        import resend as _resend
+        from config import RESEND_API_KEY, RESEND_FROM
+
+        if not RESEND_API_KEY:
+            return jsonify({"ok": False, "error": "RESEND_API_KEY absente dans les variables Render"}), 500
+
+        _resend.api_key = RESEND_API_KEY
+        result = _resend.Emails.send({
+            "from":    RESEND_FROM,
+            "to":      [to_email],
+            "subject": "[SDE] Test email Resend",
+            "html":    "<p>Test Resend OK — si vous recevez cet email, la configuration fonctionne.</p>",
+        })
+        return jsonify({"ok": True, "to": to_email, "resend_from": RESEND_FROM, "resend_response": str(result)}), 200
     except Exception as e:
-        import traceback
         return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
