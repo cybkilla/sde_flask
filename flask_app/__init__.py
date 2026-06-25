@@ -39,12 +39,20 @@ def create_app() -> Flask:
     from flask_app.blueprints.stock     import bp as stock_bp
     from flask_app.blueprints.cron      import bp as cron_bp
     from flask_app.blueprints.portfolio import bp as portfolio_bp
+    from flask_app.blueprints.admin     import bp as admin_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(stock_bp)
     app.register_blueprint(portfolio_bp)
+    app.register_blueprint(admin_bp)
     csrf.exempt(cron_bp)          # pas de token CSRF — le blueprint a son propre secret
     app.register_blueprint(cron_bp)
+
+    _admin_emails = set(e.strip() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip())
+
+    @app.context_processor
+    def inject_admin():
+        return {"admin_emails": _admin_emails}
 
     # Handlers d'erreurs personnalisés
     from flask import render_template as _rt

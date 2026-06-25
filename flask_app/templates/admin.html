@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}SDE — Admin · Pertinence des conseils{% endblock %}
+
+{% block content %}
+<div class="sde-ticker-header mb-3">
+  <div style="flex:1">
+    <div class="d-flex align-items-center gap-2">
+      <span class="sde-ticker-name">
+        <i class="bi bi-bar-chart-line me-1"></i>Dashboard Admin
+      </span>
+    </div>
+    <div class="sde-ticker-meta mt-1">Pertinence des conseils · Évaluation automatique J+1</div>
+  </div>
+  <button class="sde-nav-btn" onclick="loadStats(true)" title="Actualiser">
+    <i class="bi bi-arrow-clockwise me-1"></i>
+    <span class="hide-xs">Actualiser</span>
+  </button>
+</div>
+
+<!-- Résumé global -->
+<div class="sde-card mb-3" id="sde-global-wrap">
+  <div class="text-center py-4">
+    <div class="spinner-border" style="color:var(--sde-teal);width:2rem;height:2rem"></div>
+    <p class="text-muted mt-3" style="font-size:.85rem">Évaluation en cours…</p>
+  </div>
+</div>
+
+<!-- Breakdown par action -->
+<div class="sde-card mb-3 d-none" id="sde-action-wrap">
+  <h6 class="fw-semibold mb-3" style="font-size:.85rem;color:var(--sde-navy)">
+    <i class="bi bi-grid-3x3-gap me-1"></i>Par type de conseil
+  </h6>
+  <div id="sde-action-body"></div>
+</div>
+
+<!-- Tableau par ticker -->
+<div class="sde-card d-none" id="sde-ticker-wrap">
+  <h6 class="fw-semibold mb-3" style="font-size:.85rem;color:var(--sde-navy)">
+    <i class="bi bi-list-ul me-1"></i>Par ticker
+  </h6>
+  <div id="sde-ticker-body"></div>
+</div>
+
+<p class="sde-disclaimer mt-2">
+  Un conseil est évalué "bon" si la variation de prix J+1 est dans le sens prévu
+  (>0% pour Acheter/Renforcer, &lt;0% pour Alléger/Vendre, |Δ|&lt;3% pour Tenir/Surveiller).
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const ACTION_COLOR = {
+    ACHETER:"#1D9E75", RENFORCER:"#15803d",
+    TENIR:"#BA7517", SURVEILLER:"#5a6a7a",
+    "ALLÉGER":"#D85A30", VENDRE:"#991b1b",
+  };
+  const ACTION_ICON = {
+    ACHETER:"↑", RENFORCER:"↗", TENIR:"◆",
+    SURVEILLER:"◎", "ALLÉGER":"↘", VENDRE:"↓",
+  };
+  const ACTION_ORDER = ["ACHETER","RENFORCER","TENIR","SURVEILLER","ALLÉGER","VENDRE"];
+
+  function gauge(pct, color) {
+    if (pct === null || pct === undefined) return `<span style="color:var(--sde-muted);font-size:.8rem">—</span>`;
+    const bg = pct >= 60 ? "#1D9E75" : pct >= 45 ? "#BA7517" : "#D85A30";
+    return `
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="flex:1;height:6px;background:#E2E8F0;border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${Math.min(pct,100)}%;background:${bg};border-radius:3px"></div>
+        </div>
+        <span style="font-size:.82rem;font-weight:700;color:${bg};min-width:38px;text-align:right">${pct.toFixed(1)}%</span>
+      </div>`;
+  }
+
+  function renderGlobal(stats, evalResult) {
+    const wrap = document.getElementById("sde-global-wrap");
+    if (!stats || stats.total === 0) {
+      wrap.innerHTML = `
+        <div class="text-center py-4">
+          <i class="bi bi-hourglass-split" style="font-size:2rem;color:var(--sde-muted)"></i>
+          <p class="mt-2 text-muted small">
+            Aucun conseil évalué pour l'instant.<br>
+            Les évaluations apparaissent dès que des conseils ont été générés hier ou avant.
+          </p>
+        </div>`;
+      return;
+    }
+
+    const taux  = stats.taux_pct;
+    const color = taux >= 60 ? "#1D9E75" : taux >= 45 ? "#BA7517" : "#D85A30";
+    const newlyEval = evalResult ? evalResult.evaluated : 0;
+
+    wrap.innerHTML = `
+      <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+        <div style="text-align:center;flex-shrink:0">
+          <div style="font-size:2.8rem;font-weight:800;color:${color};line-height:1">
+            ${taux !== null ? taux.toFixed(1) + "%" : "—"}
+          </div>
+          <div style="font-size:.75rem;color:var(--sde-muted);margin-top:2px">taux de pertinence global</div>
+        </div>
+        <div style="flex:1;min-width:180px">
+          <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:.85rem;margin-bottom:10px">
+            <span><strong style="color:#1D9E75">${stats.bons}</strong> <span style="color:var(--sde-muted)">bons</span></span>
+            <span><strong style="color:#D85A30">${stats.mauvais}</strong> <span style="color:var(--sde-muted)">mauvais</span></span>
+            <span><strong style="color:var(--sde-navy)">${stats.total}</strong> <span style="color:var(--sde-muted)">évalués</span></span>
+            ${newlyEval > 0 ? `<span style="color:var(--sde-teal);font-size:.78rem"><i class="bi bi-check2-circle"></i> ${newlyEval} nouveaux</span>` : ""}
+          </div>
+          ${gauge(taux, color)}
+        </div>
+      </div>`;
+  }
+
+  function renderByAction(byAction) {
+    const wrap = document.getElementById("sde-action-wrap");
+    const body = document.getElementById("sde-action-body");
+    if (!byAction || Object.keys(byAction).length === 0) return;
+
+    const sorted = ACTION_ORDER.filter(a => byAction[a]);
+    body.innerHTML = sorted.map(action => {
+      const s = byAction[action];
+      const color = ACTION_COLOR[action] || "#5a6a7a";
+      const icon  = ACTION_ICON[action]  || "◆";
+      return `
+        <div style="display:flex;align-items:center;gap:12px;padding:8px 0;
+                    border-bottom:1px solid var(--sde-border)">
+          <span style="background:${color};color:#fff;padding:3px 10px;border-radius:20px;
+                       font-size:.78rem;font-weight:700;min-width:110px;text-align:center">
+            ${icon} ${action}
+          </span>
+          <span style="font-size:.78rem;color:var(--sde-muted);min-width:70px">
+            ${s.bons}/${s.total} bons
+          </span>
+          <div style="flex:1">${gauge(s.taux_pct)}</div>
+        </div>`;
+    }).join("");
+    wrap.classList.remove("d-none");
+  }
+
+  function renderByTicker(tickers) {
+    const wrap = document.getElementById("sde-ticker-wrap");
+    const body = document.getElementById("sde-ticker-body");
+    if (!tickers || tickers.length === 0) return;
+
+    body.innerHTML = `
+      <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+        <thead>
+          <tr style="border-bottom:2px solid var(--sde-border);color:var(--sde-muted)">
+            <th style="padding:6px 8px;text-align:left">Ticker</th>
+            <th style="padding:6px 8px;text-align:center">Conseils</th>
+            <th style="padding:6px 8px;text-align:left;min-width:160px">Pertinence</th>
+            <th style="padding:6px 8px;text-align:left">Dernier conseil</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tickers.map(t => {
+            const color = ACTION_COLOR[t.last_action] || "#5a6a7a";
+            const icon  = ACTION_ICON[t.last_action]  || "";
+            const dateStr = t.last_date
+              ? new Date(t.last_date + "T00:00:00").toLocaleDateString("fr-FR", {day:"numeric",month:"short"})
+              : "—";
+            return `
+              <tr style="border-bottom:1px solid var(--sde-border)">
+                <td style="padding:8px 8px;font-weight:700">
+                  <a href="/analyze/${t.ticker}" style="color:var(--sde-navy)">${t.ticker}</a>
+                </td>
+                <td style="padding:8px 8px;text-align:center;color:var(--sde-muted)">${t.total}</td>
+                <td style="padding:8px 8px">${gauge(t.taux_pct)}</td>
+                <td style="padding:8px 8px">
+                  ${t.last_action
+                    ? `<span style="background:${color}18;color:${color};padding:2px 8px;border-radius:12px;font-weight:600;font-size:.75rem">${icon} ${t.last_action}</span>`
+                    : ""}
+                  <span style="color:var(--sde-muted);font-size:.75rem;margin-left:4px">${dateStr}</span>
+                </td>
+              </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+      </div>`;
+    wrap.classList.remove("d-none");
+  }
+
+  function loadStats(forceRefresh) {
+    const wrap = document.getElementById("sde-global-wrap");
+    if (forceRefresh) {
+      wrap.innerHTML = `<div class="text-center py-4">
+        <div class="spinner-border" style="color:var(--sde-teal);width:2rem;height:2rem"></div>
+        <p class="text-muted mt-3" style="font-size:.85rem">Évaluation en cours…</p>
+      </div>`;
+      document.getElementById("sde-action-wrap").classList.add("d-none");
+      document.getElementById("sde-ticker-wrap").classList.add("d-none");
+    }
+
+    fetch("/admin/stats?_=" + Date.now())
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) {
+          wrap.innerHTML = `<p class="text-danger small">${data.error || "Erreur"}</p>`;
+          return;
+        }
+        renderGlobal(data.stats, data.eval);
+        renderByAction(data.stats.by_action);
+        renderByTicker(data.stats.by_ticker);
+      })
+      .catch(() => {
+        wrap.innerHTML = `<p class="text-danger small">Erreur réseau.</p>`;
+      });
+  }
+
+  window.loadStats = loadStats;
+  document.addEventListener("DOMContentLoaded", () => loadStats(false));
+})();
+</script>
+{% endblock %}
