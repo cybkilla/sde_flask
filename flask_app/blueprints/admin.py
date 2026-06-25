@@ -12,7 +12,7 @@ _ADMIN_EMAILS = [e.strip() for e in os.getenv("ADMIN_EMAILS", "").split(",") if 
 def _require_admin():
     if not current_user.is_authenticated:
         abort(403)
-    if _ADMIN_EMAILS and current_user.id not in _ADMIN_EMAILS:
+    if _ADMIN_EMAILS and current_user.email not in _ADMIN_EMAILS:
         abort(403)
 
 
