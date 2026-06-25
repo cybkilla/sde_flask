@@ -107,8 +107,21 @@ def _get_yfinance(ticker: str) -> dict:
 
     _ind = _ind_fn(last, live_price)
 
+    # Logo via Clearbit (domaine extrait du site officiel yfinance)
+    logo_url = ""
+    try:
+        from urllib.parse import urlparse
+        website = info.get("website", "") or ""
+        if website:
+            domain = urlparse(website).netloc.lstrip("www.")
+            if domain:
+                logo_url = f"https://logo.clearbit.com/{domain}"
+    except Exception:
+        pass
+
     return {
         "ticker":         ticker,
+        "logo_url":       logo_url,
         "company_name":   info.get("longName", ticker),
         "sector":         info.get("sector",   "N/A"),
         "industry":       info.get("industry", "N/A"),
@@ -269,6 +282,7 @@ def _get_finnhub_fallback(ticker: str) -> dict:
 
     return {
         "ticker":         ticker,
+        "logo_url":       profile.get("logo", "") or "",
         "company_name":   profile.get("name") or ticker,
         "sector":         profile.get("finnhubIndustry") or "N/A",
         "industry":       profile.get("finnhubIndustry") or "N/A",

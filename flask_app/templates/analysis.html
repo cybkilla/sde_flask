@@ -21,6 +21,12 @@
   <!-- Infos société -->
   <div style="flex:1;min-width:0">
     <div class="d-flex align-items-center flex-wrap gap-2">
+      {% if market.logo_url %}
+      <img src="{{ market.logo_url }}" alt="{{ ticker }}"
+           style="width:32px;height:32px;border-radius:6px;object-fit:contain;
+                  border:1px solid var(--sde-border);background:#fff;flex-shrink:0"
+           onerror="this.style.display='none'">
+      {% endif %}
       <span class="sde-ticker-name">{{ res.company_name }}</span>
       <span class="sde-ticker-sym" style="color:{{ th.main }}">{{ ticker }}</span>
       {% if market.sector and market.sector not in ['N/A','n/a',''] %}

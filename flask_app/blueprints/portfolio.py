@@ -109,12 +109,17 @@ def get_overview():
         # Conseils du jour en une seule requête
         advices = get_all_today_advice(current_user.id, tickers)
 
+        from cache import get_cached
+
         result = []
         for ticker in tickers:
             try:
                 live         = get_live_price(ticker)
                 price        = live.get("price") or 0
                 var_1d       = live.get("var_1d") or 0
+                # Logo depuis le cache mémoire (dispo si l'utilisateur a récemment analysé ce ticker)
+                cached_snap  = get_cached(ticker)
+                logo_url     = (cached_snap or {}).get("market", {}).get("logo_url", "")
                 ticker_lots  = [l for l in all_lots if l["ticker"] == ticker]
                 if not ticker_lots:
                     continue
@@ -131,12 +136,13 @@ def get_overview():
                     (l["company"] for l in ticker_lots if l.get("company")), ticker
                 )
                 result.append({
-                    "ticker":  ticker,
-                    "company": company,
+                    "ticker":   ticker,
+                    "company":  company,
                     "currency": currency,
-                    "sym":     _SYM.get(currency, "$"),
-                    "price":   price,
-                    "var_1d":  var_1d,
+                    "sym":      _SYM.get(currency, "$"),
+                    "logo_url": logo_url,
+                    "price":    price,
+                    "var_1d":   var_1d,
                     "summary": {
                         "lots":             ticker_lots,
                         "total_shares":     round(total_shares,  4),
