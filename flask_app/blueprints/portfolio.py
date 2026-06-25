@@ -157,7 +157,9 @@ def get_overview():
             except Exception as e:
                 print(f"[Overview] {ticker} erreur : {e}", flush=True)
 
-        return jsonify({"ok": True, "positions": result, "labels": ACTION_LABELS})
+        resp = jsonify({"ok": True, "positions": result, "labels": ACTION_LABELS})
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500

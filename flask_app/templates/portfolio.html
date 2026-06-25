@@ -253,7 +253,7 @@
       <div class="spinner-border" style="color:var(--sde-teal);width:2rem;height:2rem"></div>
       <p class="text-muted mt-3" style="font-size:.85rem">Chargement des positions…</p>
     </div>`;
-    fetch("/portfolio/overview")
+    fetch("/portfolio/overview?_=" + Date.now())
       .then(r => r.json())
       .then(data => {
         if (!data.ok) {
