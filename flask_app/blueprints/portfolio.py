@@ -36,6 +36,7 @@ def add_position():
     quantite   = data.get("quantite")
     currency   = data.get("currency", "USD").strip()
     notes      = data.get("notes", "").strip()
+    type_op    = data.get("type", "achat").strip()
 
     if not ticker or not date_achat or not prix_achat or not quantite:
         return jsonify({"ok": False, "error": "Champs obligatoires manquants"}), 400
@@ -50,7 +51,7 @@ def add_position():
     try:
         from portfolio.positions import add_position as _add
         row = _add(current_user.id, ticker, company,
-                   date_achat, prix_achat, quantite, currency, notes)
+                   date_achat, prix_achat, quantite, currency, notes, type_op)
 
         # Invalide le conseil du jour pour qu'il soit régénéré avec la position à jour
         try:
@@ -125,12 +126,19 @@ def get_overview():
                     continue
 
                 # Calcul summary directement depuis les lots déjà chargés (0 appel DB extra)
-                total_shares  = sum(float(l["quantite"]) for l in ticker_lots)
-                total_investi = sum(float(l["quantite"]) * float(l["prix_achat"]) for l in ticker_lots)
-                cout_moyen    = total_investi / total_shares if total_shares else 0
-                valeur        = total_shares * price
-                pnl_euros     = valeur - total_investi
-                pnl_pct       = (pnl_euros / total_investi * 100) if total_investi else 0
+                buy_lots      = [l for l in ticker_lots if l.get("type", "achat") == "achat"]
+                sell_lots     = [l for l in ticker_lots if l.get("type") == "vente"]
+                if not buy_lots:
+                    continue
+                total_buy_shares  = sum(float(l["quantite"]) for l in buy_lots)
+                total_sell_shares = sum(float(l["quantite"]) for l in sell_lots)
+                total_shares      = total_buy_shares - total_sell_shares
+                total_buy_amount  = sum(float(l["quantite"]) * float(l["prix_achat"]) for l in buy_lots)
+                cout_moyen        = total_buy_amount / total_buy_shares
+                valeur            = total_shares * price
+                total_investi     = total_shares * cout_moyen
+                pnl_euros         = total_shares * (price - cout_moyen)
+                pnl_pct           = (pnl_euros / total_investi * 100) if total_investi > 0 else 0
                 currency      = ticker_lots[0].get("currency", "USD")
                 company       = next(
                     (l["company"] for l in ticker_lots if l.get("company")), ticker
@@ -151,6 +159,7 @@ def get_overview():
                         "valeur_actuelle":  round(valeur,        2),
                         "pnl_euros":        round(pnl_euros,     2),
                         "pnl_pct":          round(pnl_pct,       2),
+                        "position_fermee":  total_shares <= 0,
                     },
                     "advice":  advices.get(ticker),
                 })

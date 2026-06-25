@@ -37,14 +37,26 @@
     <div class="modal-content" style="border-radius:12px">
       <div class="modal-header py-2 px-3" style="border-bottom:1px solid var(--sde-border)">
         <h6 class="modal-title fw-semibold" style="font-size:.85rem">
-          <i class="bi bi-plus-circle me-1 text-success"></i>
-          Enregistrer un achat — <span id="sde-modal-ticker-label"></span>
+          <i class="bi bi-arrow-left-right me-1"></i>
+          Transaction — <span id="sde-modal-ticker-label"></span>
         </h6>
         <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body px-3 py-3">
+        <div class="d-flex gap-2 mb-3">
+          <button type="button" id="sde-type-achat" onclick="setPosType('achat')"
+                  class="btn btn-sm flex-fill"
+                  style="background:#1D9E75;color:#fff;border:none;border-radius:7px;font-weight:600">
+            ↑ Achat
+          </button>
+          <button type="button" id="sde-type-vente" onclick="setPosType('vente')"
+                  class="btn btn-sm flex-fill"
+                  style="background:#F1F5F9;color:var(--sde-muted);border:1px solid var(--sde-border);border-radius:7px;font-weight:600">
+            ↓ Vente
+          </button>
+        </div>
         <div class="mb-2">
-          <label class="form-label small fw-semibold">Date d'achat</label>
+          <label class="form-label small fw-semibold" id="sde-pos-date-label">Date d'achat</label>
           <input type="date" id="sde-pos-date" class="form-control form-control-sm">
         </div>
         <div class="mb-2">
@@ -53,17 +65,19 @@
                  placeholder="ex : 100" min="0.0001" step="any">
         </div>
         <div class="mb-3">
-          <label class="form-label small fw-semibold">Prix d'achat</label>
+          <label class="form-label small fw-semibold" id="sde-pos-price-label">Prix d'achat</label>
           <input type="number" id="sde-pos-price" class="form-control form-control-sm"
                  placeholder="ex : 1.85" min="0.0001" step="any">
         </div>
         <div class="mb-3">
           <label class="form-label small fw-semibold">Notes (optionnel)</label>
           <input type="text" id="sde-pos-notes" class="form-control form-control-sm"
-                 placeholder="ex : DCA Mars 2025">
+                 placeholder="ex : Allégement partiel">
         </div>
         <div id="sde-pos-error" class="text-danger small mb-2 d-none"></div>
-        <button class="btn btn-sde-teal btn-sm w-100" onclick="submitAdd()">
+        <button class="btn btn-sm w-100 fw-semibold" id="sde-pos-submit-btn"
+                onclick="submitAdd()"
+                style="background:#1D9E75;color:#fff;border:none;border-radius:7px">
           <i class="bi bi-check-circle me-1"></i>Enregistrer
         </button>
       </div>
@@ -89,7 +103,33 @@
   };
 
   // Ticker actif pour le modal
-  let _modalTicker = "", _modalCompany = "", _modalCurrency = "USD";
+  let _modalTicker = "", _modalCompany = "", _modalCurrency = "USD", _modalPosType = "achat";
+
+  function setPosType(type) {
+    _modalPosType = type;
+    const isVente = type === "vente";
+    const btnA = document.getElementById("sde-type-achat");
+    const btnV = document.getElementById("sde-type-vente");
+    if (btnA) {
+      btnA.style.background  = isVente ? "#F1F5F9" : "#1D9E75";
+      btnA.style.color       = isVente ? "var(--sde-muted)" : "#fff";
+      btnA.style.border      = isVente ? "1px solid var(--sde-border)" : "none";
+    }
+    if (btnV) {
+      btnV.style.background  = isVente ? "#D85A30" : "#F1F5F9";
+      btnV.style.color       = isVente ? "#fff" : "var(--sde-muted)";
+      btnV.style.border      = isVente ? "none" : "1px solid var(--sde-border)";
+    }
+    const dateLabel  = document.getElementById("sde-pos-date-label");
+    const priceLabel = document.getElementById("sde-pos-price-label");
+    const submitBtn  = document.getElementById("sde-pos-submit-btn");
+    if (dateLabel)  dateLabel.textContent  = isVente ? "Date de vente"  : "Date d'achat";
+    if (priceLabel) priceLabel.textContent = isVente ? "Prix de vente"  : "Prix d'achat";
+    if (submitBtn) {
+      submitBtn.style.background = isVente ? "#D85A30" : "#1D9E75";
+      submitBtn.innerHTML = `<i class="bi bi-check-circle me-1"></i>${isVente ? "Enregistrer la vente" : "Enregistrer"}`;
+    }
+  }
 
   function _pct(v) {
     const n = parseFloat(v);
@@ -139,6 +179,12 @@
   /* ── Bloc lots (même style que analysis.html) ── */
   function lotsHtml(ticker, sym, lots, company, currency) {
     const rows = lots.map(l => {
+      const isVente  = l.type === "vente";
+      const dotColor = isVente ? "#D85A30" : "var(--sde-muted)";
+      const typeTag  = isVente
+        ? `<span style="font-size:.68rem;font-weight:600;color:#D85A30;
+                        background:#FAECE7;border-radius:4px;padding:1px 5px;margin-left:4px">↓ Vente</span>`
+        : "";
       const d      = new Date(l.date_achat + "T00:00:00");
       const dateFr = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
       return `
@@ -146,9 +192,10 @@
                     padding:7px 0;border-bottom:1px solid var(--sde-border)">
           <div style="display:flex;align-items:center;gap:10px">
             <span style="width:7px;height:7px;border-radius:50%;
-                         background:var(--sde-muted);flex-shrink:0"></span>
+                         background:${dotColor};flex-shrink:0"></span>
             <div>
               <span style="font-size:.78rem;color:var(--sde-muted)">${dateFr}</span>
+              ${typeTag}
               <span style="font-size:.82rem;margin-left:8px">
                 <strong>${parseFloat(l.quantite).toLocaleString("en-US", {maximumFractionDigits:4})} actions</strong>
                 @ ${sym}${parseFloat(l.prix_achat).toFixed(4)}
@@ -157,11 +204,18 @@
           </div>
           <button onclick="deletePos(${l.id}, '${ticker}')"
                   style="background:none;border:none;color:#D85A30;padding:2px 6px;
-                         cursor:pointer;opacity:.65;line-height:1" title="Supprimer ce lot">
+                         cursor:pointer;opacity:.65;line-height:1" title="Supprimer cette ligne">
             <i class="bi bi-trash3" style="font-size:.72rem"></i>
           </button>
         </div>`;
     }).join("");
+
+    const nbAchats = lots.filter(l => l.type !== "vente").length;
+    const nbVentes = lots.filter(l => l.type === "vente").length;
+    const summary  = [
+      nbAchats ? `${nbAchats} achat${nbAchats > 1 ? "s" : ""}` : "",
+      nbVentes ? `${nbVentes} vente${nbVentes > 1 ? "s" : ""}` : "",
+    ].filter(Boolean).join(" · ");
 
     const companyEsc = company.replace(/'/g, "\\'");
     return `<details id="lots-wrap-${ticker}"
@@ -169,7 +223,7 @@
       <summary style="cursor:pointer;font-size:.78rem;color:var(--sde-muted);
                       list-style:none;display:flex;align-items:center;gap:6px;user-select:none">
         <i class="bi bi-list-ul"></i>
-        ${lots.length} lot${lots.length > 1 ? "s" : ""} d'achat
+        ${summary || "Transactions"}
         <button onclick="event.preventDefault();openAddModal('${ticker}','${companyEsc}','${currency}')"
                 style="margin-left:auto;background:none;border:1px solid var(--sde-border);
                        border-radius:6px;padding:2px 10px;font-size:.72rem;
@@ -326,6 +380,8 @@
     _modalTicker   = ticker;
     _modalCompany  = company;
     _modalCurrency = currency || "USD";
+    _modalPosType  = "achat";
+    setPosType("achat");
     document.getElementById("sde-modal-ticker-label").textContent = ticker;
     document.getElementById("sde-pos-date").value  = new Date().toISOString().slice(0, 10);
     document.getElementById("sde-pos-qty").value   = "";
@@ -345,6 +401,7 @@
       prix_achat: parseFloat(document.getElementById("sde-pos-price").value),
       currency:   _modalCurrency,
       notes:      document.getElementById("sde-pos-notes").value,
+      type:       _modalPosType,
     };
     if (!body.date_achat || isNaN(body.quantite) || isNaN(body.prix_achat)) {
       errEl.textContent = "Date, quantité et prix sont obligatoires.";
@@ -378,6 +435,7 @@
   window.loadOverview  = loadOverview;
   window.refreshAdvice = refreshAdvice;
   window.openAddModal  = openAddModal;
+  window.setPosType    = setPosType;
   window.submitAdd     = submitAdd;
   window.deletePos     = deletePos;
 
