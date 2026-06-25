@@ -607,7 +607,7 @@
       <i class="bi bi-briefcase me-1"></i>Ma position · {{ ticker }}
     </div>
     <div class="d-flex gap-2">
-      <button class="sde-nav-btn" onclick="sdePortfolio.openAddModal('achat', LIVE_PRICE)"
+      <button class="sde-nav-btn" onclick="sdePortfolio.openAddModal('achat', {{ market.price | tojson }})"
               title="Enregistrer un achat">
         <i class="bi bi-plus-circle me-1"></i><span class="hide-xs">Ajouter</span>
       </button>
@@ -701,7 +701,7 @@
 <script>
 /* ── Portfolio & Conseil ────────────────────────────────────────────────── */
 {% if current_user.is_authenticated %}
-const sdePortfolio = (function () {
+window.sdePortfolio = (function () {
   const TICKER     = "{{ ticker }}";
   const COMPANY    = "{{ res.company_name | e }}";
   const SYM        = "{{ sym }}";
@@ -858,7 +858,7 @@ const sdePortfolio = (function () {
         const today_cd = new Date().toISOString().slice(0, 10);
         const badge = modalType
           ? `<span id="sde-advice-badge" style="${badgeStyle};cursor:pointer"
-                   onclick="sdePortfolio.openAddModal('${modalType}', LIVE_PRICE, ${suggestedQty}, '${today_cd}')"
+                   onclick="sdePortfolio.openAddModal('${modalType}', ${LIVE_PRICE}, ${suggestedQty}, '${today_cd}')"
                    title="Ouvrir la saisie de ${modalType === 'achat' ? 'l\'achat' : 'la vente'}">
                ${badgeContent} <i class="bi bi-pencil-square" style="font-size:.7rem;opacity:.8"></i>
              </span>`
