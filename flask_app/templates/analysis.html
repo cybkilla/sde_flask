@@ -591,14 +591,20 @@
 <!-- ══ PORTFOLIO & CONSEIL ══════════════════════════════════════════════════ -->
 <div class="sde-card mt-3" id="sde-portfolio-section">
 
-  <div class="d-flex align-items-center justify-content-between mb-3">
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
     <div class="sde-section-title mb-0">
       <i class="bi bi-briefcase me-1"></i>Ma position · {{ ticker }}
     </div>
-    <button class="sde-nav-btn" onclick="sdePortfolio.openAddModal()"
-            title="Enregistrer un achat">
-      <i class="bi bi-plus-circle me-1"></i><span class="hide-xs">Ajouter un achat</span>
-    </button>
+    <div class="d-flex gap-2">
+      <button class="sde-nav-btn" onclick="sdePortfolio.refreshAdvice()"
+              title="Régénérer le conseil du jour" id="sde-advice-refresh-btn">
+        <i class="bi bi-arrow-clockwise me-1"></i><span class="hide-xs">Conseil</span>
+      </button>
+      <button class="sde-nav-btn" onclick="sdePortfolio.openAddModal()"
+              title="Enregistrer un achat">
+        <i class="bi bi-plus-circle me-1"></i><span class="hide-xs">Ajouter un achat</span>
+      </button>
+    </div>
   </div>
 
   <!-- Positions P&L -->
@@ -868,6 +874,7 @@ const sdePortfolio = (function () {
       if (!data.ok) { errEl.textContent = data.error; errEl.classList.remove("d-none"); return; }
       bootstrap.Modal.getInstance(document.getElementById("sde-position-modal")).hide();
       loadPositions();
+      loadAdvice();   // régénère le conseil avec la nouvelle position
     })
     .catch(() => { errEl.textContent = "Erreur réseau."; errEl.classList.remove("d-none"); });
   }
@@ -881,13 +888,26 @@ const sdePortfolio = (function () {
     .then(r => r.json()).then(data => { if (data.ok) loadPositions(); });
   }
 
+  /* ── Forcer régénération du conseil ── */
+  function refreshAdvice() {
+    const wrap = document.getElementById("sde-advice-wrap");
+    wrap.innerHTML = `<p class="text-muted small text-center py-1">
+      <span class="spinner-border spinner-border-sm me-1"></span>Régénération…</p>`;
+    fetch(`/portfolio/advice/${TICKER}/reset`, {
+      method: "POST",
+      headers: {"X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content},
+    })
+    .then(() => loadAdvice())
+    .catch(() => loadAdvice());
+  }
+
   /* ── Init ── */
   document.addEventListener("DOMContentLoaded", function () {
     loadPositions();
     loadAdvice();
   });
 
-  return { openAddModal, submitAdd, deletePos };
+  return { openAddModal, submitAdd, deletePos, refreshAdvice };
 })();
 {% endif %}
 

@@ -51,6 +51,21 @@ def add_position():
         from portfolio.positions import add_position as _add
         row = _add(current_user.id, ticker, company,
                    date_achat, prix_achat, quantite, currency, notes)
+
+        # Invalide le conseil du jour pour qu'il soit régénéré avec la position à jour
+        try:
+            from datetime import date
+            from db import _init, _client, is_available
+            if is_available():
+                _init()
+                _client.table("daily_advice").delete()\
+                    .eq("username", current_user.id)\
+                    .eq("ticker", ticker)\
+                    .eq("date_conseil", str(date.today()))\
+                    .execute()
+        except Exception:
+            pass
+
         return jsonify({"ok": True, "position": row})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -69,6 +84,26 @@ def delete_position(position_id: int):
 
 
 # ── Conseil du jour ───────────────────────────────────────────────────────────
+
+@bp.route("/advice/<ticker>/reset", methods=["POST"])
+@login_required
+def reset_advice(ticker: str):
+    """Supprime le conseil du jour pour forcer sa régénération."""
+    ticker = ticker.upper()
+    try:
+        from datetime import date
+        from db import _init, _client, is_available
+        if is_available():
+            _init()
+            _client.table("daily_advice").delete()\
+                .eq("username", current_user.id)\
+                .eq("ticker", ticker)\
+                .eq("date_conseil", str(date.today()))\
+                .execute()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 
 @bp.route("/advice/<ticker>")
 @login_required
