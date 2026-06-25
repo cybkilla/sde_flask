@@ -126,12 +126,12 @@
 <script src="{{ url_for('static', filename='js/watchlist.js') }}"></script>
 <script>
 (function () {
-  // Spinner sur bouton submit + cursor wait pour tout formulaire
+  // Spinner sur bouton submit — overlay sombre uniquement si pas data-no-overlay
   document.addEventListener("submit", function (e) {
     var btn = e.target.querySelector('[type="submit"]');
     if (!btn || btn.dataset.loading) return;
     btn.dataset.loading = "1";
-    document.body.classList.add("sde-loading");
+    if (!e.target.dataset.noOverlay) document.body.classList.add("sde-loading");
     var orig = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML =
