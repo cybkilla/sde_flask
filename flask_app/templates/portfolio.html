@@ -136,40 +136,48 @@
     </div>`;
   }
 
-  /* ── Bloc lots ── */
+  /* ── Bloc lots (même style que analysis.html) ── */
   function lotsHtml(ticker, sym, lots, company, currency) {
     const rows = lots.map(l => {
-      const d = new Date(l.date_achat + "T00:00:00");
+      const d      = new Date(l.date_achat + "T00:00:00");
       const dateFr = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
-      return `<div style="display:flex;align-items:center;justify-content:space-between;
-                          padding:6px 0;border-bottom:1px solid var(--sde-border)">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="width:6px;height:6px;border-radius:50%;background:var(--sde-muted);flex-shrink:0"></span>
-          <span style="font-size:.78rem;color:var(--sde-muted)">${dateFr}</span>
-          <span style="font-size:.8rem">
-            <strong>${parseFloat(l.quantite).toLocaleString("en-US", {maximumFractionDigits:4})}</strong>
-            actions @ ${sym}${parseFloat(l.prix_achat).toFixed(4)}
-          </span>
-        </div>
-        <button onclick="deletePos(${l.id}, '${ticker}')"
-                style="background:none;border:none;color:var(--sde-muted);cursor:pointer;
-                       padding:2px 6px;font-size:.85rem" title="Supprimer ce lot">🗑</button>
-      </div>`;
+      return `
+        <div style="display:flex;align-items:center;justify-content:space-between;
+                    padding:7px 0;border-bottom:1px solid var(--sde-border)">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:7px;height:7px;border-radius:50%;
+                         background:var(--sde-muted);flex-shrink:0"></span>
+            <div>
+              <span style="font-size:.78rem;color:var(--sde-muted)">${dateFr}</span>
+              <span style="font-size:.82rem;margin-left:8px">
+                <strong>${parseFloat(l.quantite).toLocaleString("en-US", {maximumFractionDigits:4})} actions</strong>
+                @ ${sym}${parseFloat(l.prix_achat).toFixed(4)}
+              </span>
+            </div>
+          </div>
+          <button onclick="deletePos(${l.id}, '${ticker}')"
+                  style="background:none;border:none;color:#D85A30;padding:2px 6px;
+                         cursor:pointer;opacity:.65;line-height:1" title="Supprimer ce lot">
+            <i class="bi bi-trash3" style="font-size:.72rem"></i>
+          </button>
+        </div>`;
     }).join("");
 
-    return `<details id="lots-wrap-${ticker}" style="margin-top:10px;border-top:1px solid var(--sde-border);padding-top:10px">
+    const companyEsc = company.replace(/'/g, "\\'");
+    return `<details id="lots-wrap-${ticker}"
+               style="margin-top:10px;border-top:1px solid var(--sde-border);padding-top:10px">
       <summary style="cursor:pointer;font-size:.78rem;color:var(--sde-muted);
                       list-style:none;display:flex;align-items:center;gap:6px;user-select:none">
         <i class="bi bi-list-ul"></i>
         ${lots.length} lot${lots.length > 1 ? "s" : ""} d'achat
-        <button onclick="event.preventDefault();openAddModal('${ticker}','${company.replace(/'/g,"\\'")}','${currency}')"
+        <button onclick="event.preventDefault();openAddModal('${ticker}','${companyEsc}','${currency}')"
                 style="margin-left:auto;background:none;border:1px solid var(--sde-border);
                        border-radius:6px;padding:2px 10px;font-size:.72rem;
                        color:var(--sde-teal);cursor:pointer;font-weight:500">
           <i class="bi bi-plus me-1"></i>Ajouter
         </button>
       </summary>
-      <div style="margin-top:6px">${rows}</div>
+      <div style="padding:0 2px">${rows}</div>
     </details>`;
   }
 
