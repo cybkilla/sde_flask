@@ -114,7 +114,15 @@ def _with_candle(conseil: dict, candle_info: dict | None,
     Peut modifier l'action (ex. TENIR → ALLÉGER sur signal baissier fort)
     et complète toujours le raisonnement pour la transparence.
     """
-    if not candle_info or candle_info.get("signal") == "neutre":
+    if not candle_info:
+        return conseil
+    if candle_info.get("signal") == "neutre":
+        name = candle_info.get("pattern", "")
+        if name:
+            raison = (f"{conseil['raisonnement']}<br>"
+                      f"<span style='color:var(--sde-muted)'>Figure chandelier : {name} — indécision.</span>")
+            return _conseil(conseil["action"], conseil.get("quantite_suggeree"),
+                            conseil.get("prix_cible"), raison)
         return conseil
 
     action  = conseil["action"]
@@ -127,40 +135,40 @@ def _with_candle(conseil: dict, candle_info: dict | None,
         # TENIR + baissier + P&L pas catastrophique → alléger prudemment
         if action == "TENIR" and pnl_pct is not None and pnl_pct > -10:
             alleger = max(1, round(total_shares * 0.25)) if total_shares > 0 else None
-            raison = (f"{raison} "
+            raison = (f"{raison}<br>"
                       f"Pattern chandelier {label} ({name}) — allégement partiel conseillé "
                       f"à court terme.")
             return _conseil("ALLÉGER", alleger, prix or None, raison)
 
         # RENFORCER + baissier → revenir à TENIR
         if action == "RENFORCER":
-            raison = (f"Signal SDE {reco} ({score:.0f}/100) suggère un renforcement, "
+            raison = (f"Signal SDE {reco} ({score:.0f}/100) suggère un renforcement,<br>"
                       f"mais le pattern chandelier {label} ({name}) contre-indique un achat "
                       f"immédiat. Maintien préférable dans l'attente d'une confirmation haussière.")
             return _conseil("TENIR", None, None, raison)
 
         # Pas de position + baissier → rester sur SURVEILLER
         if action == "ACHETER" and pnl_pct is None:
-            raison = (f"{raison} "
+            raison = (f"{raison}<br>"
                       f"Pattern chandelier {label} ({name}) — attendre confirmation "
                       f"avant d'entrer en position.")
             return _conseil("SURVEILLER", None, None, raison)
 
         # Autres cas : note de vigilance seulement
-        raison = f"{raison} Note : pattern chandelier {label} ({name}) — rester vigilant."
+        raison = f"{raison}<br>Note : pattern chandelier {label} ({name}) — rester vigilant."
 
     elif signal == "bullish":
         if action in ("RENFORCER", "ACHETER"):
-            raison = f"{raison} Confirmé par un signal chandelier {label} ({name})."
+            raison = f"{raison}<br>Confirmé par un signal chandelier {label} ({name})."
         elif action == "TENIR" and pnl_pct is not None and pnl_pct < 0:
-            raison = (f"{raison} "
+            raison = (f"{raison}<br>"
                       f"Pattern chandelier {label} ({name}) — rebond potentiel à surveiller.")
         elif action in ("ALLÉGER", "VENDRE"):
-            raison = (f"{raison} "
+            raison = (f"{raison}<br>"
                       f"Attention : signal chandelier {label} ({name}) en contradiction "
                       f"avec la recommandation de vente — surveiller avant d'agir.")
         else:
-            raison = f"{raison} Pattern chandelier {label} ({name}) — tendance positive à court terme."
+            raison = f"{raison}<br>Pattern chandelier {label} ({name}) — tendance positive à court terme."
 
     return _conseil(action, conseil.get("quantite_suggeree"), conseil.get("prix_cible"), raison)
 
