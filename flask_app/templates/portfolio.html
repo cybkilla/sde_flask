@@ -103,11 +103,15 @@
   };
 
   // Ticker actif pour le modal
-  let _modalTicker = "", _modalCompany = "", _modalCurrency = "USD", _modalPosType = "achat";
+  let _modalTicker = "", _modalCompany = "", _modalCurrency = "USD",
+      _modalPosType = "achat", _modalTotalShares = 0;
 
   function setPosType(type) {
+    // Bloquer la vente si aucune action disponible
+    if (type === "vente" && _modalTotalShares <= 0) return;
     _modalPosType = type;
     const isVente = type === "vente";
+    const canSell = _modalTotalShares > 0;
     const btnA = document.getElementById("sde-type-achat");
     const btnV = document.getElementById("sde-type-vente");
     if (btnA) {
@@ -116,9 +120,19 @@
       btnA.style.border      = isVente ? "1px solid var(--sde-border)" : "none";
     }
     if (btnV) {
-      btnV.style.background  = isVente ? "#D85A30" : "#F1F5F9";
-      btnV.style.color       = isVente ? "#fff" : "var(--sde-muted)";
-      btnV.style.border      = isVente ? "none" : "1px solid var(--sde-border)";
+      if (!canSell) {
+        btnV.style.background  = "#F1F5F9";
+        btnV.style.color       = "#CBD5E1";
+        btnV.style.border      = "1px solid var(--sde-border)";
+        btnV.style.cursor      = "not-allowed";
+        btnV.title             = "Aucune action à vendre";
+      } else {
+        btnV.style.background  = isVente ? "#D85A30" : "#F1F5F9";
+        btnV.style.color       = isVente ? "#fff" : "var(--sde-muted)";
+        btnV.style.border      = isVente ? "none" : "1px solid var(--sde-border)";
+        btnV.style.cursor      = "pointer";
+        btnV.title             = "";
+      }
     }
     const dateLabel  = document.getElementById("sde-pos-date-label");
     const priceLabel = document.getElementById("sde-pos-price-label");
@@ -170,7 +184,7 @@
       ? `<span style="background:${color};color:#fff;padding:4px 12px;border-radius:20px;
                       font-weight:700;font-size:.82rem;letter-spacing:.01em;
                       cursor:pointer"
-               onclick="openAddModal('${ticker}','${companyEsc}','${currency || "USD"}',${livePrice || 0},'${modalType}',${suggestedQty},'${today_cd}')"
+               onclick="openAddModal('${ticker}','${companyEsc}','${currency || "USD"}',${livePrice || 0},'${modalType}',${suggestedQty},'${today_cd}',document.getElementById('card-${ticker}').dataset.shares)"
                title="Saisir ${modalType === 'achat' ? 'un achat' : 'une vente'}">
            ${badgeInner}
            ${followed
@@ -240,7 +254,7 @@
                       list-style:none;display:flex;align-items:center;gap:6px;user-select:none">
         <i class="bi bi-list-ul"></i>
         ${summary || "Transactions"}
-        <button onclick="event.preventDefault();openAddModal('${ticker}','${companyEsc}','${currency}',parseFloat(document.getElementById('card-${ticker}').dataset.price||0))"
+        <button onclick="event.preventDefault();openAddModal('${ticker}','${companyEsc}','${currency}',parseFloat(document.getElementById('card-${ticker}').dataset.price||0),null,null,null,document.getElementById('card-${ticker}').dataset.shares)"
                 style="margin-left:auto;background:none;border:1px solid var(--sde-border);
                        border-radius:6px;padding:2px 10px;font-size:.72rem;
                        color:var(--sde-teal);cursor:pointer;font-weight:500">
@@ -264,7 +278,7 @@
     const followed = (s.lots || []).some(l => l.conseil_date === today);
 
     return `
-<div class="sde-card mb-3" id="card-${ticker}" data-sym="${sym}" data-currency="${currency}" data-price="${price || 0}">
+<div class="sde-card mb-3" id="card-${ticker}" data-sym="${sym}" data-currency="${currency}" data-price="${price || 0}" data-shares="${s.total_shares || 0}">
 
   <!-- En-tête ticker + prix -->
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:12px">
@@ -305,7 +319,7 @@
           const gain  = parseFloat(s.pnl_euros);
           const pct   = parseFloat(s.pnl_pct);
           const c     = gain >= 0 ? "#1D9E75" : "#D85A30";
-          const label = gain >= 0 ? "Gain réalisé" : "Perte réalisée";
+          const label = gain >= 0 ? "Gain encaissé" : "Perte encaissée";
           const sign  = gain >= 0 ? "+" : "−";
           return `<span style="font-size:.7rem;color:var(--sde-muted);display:block">${label}</span>
                   <span style="color:${c};font-weight:700;font-size:1rem">
@@ -371,13 +385,14 @@
   /* ── Modal ajout ── */
   let _modalConseilDate = null;
 
-  function openAddModal(ticker, company, currency, price, type, qty, conseilDate) {
+  function openAddModal(ticker, company, currency, price, type, qty, conseilDate, totalShares) {
     const t = type || "achat";
     _modalTicker      = ticker;
     _modalCompany     = company;
     _modalCurrency    = currency || "USD";
     _modalPosType     = t;
     _modalConseilDate = conseilDate || null;
+    _modalTotalShares = parseFloat(totalShares) || 0;
     setPosType(t);
     document.getElementById("sde-modal-ticker-label").textContent = ticker;
     document.getElementById("sde-pos-date").value  = new Date().toISOString().slice(0, 10);

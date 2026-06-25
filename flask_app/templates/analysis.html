@@ -716,7 +716,8 @@ const sdePortfolio = (function () {
     ACHETER: "achat", RENFORCER: "achat",
     "ALLÉGER": "vente", VENDRE: "vente",
   };
-  let _currentAdviceAction = null;  // mémorise l'action du conseil du jour
+  let _currentAdviceAction = null;
+  let _availableShares     = 0;  // actions disponibles pour la vente
 
   function _pct(v) {
     const s = v >= 0 ? "+" : "";
@@ -737,6 +738,7 @@ const sdePortfolio = (function () {
           return;
         }
         const s        = data.summary;
+        _availableShares = parseFloat(s.total_shares) || 0;
         const pnlColor = s.pnl_euros >= 0 ? "#1D9E75" : "#D85A30";
         const sign     = s.pnl_euros >= 0 ? "+" : "";
 
@@ -931,14 +933,23 @@ const sdePortfolio = (function () {
   let _posType = "achat";
 
   function setPosType(type) {
+    const canSell = _availableShares > 0;
+    if (type === "vente" && !canSell) return;
     _posType = type;
     const isVente = type === "vente";
     document.getElementById("sde-type-achat").style.cssText =
       isVente ? "background:#F1F5F9;color:var(--sde-muted);border:1px solid var(--sde-border);border-radius:7px;font-weight:600"
               : "background:#1D9E75;color:#fff;border:none;border-radius:7px;font-weight:600";
-    document.getElementById("sde-type-vente").style.cssText =
-      isVente ? "background:#D85A30;color:#fff;border:none;border-radius:7px;font-weight:600"
-              : "background:#F1F5F9;color:var(--sde-muted);border:1px solid var(--sde-border);border-radius:7px;font-weight:600";
+    const btnV = document.getElementById("sde-type-vente");
+    if (!canSell) {
+      btnV.style.cssText = "background:#F1F5F9;color:#CBD5E1;border:1px solid var(--sde-border);border-radius:7px;font-weight:600;cursor:not-allowed";
+      btnV.title = "Aucune action à vendre";
+    } else {
+      btnV.style.cssText = isVente
+        ? "background:#D85A30;color:#fff;border:none;border-radius:7px;font-weight:600;cursor:pointer"
+        : "background:#F1F5F9;color:var(--sde-muted);border:1px solid var(--sde-border);border-radius:7px;font-weight:600;cursor:pointer";
+      btnV.title = "";
+    }
     document.getElementById("sde-pos-date-label").textContent  = isVente ? "Date de vente"  : "Date d'achat";
     document.getElementById("sde-pos-price-label").textContent = isVente ? "Prix de vente"  : "Prix d'achat";
     const btn = document.getElementById("sde-pos-submit-btn");
