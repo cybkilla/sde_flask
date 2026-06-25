@@ -329,7 +329,7 @@
         : `<strong style="color:#2563EB">${parseFloat(s.total_shares).toLocaleString("en-US", {maximumFractionDigits:4})}</strong> actions`}
       &nbsp;·&nbsp; coût moy. <strong style="color:var(--sde-text)">${sym}${parseFloat(s.cout_moyen).toFixed(2)}</strong>
       &nbsp;·&nbsp; investi <strong style="color:var(--sde-text)">${sym}${parseFloat(s.total_investi).toFixed(2)}</strong>
-      ${cashRecu > 0 ? `&nbsp;·&nbsp; <span style="color:var(--sde-muted)">encaissé</span> <strong style="color:#2563EB">${sym}${cashRecu.toFixed(2)}</strong>` : ""}
+      ${cashRecu > 0 ? `&nbsp;·&nbsp; <span style="color:var(--sde-muted)">cash dispo.</span> <strong style="color:#2563EB">${sym}${cashRecu.toFixed(2)}</strong>` : ""}
     </span>
     <span style="margin-left:auto;text-align:right;flex-shrink:0">
       ${s.position_fermee ? (() => {
@@ -394,37 +394,59 @@
         }
         wrap.innerHTML = data.positions.map(renderCard).join("");
 
-        // Bannière liquidités globales (cash encaissé de toutes les ventes)
-        const cashByCurrency = {};
+        // ── Récapitulatif du compte (style Degiro) ───────────────────────
+        const byCur = {};
         data.positions.forEach(pos => {
-          const sells = (pos.summary.lots || []).filter(l => l.type === 'vente');
-          const cash  = sells.reduce((s, l) => s + parseFloat(l.quantite) * parseFloat(l.prix_achat), 0);
-          if (cash > 0.001) {
-            if (!cashByCurrency[pos.currency]) cashByCurrency[pos.currency] = { sym: pos.sym, total: 0 };
-            cashByCurrency[pos.currency].total += cash;
+          const g = byCur[pos.currency] || (byCur[pos.currency] = {
+            sym: pos.sym, portfolio: 0, cash: 0, pnl_jour: 0, pnl_cumul: 0
+          });
+          if (!pos.summary.position_fermee) {
+            g.portfolio += parseFloat(pos.summary.valeur_actuelle || 0);
+            if (pos.var_1d != null) {
+              g.pnl_jour += parseFloat(pos.summary.valeur_actuelle || 0) * parseFloat(pos.var_1d) / 100;
+            }
           }
+          const sells = (pos.summary.lots || []).filter(l => l.type === 'vente');
+          g.cash += sells.reduce((s, l) => s + parseFloat(l.quantite) * parseFloat(l.prix_achat), 0);
+          g.pnl_cumul += parseFloat(pos.summary.pnl_euros || 0);
         });
-        const cashEntries = Object.values(cashByCurrency);
-        if (cashEntries.length > 0) {
-          const cashStr = cashEntries
-            .map(e => `<strong>${e.sym}${e.total.toFixed(2)}</strong>`)
-            .join("&nbsp;&nbsp;+&nbsp;&nbsp;");
+
+        const _fmtV = (sym, v, plus=false) => {
+          const sign = plus ? (v > 0.005 ? "+" : v < -0.005 ? "−" : "") : (v < -0.005 ? "−" : "");
+          return `${sign}${sym}${Math.abs(v).toFixed(2)}`;
+        };
+        const _colV = v => v > 0.005 ? "#1D9E75" : v < -0.005 ? "#D85A30" : "var(--sde-muted)";
+
+        const summaryBlocks = Object.values(byCur).map(g => {
+          const total = g.portfolio + g.cash;
+          const pjPct = g.portfolio > 0 ? g.pnl_jour / g.portfolio * 100 : 0;
+          const mk = (label, text, color, sub="") => `
+            <div>
+              <div style="font-size:.66rem;color:var(--sde-muted);font-weight:700;
+                          letter-spacing:.05em;text-transform:uppercase;margin-bottom:3px">${label}</div>
+              <div style="font-size:.92rem;font-weight:700;color:${color}">${text}</div>
+              ${sub ? `<div style="font-size:.7rem;color:var(--sde-muted);margin-top:1px">${sub}</div>` : ""}
+            </div>`;
+          return `
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+                        gap:10px 20px;padding-top:12px;margin-top:4px;
+                        border-top:1px solid var(--sde-border)">
+              ${mk("Portefeuille",    _fmtV(g.sym, g.portfolio),       "var(--sde-text)")}
+              ${mk("Cash disponible", g.cash > 0.001 ? _fmtV(g.sym, g.cash) : "—", "#2563EB")}
+              ${mk("Total compte",    _fmtV(g.sym, total),             "var(--sde-navy)")}
+              ${mk("P/L du jour",     _fmtV(g.sym, g.pnl_jour, true), _colV(g.pnl_jour),
+                   `(${pjPct >= 0 ? "+" : ""}${pjPct.toFixed(2)}%)`)}
+              ${mk("P/L cumulée",     _fmtV(g.sym, g.pnl_cumul, true), _colV(g.pnl_cumul))}
+            </div>`;
+        }).join("");
+
+        if (summaryBlocks) {
           wrap.insertAdjacentHTML("afterbegin", `
-            <div style="background:linear-gradient(135deg,#EFF6FF,#F0FDF4);
-                        border:1px solid #BFDBFE;border-radius:10px;
-                        padding:12px 16px;display:flex;align-items:center;
-                        gap:12px;margin-bottom:12px">
-              <i class="bi bi-wallet2" style="font-size:1.3rem;color:#2563EB;flex-shrink:0"></i>
-              <div>
-                <div style="font-size:.68rem;color:var(--sde-muted);font-weight:700;
-                            letter-spacing:.05em;text-transform:uppercase;margin-bottom:3px">
-                  Liquidités disponibles
-                </div>
-                <div style="font-size:1rem;color:#2563EB">${cashStr}</div>
-                <div style="font-size:.68rem;color:var(--sde-muted);margin-top:2px">
-                  Total encaissé de vos ventes — disponible pour réinvestissement
-                </div>
+            <div class="sde-card mb-3">
+              <div style="font-size:.78rem;font-weight:600;color:var(--sde-navy)">
+                <i class="bi bi-pie-chart me-1"></i>Récapitulatif
               </div>
+              ${summaryBlocks}
             </div>`);
         }
       })
