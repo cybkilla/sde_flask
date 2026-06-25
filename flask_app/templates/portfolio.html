@@ -293,20 +293,38 @@
   <!-- Résumé P&L -->
   <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;font-size:.8rem;
               padding-top:10px;border-top:1px solid var(--sde-border)">
-    <span style="color:var(--sde-muted)">
-      <strong style="color:var(--sde-text)">
-        ${parseFloat(s.total_shares).toLocaleString("en-US", {maximumFractionDigits:4})}
-      </strong> actions
+    <span style="color:var(--sde-muted);font-size:.8rem">
+      ${s.position_fermee
+        ? `<span style="background:#F1F5F9;border-radius:5px;padding:2px 7px;font-size:.74rem;color:var(--sde-muted);font-weight:600">Position clôturée</span>`
+        : `<strong style="color:var(--sde-text)">${parseFloat(s.total_shares).toLocaleString("en-US", {maximumFractionDigits:4})}</strong> actions`}
       &nbsp;·&nbsp; coût moy. <strong style="color:var(--sde-text)">${sym}${parseFloat(s.cout_moyen).toFixed(2)}</strong>
       &nbsp;·&nbsp; investi <strong style="color:var(--sde-text)">${sym}${parseFloat(s.total_investi).toFixed(2)}</strong>
     </span>
-    <span style="margin-left:auto;text-align:right">
-      <span style="font-size:.7rem;color:var(--sde-muted);display:block">
-        ${s.pnl_pct >= 0 ? "Plus-value" : "Moins-value"} latente
-      </span>
-      <span style="color:${pColor2};font-weight:600">
-        ${_pct(s.pnl_pct)} &nbsp;·&nbsp; ${pSign}${sym}${Math.abs(parseFloat(s.pnl_euros)).toFixed(2)}
-      </span>
+    <span style="margin-left:auto;text-align:right;flex-shrink:0">
+      ${s.position_fermee ? (() => {
+          const gain  = parseFloat(s.pnl_euros);
+          const pct   = parseFloat(s.pnl_pct);
+          const c     = gain >= 0 ? "#1D9E75" : "#D85A30";
+          const label = gain >= 0 ? "Gain réalisé" : "Perte réalisée";
+          const sign  = gain >= 0 ? "+" : "−";
+          return `<span style="font-size:.7rem;color:var(--sde-muted);display:block">${label}</span>
+                  <span style="color:${c};font-weight:700;font-size:1rem">
+                    ${sign}${sym}${Math.abs(gain).toFixed(2)}
+                    <span style="font-size:.78rem;font-weight:400">(${sign}${Math.abs(pct).toFixed(2)}%)</span>
+                  </span>`;
+        })() : (() => {
+          const hasRealized = s.pnl_realise && Math.abs(parseFloat(s.pnl_realise)) > 0.001;
+          return `
+            <span style="font-size:.7rem;color:var(--sde-muted);display:block">
+              ${pColor2 === "#1D9E75" ? "Plus-value" : "Moins-value"} latente
+            </span>
+            <span style="color:${pColor2};font-weight:600">
+              ${_pct(s.pnl_pct)} &nbsp;·&nbsp; ${pSign}${sym}${Math.abs(parseFloat(s.pnl_non_realise ?? s.pnl_euros)).toFixed(2)}
+            </span>
+            ${hasRealized ? `<span style="font-size:.72rem;color:var(--sde-muted);display:block;margin-top:2px">
+              + réalisé ${parseFloat(s.pnl_realise) >= 0 ? "+" : "−"}${sym}${Math.abs(parseFloat(s.pnl_realise)).toFixed(2)}
+            </span>` : ""}`;
+        })()}
     </span>
     <a href="/analyze/${ticker}" data-sde-loading="Analyse de ${ticker}…"
        style="font-size:.78rem;color:var(--sde-teal);flex-shrink:0">

@@ -50,7 +50,19 @@ def add_position():
         return jsonify({"ok": False, "error": "Prix et quantité doivent être positifs"}), 400
 
     try:
-        from portfolio.positions import add_position as _add
+        from portfolio.positions import add_position as _add, get_portfolio_summary
+
+        # Bloquer une vente si pas d'actions disponibles
+        if type_op == "vente":
+            summary = get_portfolio_summary(current_user.id, ticker, 0)
+            available = (summary or {}).get("total_shares", 0)
+            if available <= 0:
+                return jsonify({"ok": False,
+                                "error": f"Vous n'avez pas d'actions {ticker} à vendre."}), 400
+            if quantite > available:
+                return jsonify({"ok": False,
+                                "error": f"Quantité trop élevée — vous avez {available:g} actions {ticker}."}), 400
+
         row = _add(current_user.id, ticker, company,
                    date_achat, prix_achat, quantite, currency, notes, type_op, conseil_date)
 
@@ -137,9 +149,11 @@ def get_overview():
                 total_buy_amount  = sum(float(l["quantite"]) * float(l["prix_achat"]) for l in buy_lots)
                 cout_moyen        = total_buy_amount / total_buy_shares
                 valeur            = total_shares * price
-                total_investi     = total_shares * cout_moyen
-                pnl_euros         = total_shares * (price - cout_moyen)
-                pnl_pct           = (pnl_euros / total_investi * 100) if total_investi > 0 else 0
+                total_sell_amount = sum(float(l["quantite"]) * float(l["prix_achat"]) for l in sell_lots)
+                pnl_realise       = total_sell_amount - (total_sell_shares * cout_moyen)
+                pnl_non_realise   = total_shares * (price - cout_moyen) if total_shares > 0 else 0
+                pnl_total         = pnl_realise + pnl_non_realise
+                pnl_pct           = (pnl_total / total_buy_amount * 100) if total_buy_amount > 0 else 0
                 currency      = ticker_lots[0].get("currency", "USD")
                 company       = next(
                     (l["company"] for l in ticker_lots if l.get("company")), ticker
@@ -153,13 +167,15 @@ def get_overview():
                     "price":    price,
                     "var_1d":   var_1d,
                     "summary": {
-                        "lots":             ticker_lots,
-                        "total_shares":     round(total_shares,  4),
-                        "cout_moyen":       round(cout_moyen,    4),
-                        "total_investi":    round(total_investi, 2),
-                        "valeur_actuelle":  round(valeur,        2),
-                        "pnl_euros":        round(pnl_euros,     2),
-                        "pnl_pct":          round(pnl_pct,       2),
+                        "lots":            ticker_lots,
+                        "total_shares":    round(total_shares,    4),
+                        "cout_moyen":      round(cout_moyen,      4),
+                        "total_investi":   round(total_buy_amount,2),
+                        "valeur_actuelle": round(valeur,          2),
+                        "pnl_realise":     round(pnl_realise,     2),
+                        "pnl_non_realise": round(pnl_non_realise, 2),
+                        "pnl_euros":       round(pnl_total,       2),
+                        "pnl_pct":         round(pnl_pct,         2),
                         "position_fermee":  total_shares <= 0,
                     },
                     "advice":  advices.get(ticker),

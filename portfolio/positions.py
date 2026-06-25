@@ -71,22 +71,33 @@ def get_portfolio_summary(username: str, ticker: str, current_price: float) -> d
     total_buy_amount  = sum(float(l["quantite"]) * float(l["prix_achat"]) for l in buy_lots)
     cout_moyen        = total_buy_amount / total_buy_shares
 
-    # P&L non réalisé sur les actions restantes
-    valeur_actuelle = total_shares * (current_price or 0)
-    total_investi   = total_shares * cout_moyen  # coût de la position restante
-    pnl_euros       = total_shares * ((current_price or 0) - cout_moyen)
-    pnl_pct         = (pnl_euros / total_investi * 100) if total_investi > 0 else 0
+    # P&L réalisé sur les actions déjà vendues
+    total_sell_amount = sum(float(l["quantite"]) * float(l["prix_achat"]) for l in sell_lots)
+    pnl_realise       = total_sell_amount - (total_sell_shares * cout_moyen)
+
+    # P&L non réalisé sur les actions encore en portefeuille
+    valeur_actuelle   = total_shares * (current_price or 0)
+    pnl_non_realise   = total_shares * ((current_price or 0) - cout_moyen) if total_shares > 0 else 0
+
+    # P&L total = réalisé + non réalisé
+    pnl_total         = pnl_realise + pnl_non_realise
+    base_cout_total   = total_buy_amount  # coût total de tous les achats
+    pnl_pct           = (pnl_total / base_cout_total * 100) if base_cout_total > 0 else 0
+
+    position_fermee   = total_shares <= 0
 
     return {
-        "lots":             lots,
-        "total_shares":     round(total_shares,     4),
-        "cout_moyen":       round(cout_moyen,        4),
-        "total_investi":    round(total_investi,     2),
-        "valeur_actuelle":  round(valeur_actuelle,   2),
-        "pnl_euros":        round(pnl_euros,         2),
-        "pnl_pct":          round(pnl_pct,           2),
-        "currency":         lots[0].get("currency", "USD"),
-        "position_fermee":  total_shares <= 0,
+        "lots":              lots,
+        "total_shares":      round(total_shares,      4),
+        "cout_moyen":        round(cout_moyen,         4),
+        "total_investi":     round(base_cout_total,    2),
+        "valeur_actuelle":   round(valeur_actuelle,    2),
+        "pnl_realise":       round(pnl_realise,        2),
+        "pnl_non_realise":   round(pnl_non_realise,    2),
+        "pnl_euros":         round(pnl_total,          2),
+        "pnl_pct":           round(pnl_pct,            2),
+        "currency":          lots[0].get("currency", "USD"),
+        "position_fermee":   position_fermee,
     }
 
 
