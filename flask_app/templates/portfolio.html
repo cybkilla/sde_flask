@@ -60,14 +60,19 @@
           <input type="date" id="sde-pos-date" class="form-control form-control-sm">
         </div>
         <div class="mb-2">
-          <label class="form-label small fw-semibold">Quantité (actions)</label>
-          <input type="number" id="sde-pos-qty" class="form-control form-control-sm"
-                 placeholder="ex : 100" min="0.0001" step="any">
-        </div>
-        <div class="mb-3">
-          <label class="form-label small fw-semibold" id="sde-pos-price-label">Prix d'achat</label>
+          <label class="form-label small fw-semibold" id="sde-pos-price-label">Prix unitaire d'achat</label>
           <input type="number" id="sde-pos-price" class="form-control form-control-sm"
                  placeholder="ex : 1.85" min="0.0001" step="any">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-semibold">Quantité (actions entières)</label>
+          <input type="number" id="sde-pos-qty" class="form-control form-control-sm"
+                 placeholder="ex : 100" min="1" step="1">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Montant total de la transaction</label>
+          <input type="number" id="sde-pos-amount" class="form-control form-control-sm"
+                 placeholder="calculé automatiquement" min="0.01" step="any">
         </div>
         <div class="mb-3">
           <label class="form-label small fw-semibold">Notes (optionnel)</label>
@@ -137,8 +142,8 @@
     const dateLabel  = document.getElementById("sde-pos-date-label");
     const priceLabel = document.getElementById("sde-pos-price-label");
     const submitBtn  = document.getElementById("sde-pos-submit-btn");
-    if (dateLabel)  dateLabel.textContent  = isVente ? "Date de vente"  : "Date d'achat";
-    if (priceLabel) priceLabel.textContent = isVente ? "Prix de vente"  : "Prix d'achat";
+    if (dateLabel)  dateLabel.textContent  = isVente ? "Date de vente"           : "Date d'achat";
+    if (priceLabel) priceLabel.textContent = isVente ? "Prix unitaire de vente" : "Prix unitaire d'achat";
     if (submitBtn) {
       submitBtn.style.background = isVente ? "#D85A30" : "#1D9E75";
       submitBtn.innerHTML = `<i class="bi bi-check-circle me-1"></i>${isVente ? "Enregistrer la vente" : "Enregistrer"}`;
@@ -384,6 +389,38 @@
 
   /* ── Modal ajout ── */
   let _modalConseilDate = null;
+  let _calcLock = false;
+
+  function _calcAmount() {
+    if (_calcLock) return;
+    const price = parseFloat(document.getElementById("sde-pos-price").value);
+    const qty   = parseInt(document.getElementById("sde-pos-qty").value, 10);
+    if (!isNaN(price) && price > 0 && !isNaN(qty) && qty > 0) {
+      _calcLock = true;
+      document.getElementById("sde-pos-amount").value = (price * qty).toFixed(2);
+      _calcLock = false;
+    }
+  }
+
+  function _calcQty() {
+    if (_calcLock) return;
+    const price  = parseFloat(document.getElementById("sde-pos-price").value);
+    const amount = parseFloat(document.getElementById("sde-pos-amount").value);
+    if (!isNaN(price) && price > 0 && !isNaN(amount) && amount > 0) {
+      _calcLock = true;
+      document.getElementById("sde-pos-qty").value = Math.round(amount / price);
+      _calcLock = false;
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    document.getElementById("sde-pos-price").addEventListener("input", function () {
+      if (document.getElementById("sde-pos-qty").value) _calcAmount();
+      else if (document.getElementById("sde-pos-amount").value) _calcQty();
+    });
+    document.getElementById("sde-pos-qty").addEventListener("input", _calcAmount);
+    document.getElementById("sde-pos-amount").addEventListener("input", _calcQty);
+  });
 
   function openAddModal(ticker, company, currency, price, type, qty, conseilDate, totalShares) {
     const t = type || "achat";
@@ -395,13 +432,15 @@
     _modalTotalShares = parseFloat(totalShares) || 0;
     setPosType(t);
     document.getElementById("sde-modal-ticker-label").textContent = ticker;
-    document.getElementById("sde-pos-date").value  = new Date().toISOString().slice(0, 10);
-    document.getElementById("sde-pos-qty").value   = (qty != null && !isNaN(qty) && qty > 0)
-      ? parseFloat(qty).toFixed(4) : "";
-    document.getElementById("sde-pos-price").value = (price && !isNaN(price))
+    document.getElementById("sde-pos-date").value   = new Date().toISOString().slice(0, 10);
+    document.getElementById("sde-pos-price").value  = (price && !isNaN(price))
       ? parseFloat(price).toFixed(4) : "";
-    document.getElementById("sde-pos-notes").value = "";
+    document.getElementById("sde-pos-qty").value    = (qty != null && !isNaN(qty) && qty > 0)
+      ? Math.round(qty) : "";
+    document.getElementById("sde-pos-amount").value = "";
+    document.getElementById("sde-pos-notes").value  = "";
     document.getElementById("sde-pos-error").classList.add("d-none");
+    _calcAmount();
     new bootstrap.Modal(document.getElementById("sde-position-modal")).show();
   }
 
@@ -411,7 +450,7 @@
       ticker:     _modalTicker,
       company:    _modalCompany,
       date_achat: document.getElementById("sde-pos-date").value,
-      quantite:   parseFloat(document.getElementById("sde-pos-qty").value),
+      quantite:   parseInt(document.getElementById("sde-pos-qty").value, 10),
       prix_achat: parseFloat(document.getElementById("sde-pos-price").value),
       currency:   _modalCurrency,
       notes:      document.getElementById("sde-pos-notes").value,
