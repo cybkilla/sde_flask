@@ -1,6 +1,7 @@
 # data/market.py — yfinance (primaire) → Finnhub + Twelve Data (fallback cloud)
 import os
 import time
+import concurrent.futures
 import pandas as pd
 from utils.indicators import add_indicators
 from config import HISTORY_DAYS
@@ -172,12 +173,20 @@ def _get_candles_td(ticker: str, days: int) -> pd.DataFrame:
     if not api_key:
         raise RuntimeError("TWELVE_DATA_API_KEY absent")
     from twelvedata import TDClient
-    td = TDClient(apikey=api_key, timeout=12)
-    try:
-        ts = td.time_series(
+    td = TDClient(apikey=api_key)
+
+    def _fetch():
+        return td.time_series(
             symbol=ticker, interval="1day",
             outputsize=min(days, 5000), order="ASC",
         ).as_pandas()
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            ts = ex.submit(_fetch).result(timeout=15)
+    except concurrent.futures.TimeoutError:
+        print(f"[Market] Twelve Data timeout ({ticker})", flush=True)
+        return pd.DataFrame()
     except Exception as e:
         print(f"[Market] Twelve Data erreur ({ticker}) [{type(e).__name__}]: {e}", flush=True)
         return pd.DataFrame()
