@@ -145,7 +145,7 @@
   };
 
   /* ── Bloc conseil ── */
-  function adviceHtml(ticker, sym, a, livePrice, company, currency) {
+  function adviceHtml(ticker, sym, a, livePrice, company, currency, followed) {
     if (!a) {
       return `<div id="advice-wrap-${ticker}"
                    style="background:#F1F5F9;border-radius:8px;padding:10px 14px;
@@ -161,16 +161,20 @@
     const qty       = a.quantite_suggeree
       ? ` <span style="font-weight:400;font-size:.76rem">· ${parseFloat(a.quantite_suggeree).toLocaleString("en-US", {maximumFractionDigits:4})} actions</span>`
       : "";
-    const modalType = _ACTION_TYPE[a.action];
-    const companyEsc = (company || ticker).replace(/'/g, "\\'");
-    const badgeInner = `${icon} ${a.action}${qty}`;
+    const modalType    = _ACTION_TYPE[a.action];
+    const suggestedQty = a.quantite_suggeree ? parseFloat(a.quantite_suggeree) : 0;
+    const companyEsc   = (company || ticker).replace(/'/g, "\\'");
+    const badgeInner   = `${icon} ${a.action}${qty}`;
     const badge = modalType
       ? `<span style="background:${color};color:#fff;padding:4px 12px;border-radius:20px;
                       font-weight:700;font-size:.82rem;letter-spacing:.01em;
                       cursor:pointer"
-               onclick="openAddModal('${ticker}','${companyEsc}','${currency || "USD"}',${livePrice || 0},'${modalType}')"
+               onclick="openAddModal('${ticker}','${companyEsc}','${currency || "USD"}',${livePrice || 0},'${modalType}',${suggestedQty})"
                title="Saisir ${modalType === 'achat' ? 'un achat' : 'une vente'}">
-           ${badgeInner} <i class="bi bi-pencil-square" style="font-size:.68rem;opacity:.8"></i>
+           ${badgeInner}
+           ${followed
+             ? `<span style="font-size:.68rem;background:rgba(255,255,255,.25);border-radius:10px;padding:1px 7px;margin-left:4px;font-weight:600">✓ Suivi</span>`
+             : `<i class="bi bi-pencil-square" style="font-size:.68rem;opacity:.8;margin-left:4px"></i>`}
          </span>`
       : `<span style="background:${color};color:#fff;padding:4px 12px;border-radius:20px;
                       font-weight:700;font-size:.82rem;letter-spacing:.01em">
@@ -254,6 +258,13 @@
     const pColor2 = s.pnl_pct >= 0 ? "#1D9E75" : "#D85A30";
     const pSign   = s.pnl_euros >= 0 ? "+" : "−";
 
+    // Vérifier si le conseil du jour a déjà été suivi aujourd'hui
+    const today      = new Date().toISOString().slice(0, 10);
+    const modalType  = a ? _ACTION_TYPE[a.action] : null;
+    const followed   = modalType && (s.lots || []).some(
+      l => l.date_achat === today && l.type === modalType
+    );
+
     return `
 <div class="sde-card mb-3" id="card-${ticker}" data-sym="${sym}" data-currency="${currency}" data-price="${price || 0}">
 
@@ -279,7 +290,7 @@
   </div>
 
   <!-- Conseil du jour -->
-  ${adviceHtml(ticker, sym, a, price, company, currency)}
+  ${adviceHtml(ticker, sym, a, price, company, currency, followed)}
 
   <!-- Résumé P&L -->
   <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;font-size:.8rem;
@@ -342,7 +353,7 @@
   }
 
   /* ── Modal ajout ── */
-  function openAddModal(ticker, company, currency, price, type) {
+  function openAddModal(ticker, company, currency, price, type, qty) {
     const t = type || "achat";
     _modalTicker   = ticker;
     _modalCompany  = company;
@@ -351,7 +362,8 @@
     setPosType(t);
     document.getElementById("sde-modal-ticker-label").textContent = ticker;
     document.getElementById("sde-pos-date").value  = new Date().toISOString().slice(0, 10);
-    document.getElementById("sde-pos-qty").value   = "";
+    document.getElementById("sde-pos-qty").value   = (qty != null && !isNaN(qty) && qty > 0)
+      ? parseFloat(qty).toFixed(4) : "";
     document.getElementById("sde-pos-price").value = (price && !isNaN(price))
       ? parseFloat(price).toFixed(4) : "";
     document.getElementById("sde-pos-notes").value = "";
