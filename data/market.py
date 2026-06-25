@@ -1,8 +1,9 @@
 # data/market.py — yfinance (primaire) → Finnhub + Twelve Data (fallback cloud)
+import os
 import time
 import pandas as pd
 from utils.indicators import add_indicators
-from config import HISTORY_DAYS, FINNHUB_API_KEY, TWELVE_DATA_API_KEY
+from config import HISTORY_DAYS
 
 # ── Helpers communs ───────────────────────────────────────
 def _safe(val, default=None):
@@ -150,10 +151,11 @@ _fh_client = None
 def _fh():
     global _fh_client
     if _fh_client is None:
-        if not FINNHUB_API_KEY:
+        api_key = os.getenv("FINNHUB_API_KEY", "")
+        if not api_key:
             raise RuntimeError("FINNHUB_API_KEY absent")
         import finnhub
-        _fh_client = finnhub.Client(api_key=FINNHUB_API_KEY)
+        _fh_client = finnhub.Client(api_key=api_key)
     return _fh_client
 
 
@@ -166,10 +168,11 @@ def _period_to_days(period: str) -> int:
 
 
 def _get_candles_td(ticker: str, days: int) -> pd.DataFrame:
-    if not TWELVE_DATA_API_KEY:
+    api_key = os.getenv("TWELVE_DATA_API_KEY", "")
+    if not api_key:
         raise RuntimeError("TWELVE_DATA_API_KEY absent")
     from twelvedata import TDClient
-    td = TDClient(apikey=TWELVE_DATA_API_KEY)
+    td = TDClient(apikey=api_key, timeout=12)
     try:
         ts = td.time_series(
             symbol=ticker, interval="1day",
