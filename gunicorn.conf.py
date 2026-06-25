@@ -4,9 +4,15 @@ import multiprocessing
 # Bind
 bind    = "0.0.0.0:5000"
 
-# Workers : 2 workers sync suffisent (pipeline IO-bound ~15s)
-# Augmenter avec prudence : chaque worker consomme ~300 Mo (yfinance + matplotlib)
-workers = min(multiprocessing.cpu_count() * 2 + 1, 4)
+# Render free tier = 512 Mo RAM. Un seul worker (sync) suffit pour ce trafic.
+# Chaque worker charge pandas + matplotlib + yfinance ≈ 300 Mo ;
+# 2+ workers dépassent la limite et provoquent un OOM restart.
+workers = 1
+
+# Redémarre le worker après N requêtes pour libérer la mémoire accumulée
+# (DataFrames pandas, figures matplotlib non collectées, etc.)
+max_requests        = 200
+max_requests_jitter = 20
 
 # Timeout étendu car le pipeline prend 15-25 secondes
 # (yfinance + news + LLM + graphiques matplotlib)

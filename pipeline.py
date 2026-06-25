@@ -152,7 +152,10 @@ def run(ticker: str, use_cache: bool = True) -> dict:
             "tokens": 0,
         }
 
-    # Mise en cache du résultat complet pour 15 minutes
-    set_cached(ticker, result, ttl_minutes=15)
+    # Cache : on exclut market["history"] (DataFrame OHLCV lourd, inutile à re-servir)
+    # Les features qui en dépendent (charts, zones, patterns) ont toutes un try/except
+    # et s'affichent vides sur un hit cache — ce qui est acceptable sur un 2e chargement.
+    _cacheable = {**result, "market": {k: v for k, v in result["market"].items() if k != "history"}}
+    set_cached(ticker, _cacheable, ttl_minutes=15)
     return result
 
