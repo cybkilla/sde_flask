@@ -220,8 +220,13 @@
       &nbsp;·&nbsp; coût moy. <strong style="color:var(--sde-text)">${sym}${parseFloat(s.cout_moyen).toFixed(2)}</strong>
       &nbsp;·&nbsp; investi <strong style="color:var(--sde-text)">${sym}${parseFloat(s.total_investi).toFixed(2)}</strong>
     </span>
-    <span style="color:${pColor2};font-weight:600;margin-left:auto">
-      ${_pct(s.pnl_pct)} &nbsp;·&nbsp; ${pSign}${sym}${Math.abs(parseFloat(s.pnl_euros)).toFixed(2)}
+    <span style="margin-left:auto;text-align:right">
+      <span style="font-size:.7rem;color:var(--sde-muted);display:block">
+        ${s.pnl_pct >= 0 ? "Plus-value" : "Moins-value"} latente
+      </span>
+      <span style="color:${pColor2};font-weight:600">
+        ${_pct(s.pnl_pct)} &nbsp;·&nbsp; ${pSign}${sym}${Math.abs(parseFloat(s.pnl_euros)).toFixed(2)}
+      </span>
     </span>
     <a href="/analyze/${ticker}" data-sde-loading="Analyse de ${ticker}…"
        style="font-size:.78rem;color:var(--sde-teal);flex-shrink:0">
