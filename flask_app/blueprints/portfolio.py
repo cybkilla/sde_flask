@@ -136,7 +136,25 @@ def get_advice(ticker: str):
 
             market  = {**snap.get("market", {}), "price": price or snap["market"].get("price")}
             summary = get_portfolio_summary(current_user.id, ticker, price)
-            advice  = generate_advice(summary, market, snap)
+
+            # Pattern chandelier depuis l'historique du snapshot
+            candle_info = None
+            try:
+                from analysis.candle_patterns import detect_patterns
+                hist = snap.get("market", {}).get("history")
+                if hist is not None and len(hist) > 0:
+                    pat_df = detect_patterns(hist.tail(60))
+                    if not pat_df.empty:
+                        last = pat_df.iloc[-1]
+                        candle_info = {
+                            "signal":      last["signal"],
+                            "pattern":     last["pattern"],
+                            "description": last.get("description", ""),
+                        }
+            except Exception as _ce:
+                print(f"[Advice] detect_patterns erreur : {_ce}", flush=True)
+
+            advice  = generate_advice(summary, market, snap, candle_info=candle_info)
             advice_row = save_advice(current_user.id, ticker, advice, market, snap)
 
         # Historique des 14 derniers conseils

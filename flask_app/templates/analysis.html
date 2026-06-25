@@ -607,15 +607,15 @@
     </div>
   </div>
 
-  <!-- Positions P&L -->
-  <div id="sde-positions-wrap">
+  <!-- Conseil du jour — en premier, info la plus actionnable -->
+  <div id="sde-advice-wrap">
     <p class="text-muted small text-center py-2">
-      <span class="spinner-border spinner-border-sm me-1"></span>Chargement…
+      <span class="spinner-border spinner-border-sm me-1"></span>Génération du conseil…
     </p>
   </div>
 
-  <!-- Conseil du jour -->
-  <div id="sde-advice-wrap" class="mt-3"></div>
+  <!-- Résumé P&L + lots en timeline -->
+  <div id="sde-positions-wrap"></div>
 
   <!-- Historique conseils -->
   <div id="sde-advice-history-wrap"></div>
@@ -701,49 +701,64 @@ const sdePortfolio = (function () {
       .then(r => r.json()).then(data => {
         const wrap = document.getElementById("sde-positions-wrap");
         if (!data.ok || !data.summary) {
-          wrap.innerHTML = `<p class="text-muted small text-center py-1">
-            Aucune position enregistrée. Cliquez sur "+ Ajouter un achat" pour commencer.</p>`;
+          wrap.innerHTML = `<p class="text-muted small text-center py-1 mb-0">
+            Aucune position enregistrée.</p>`;
           return;
         }
-        const s = data.summary;
-        let rows = s.lots.map(l => `
-          <tr>
-            <td style="font-size:.78rem;color:var(--sde-muted)">${l.date_achat}</td>
-            <td style="font-size:.82rem">${parseFloat(l.quantite).toLocaleString()} actions</td>
-            <td style="font-size:.82rem">@ ${SYM}${parseFloat(l.prix_achat).toFixed(4)}</td>
-            <td>
-              <button class="btn btn-sm py-0 px-1" style="color:#D85A30;background:none;border:none"
-                      onclick="sdePortfolio.deletePos(${l.id})" title="Supprimer ce lot">
-                <i class="bi bi-trash3" style="font-size:.75rem"></i>
-              </button>
-            </td>
-          </tr>`).join("");
-
+        const s        = data.summary;
         const pnlColor = s.pnl_euros >= 0 ? "#1D9E75" : "#D85A30";
+        const sign     = s.pnl_euros >= 0 ? "+" : "";
+
+        const lots = s.lots.map(l => {
+          const d      = new Date(l.date_achat + "T00:00:00");
+          const dateFr = d.toLocaleDateString("fr-FR", {day:"2-digit", month:"short", year:"numeric"});
+          return `
+            <div style="display:flex;align-items:center;justify-content:space-between;
+                        padding:7px 0;border-bottom:1px solid var(--sde-border)">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="width:7px;height:7px;border-radius:50%;
+                             background:var(--sde-muted);flex-shrink:0"></span>
+                <div>
+                  <span style="font-size:.78rem;color:var(--sde-muted)">${dateFr}</span>
+                  <span style="font-size:.82rem;margin-left:8px">
+                    <strong>${parseFloat(l.quantite).toLocaleString()} actions</strong>
+                    @ ${SYM}${parseFloat(l.prix_achat).toFixed(4)}
+                  </span>
+                </div>
+              </div>
+              <button style="background:none;border:none;color:#D85A30;padding:2px 6px;
+                             cursor:pointer;opacity:.65;line-height:1"
+                      onclick="sdePortfolio.deletePos(${l.id})" title="Supprimer ce lot">
+                <i class="bi bi-trash3" style="font-size:.72rem"></i>
+              </button>
+            </div>`;
+        }).join("");
+
         wrap.innerHTML = `
-          <div class="table-responsive">
-            <table class="table table-sm mb-2" style="font-size:.82rem">
-              <thead><tr>
-                <th style="color:var(--sde-muted);font-weight:500">Date</th>
-                <th style="color:var(--sde-muted);font-weight:500">Quantité</th>
-                <th style="color:var(--sde-muted);font-weight:500">Prix achat</th>
-                <th></th>
-              </tr></thead>
-              <tbody>${rows}</tbody>
-            </table>
+          <div style="border-top:1px solid var(--sde-border);padding:10px 0 10px;
+                      display:flex;flex-wrap:wrap;align-items:center;
+                      justify-content:space-between;gap:8px">
+            <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:.8rem">
+              <span>
+                <span style="color:var(--sde-muted)">Investi</span>
+                <strong> ${SYM}${s.total_investi.toLocaleString(undefined,{minimumFractionDigits:2})}</strong>
+              </span>
+              <span>
+                <span style="color:var(--sde-muted)">Coût moy.</span>
+                <strong> ${SYM}${parseFloat(s.cout_moyen).toFixed(4)}</strong>
+              </span>
+              <span style="color:var(--sde-muted)">
+                ${parseFloat(s.total_shares).toLocaleString()} actions
+              </span>
+            </div>
+            <div style="font-size:.85rem;font-weight:700;color:${pnlColor}">
+              ${sign}${SYM}${Math.abs(s.pnl_euros).toFixed(2)}
+              <span style="font-weight:400;font-size:.75rem">
+                (${sign}${s.pnl_pct.toFixed(2)}%)
+              </span>
+            </div>
           </div>
-          <div style="background:#F8FAFC;border-radius:8px;padding:10px 14px;display:flex;flex-wrap:wrap;gap:16px;font-size:.82rem">
-            <span><span style="color:var(--sde-muted)">Total</span> <strong>${parseFloat(s.total_shares).toLocaleString()} actions</strong></span>
-            <span><span style="color:var(--sde-muted)">Coût moyen</span> <strong>${SYM}${parseFloat(s.cout_moyen).toFixed(4)}</strong></span>
-            <span><span style="color:var(--sde-muted)">Investi</span> <strong>${SYM}${s.total_investi.toLocaleString(undefined,{minimumFractionDigits:2})}</strong></span>
-            <span><span style="color:var(--sde-muted)">Valeur actuelle</span> <strong>${SYM}${s.valeur_actuelle.toLocaleString(undefined,{minimumFractionDigits:2})}</strong></span>
-            <span><span style="color:var(--sde-muted)">P&L</span>
-              <strong style="color:${pnlColor}">
-                ${s.pnl_euros >= 0 ? "+" : ""}${SYM}${Math.abs(s.pnl_euros).toFixed(2)}
-                (${s.pnl_euros >= 0 ? "+" : ""}${s.pnl_pct.toFixed(2)}%)
-              </strong>
-            </span>
-          </div>`;
+          <div style="padding:0 2px">${lots}</div>`;
       })
       .catch(() => {
         document.getElementById("sde-positions-wrap").innerHTML =
@@ -754,37 +769,49 @@ const sdePortfolio = (function () {
   /* ── Conseil du jour ── */
   function loadAdvice() {
     const wrap = document.getElementById("sde-advice-wrap");
-    wrap.innerHTML = `<p class="text-muted small text-center py-1">
+    wrap.innerHTML = `<p class="text-muted small text-center py-2">
       <span class="spinner-border spinner-border-sm me-1"></span>Génération du conseil…</p>`;
     fetch(`/portfolio/advice/${TICKER}`)
       .then(r => r.json()).then(data => {
         if (!data.ok) {
-          wrap.innerHTML = `<p class="text-muted small text-center py-1">${data.error || "Conseil non disponible"}</p>`;
+          wrap.innerHTML = `<p class="text-muted small text-center py-1 mb-2">${data.error || "Conseil non disponible"}</p>`;
           loadHistory([]);
+          loadPositions();
           return;
         }
-        const a     = data.advice;
-        const color = ACTION_COLOR[a.action] || "#5a6a7a";
-        const icon  = ACTION_ICON[a.action]  || "◆";
+        const a      = data.advice;
+        const color  = ACTION_COLOR[a.action] || "#5a6a7a";
+        const icon   = ACTION_ICON[a.action]  || "◆";
         const qtyTxt = a.quantite_suggeree
-          ? ` · <strong>${parseFloat(a.quantite_suggeree).toLocaleString()} actions</strong>` : "";
-        const prixTxt = a.prix_jour
-          ? ` · Prix conseil ${SYM}${parseFloat(a.prix_jour).toFixed(2)}` : "";
+          ? ` <span style="font-weight:400;font-size:.78rem">· ${parseFloat(a.quantite_suggeree).toLocaleString()} actions</span>` : "";
+
+        // Date lisible en français
+        const rawDate = a.date_conseil || new Date().toISOString().slice(0,10);
+        const dateObj = new Date(rawDate + "T00:00:00");
+        const dateFr  = dateObj.toLocaleDateString("fr-FR", {day:"numeric", month:"long"});
+
+        const prixMeta = a.prix_jour
+          ? `<span style="margin-left:10px">${SYM}${parseFloat(a.prix_jour).toFixed(2)}</span>` : "";
 
         wrap.innerHTML = `
-          <div style="border-left:4px solid ${color};padding:10px 14px;background:${color}11;border-radius:0 8px 8px 0">
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-              <span style="background:${color};color:#fff;padding:3px 10px;border-radius:20px;font-weight:700;font-size:.85rem">
-                ${icon} ${a.action}
+          <div style="background:${color}13;border-radius:10px;padding:14px 16px;margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center;
+                        flex-wrap:wrap;gap:8px;margin-bottom:10px">
+              <span style="background:${color};color:#fff;padding:5px 14px;border-radius:20px;
+                           font-weight:700;font-size:.88rem;letter-spacing:.01em">
+                ${icon} ${a.action}${qtyTxt}
               </span>
-              <span style="font-size:.75rem;color:var(--sde-muted)">
-                Conseil du ${a.date_conseil || new Date().toISOString().slice(0,10)}${qtyTxt}${prixTxt}
+              <span style="font-size:.72rem;color:var(--sde-muted)">
+                ${dateFr}${prixMeta}
               </span>
             </div>
-            <p style="margin:0;font-size:.83rem;color:var(--sde-text)">${a.raisonnement || ""}</p>
+            <p style="margin:0;font-size:.83rem;color:var(--sde-text);line-height:1.6">
+              ${a.raisonnement || ""}
+            </p>
           </div>`;
 
         loadHistory(data.history, data.stats);
+        loadPositions();
       })
       .catch(() => { wrap.innerHTML = `<p class="text-danger small">Erreur conseil.</p>`; });
   }
@@ -873,8 +900,7 @@ const sdePortfolio = (function () {
     .then(r => r.json()).then(data => {
       if (!data.ok) { errEl.textContent = data.error; errEl.classList.remove("d-none"); return; }
       bootstrap.Modal.getInstance(document.getElementById("sde-position-modal")).hide();
-      loadPositions();
-      loadAdvice();   // régénère le conseil avec la nouvelle position
+      loadAdvice();   // régénère conseil + recharge positions en cascade
     })
     .catch(() => { errEl.textContent = "Erreur réseau."; errEl.classList.remove("d-none"); });
   }
@@ -903,8 +929,7 @@ const sdePortfolio = (function () {
 
   /* ── Init ── */
   document.addEventListener("DOMContentLoaded", function () {
-    loadPositions();
-    loadAdvice();
+    loadAdvice();   // appelle loadPositions() en fin de chaîne
   });
 
   return { openAddModal, submitAdd, deletePos, refreshAdvice };
