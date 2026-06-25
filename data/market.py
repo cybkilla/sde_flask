@@ -179,10 +179,11 @@ def _get_candles_td(ticker: str, days: int) -> pd.DataFrame:
             outputsize=min(days, 5000), order="ASC",
         ).as_pandas()
     except Exception as e:
-        print(f"[Market] Twelve Data erreur ({ticker}): {e}")
+        print(f"[Market] Twelve Data erreur ({ticker}) [{type(e).__name__}]: {e}", flush=True)
         return pd.DataFrame()
 
     if ts is None or ts.empty:
+        print(f"[Market] Twelve Data réponse vide pour {ticker}", flush=True)
         return pd.DataFrame()
 
     ts.index = pd.to_datetime(ts.index)
