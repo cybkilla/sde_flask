@@ -984,10 +984,17 @@ const sdePortfolio = (function () {
     const amount = parseFloat(document.getElementById("sde-pos-amount").value);
     if (!isNaN(price) && price > 0 && !isNaN(amount) && amount > 0) {
       _calcLock = true;
-      const qty = Math.round(amount / price);
-      document.getElementById("sde-pos-qty").value    = qty;
-      document.getElementById("sde-pos-amount").value = (price * qty).toFixed(2);
+      document.getElementById("sde-pos-qty").value = Math.round(amount / price);
       _calcLock = false;
+    }
+  }
+
+  function _fixAmount() {
+    if (_calcLock) return;
+    const price = parseFloat(document.getElementById("sde-pos-price").value);
+    const qty   = parseInt(document.getElementById("sde-pos-qty").value, 10);
+    if (!isNaN(price) && price > 0 && !isNaN(qty) && qty > 0) {
+      document.getElementById("sde-pos-amount").value = (price * qty).toFixed(2);
     }
   }
 
@@ -998,6 +1005,7 @@ const sdePortfolio = (function () {
     });
     document.getElementById("sde-pos-qty").addEventListener("input", _updateAmount);
     document.getElementById("sde-pos-amount").addEventListener("input", _updateQty);
+    document.getElementById("sde-pos-amount").addEventListener("blur", _fixAmount);
   });
 
   function openAddModal(type, price, qty, conseilDate) {
