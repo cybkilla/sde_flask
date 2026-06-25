@@ -408,7 +408,9 @@
     const amount = parseFloat(document.getElementById("sde-pos-amount").value);
     if (!isNaN(price) && price > 0 && !isNaN(amount) && amount > 0) {
       _calcLock = true;
-      document.getElementById("sde-pos-qty").value = Math.round(amount / price);
+      const qty = Math.round(amount / price);
+      document.getElementById("sde-pos-qty").value    = qty;
+      document.getElementById("sde-pos-amount").value = (price * qty).toFixed(2);
       _calcLock = false;
     }
   }
