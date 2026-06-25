@@ -220,6 +220,30 @@ def save_advice(username: str, ticker: str, advice: dict,
         return advice
 
 
+def get_all_today_advice(username: str, tickers: list) -> dict:
+    """Retourne {ticker: advice_row} pour plusieurs tickers en une seule requête Supabase."""
+    if not tickers:
+        return {}
+    try:
+        from db import _init, _client, is_available
+        if not is_available():
+            return {}
+        _init()
+        rows = (
+            _client.table(_TABLE)
+            .select("*")
+            .eq("username", username)
+            .in_("ticker", [t.upper() for t in tickers])
+            .eq("date_conseil", str(date.today()))
+            .execute()
+            .data or []
+        )
+        return {r["ticker"]: r for r in rows}
+    except Exception as e:
+        print(f"[Advisor] get_all_today_advice erreur : {e}", flush=True)
+        return {}
+
+
 def get_advice_history(username: str, ticker: str, limit: int = 30) -> list:
     """Retourne l'historique des conseils (plus récent en premier)."""
     try:

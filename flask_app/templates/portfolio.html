@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}SDE — Mes positions{% endblock %}
+
+{% block content %}
+
+<div class="sde-ticker-header mb-3">
+  <div style="flex:1">
+    <div class="d-flex align-items-center gap-2">
+      <span class="sde-ticker-name">
+        <i class="bi bi-briefcase me-1"></i>Mes positions
+      </span>
+    </div>
+    <div class="sde-ticker-meta mt-1">
+      Vue d'ensemble · Conseils du jour · Prix live
+    </div>
+  </div>
+  <button class="sde-nav-btn" onclick="loadOverview()" title="Actualiser">
+    <i class="bi bi-arrow-clockwise me-1"></i>
+    <span class="hide-xs">Actualiser</span>
+  </button>
+</div>
+
+<div id="sde-overview-wrap">
+  <div class="text-center py-5">
+    <div class="spinner-border" style="color:var(--sde-teal);width:2rem;height:2rem" role="status"></div>
+    <p class="text-muted mt-3" style="font-size:.85rem">Chargement des positions…</p>
+  </div>
+</div>
+
+<p class="sde-disclaimer mt-2">
+  SDE est un outil d'aide à la décision. Ces informations ne constituent pas un conseil financier.
+</p>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+
+  const ACTION_COLOR = {
+    ACHETER: "#1D9E75", RENFORCER: "#15803d",
+    TENIR: "#BA7517", SURVEILLER: "#5a6a7a",
+    "ALLÉGER": "#D85A30", VENDRE: "#991b1b",
+  };
+  const ACTION_ICON = {
+    ACHETER: "↑", RENFORCER: "↗", TENIR: "◆",
+    SURVEILLER: "◎", "ALLÉGER": "↘", VENDRE: "↓",
+  };
+
+  function _pct(v) {
+    const n = parseFloat(v);
+    return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
+  }
+  function _money(sym, v) {
+    return sym + Math.abs(parseFloat(v)).toFixed(2);
+  }
+  function _dateFr(iso) {
+    return new Date(iso + "T00:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
+  }
+
+  /* ── Rendu du bloc conseil pour un ticker ── */
+  function adviceHtml(ticker, sym, a) {
+    if (!a) {
+      return `<div id="advice-wrap-${ticker}"
+                   style="background:#F1F5F9;border-radius:8px;padding:10px 14px;
+                          margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <i class="bi bi-info-circle" style="color:var(--sde-muted)"></i>
+        <span style="font-size:.8rem;color:var(--sde-muted)">Pas encore de conseil aujourd'hui —</span>
+        <a href="/analyze/${ticker}" data-sde-loading="Analyse de ${ticker}…"
+           style="font-size:.8rem;font-weight:500">Analyser d'abord →</a>
+      </div>`;
+    }
+    const color = ACTION_COLOR[a.action] || "#5a6a7a";
+    const icon  = ACTION_ICON[a.action]  || "◆";
+    const qty   = a.quantite_suggeree
+      ? ` <span style="font-weight:400;font-size:.76rem">· ${parseFloat(a.quantite_suggeree).toLocaleString("en-US", {maximumFractionDigits:4})} actions</span>`
+      : "";
+    return `<div id="advice-wrap-${ticker}"
+                 style="background:${color}13;border-radius:8px;padding:10px 14px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <span style="background:${color};color:#fff;padding:4px 12px;border-radius:20px;
+                     font-weight:700;font-size:.82rem;letter-spacing:.01em">
+          ${icon} ${a.action}${qty}
+        </span>
+        <span style="font-size:.72rem;color:var(--sde-muted)">${_dateFr(a.date_conseil || new Date().toISOString().slice(0,10))}</span>
+        ${a.prix_jour ? `<span style="font-size:.72rem;color:var(--sde-muted)">${sym}${parseFloat(a.prix_jour).toFixed(2)}</span>` : ""}
+        <button onclick="refreshAdvice('${ticker}')"
+                style="margin-left:auto;background:none;border:1px solid var(--sde-border);
+                       border-radius:6px;padding:2px 8px;font-size:.72rem;
+                       color:var(--sde-muted);cursor:pointer" title="Régénérer le conseil">
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+      </div>
+      <p style="margin:0;font-size:.8rem;color:var(--sde-text);line-height:1.6">${a.raisonnement || ""}</p>
+    </div>`;
+  }
+
+  /* ── Rendu d'une carte ticker ── */
+  function renderCard(pos) {
+    const { ticker, company, sym, price, var_1d, summary: s, advice: a } = pos;
+    const pColor = var_1d >= 0 ? "#1D9E75" : "#D85A30";
+    const arr    = var_1d >= 0 ? "▲" : "▼";
+    const pColor2 = s.pnl_pct >= 0 ? "#1D9E75" : "#D85A30";
+    const pSign   = s.pnl_euros >= 0 ? "+" : "−";
+
+    return `
+<div class="sde-card mb-3" id="card-${ticker}">
+
+  <!-- En-tête ticker + prix -->
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;
+              gap:8px;margin-bottom:12px">
+    <div>
+      <a href="/analyze/${ticker}" data-sde-loading="Analyse de ${ticker}…"
+         style="font-weight:700;font-size:1rem;color:var(--sde-navy)">${ticker}</a>
+      <span style="font-size:.78rem;color:var(--sde-muted);margin-left:6px">${company}</span>
+    </div>
+    <div style="text-align:right;flex-shrink:0">
+      ${price
+        ? `<span style="font-weight:600;font-size:.95rem">${sym}${parseFloat(price).toFixed(2)}</span>
+           <span style="color:${pColor};font-size:.8rem;margin-left:5px">${arr} ${_pct(var_1d)}</span>`
+        : `<span style="font-size:.78rem;color:var(--sde-muted)">Prix indisponible</span>`}
+    </div>
+  </div>
+
+  <!-- Conseil du jour -->
+  ${adviceHtml(ticker, sym, a)}
+
+  <!-- Résumé P&L -->
+  <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;font-size:.8rem;
+              padding-top:10px;border-top:1px solid var(--sde-border)">
+    <span style="color:var(--sde-muted)">
+      <strong style="color:var(--sde-text)">
+        ${parseFloat(s.total_shares).toLocaleString("en-US", {maximumFractionDigits:4})}
+      </strong> actions
+      &nbsp;·&nbsp; coût moy.
+      <strong style="color:var(--sde-text)">${sym}${parseFloat(s.cout_moyen).toFixed(2)}</strong>
+      &nbsp;·&nbsp; investi
+      <strong style="color:var(--sde-text)">${sym}${parseFloat(s.total_investi).toFixed(2)}</strong>
+    </span>
+    <span style="color:${pColor2};font-weight:600;margin-left:auto">
+      ${_pct(s.pnl_pct)}
+      &nbsp;·&nbsp; ${pSign}${_money(sym, s.pnl_euros)}
+    </span>
+    <a href="/analyze/${ticker}" data-sde-loading="Analyse de ${ticker}…"
+       style="font-size:.78rem;color:var(--sde-teal);flex-shrink:0">
+      Voir analyse <i class="bi bi-arrow-right"></i>
+    </a>
+  </div>
+
+</div>`;
+  }
+
+  /* ── Chargement de la vue d'ensemble ── */
+  function loadOverview() {
+    const wrap = document.getElementById("sde-overview-wrap");
+    wrap.innerHTML = `<div class="text-center py-5">
+      <div class="spinner-border" style="color:var(--sde-teal);width:2rem;height:2rem"></div>
+      <p class="text-muted mt-3" style="font-size:.85rem">Chargement des positions…</p>
+    </div>`;
+    fetch("/portfolio/overview")
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) {
+          wrap.innerHTML = `<p class="text-danger small">${data.error || "Erreur chargement"}</p>`;
+          return;
+        }
+        if (!data.positions || data.positions.length === 0) {
+          wrap.innerHTML = `
+            <div class="sde-card text-center py-5">
+              <i class="bi bi-briefcase" style="font-size:2.2rem;color:var(--sde-muted)"></i>
+              <p class="mt-3 mb-1 fw-semibold">Aucune position enregistrée</p>
+              <p class="text-muted small">Analysez un ticker puis ajoutez un achat via la section <em>Ma position</em>.</p>
+            </div>`;
+          return;
+        }
+        wrap.innerHTML = data.positions.map(renderCard).join("");
+      })
+      .catch(() => {
+        wrap.innerHTML = `<p class="text-danger small">Erreur lors du chargement.</p>`;
+      });
+  }
+
+  /* ── Régénération du conseil pour un ticker ── */
+  function refreshAdvice(ticker) {
+    const wrap = document.getElementById("advice-wrap-" + ticker);
+    if (!wrap) return;
+    wrap.style.background = "#F1F5F9";
+    wrap.innerHTML = `<p class="text-muted" style="font-size:.8rem;padding:4px 0">
+      <span class="spinner-border spinner-border-sm me-1"></span>Régénération…</p>`;
+
+    fetch("/portfolio/advice/" + ticker + "/reset", {
+      method: "POST",
+      headers: { "X-CSRFToken": CSRF },
+    })
+    .then(() => fetch("/portfolio/advice/" + ticker))
+    .then(r => r.json())
+    .then(data => {
+      // Récupérer sym depuis la carte parente
+      const card = document.getElementById("card-" + ticker);
+      const symEl = card ? card.querySelector("[data-sym]") : null;
+      const sym = symEl ? symEl.dataset.sym : "$";
+      if (!data.ok || !data.advice) {
+        wrap.style.background = "#F1F5F9";
+        wrap.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <i class="bi bi-info-circle" style="color:var(--sde-muted)"></i>
+          <span style="font-size:.8rem;color:var(--sde-muted)">Conseil non disponible —</span>
+          <a href="/analyze/${ticker}" style="font-size:.8rem;font-weight:500">Analyser d'abord →</a>
+        </div>`;
+        return;
+      }
+      const a = data.advice;
+      const color = ACTION_COLOR[a.action] || "#5a6a7a";
+      const icon  = ACTION_ICON[a.action]  || "◆";
+      const qty   = a.quantite_suggeree
+        ? ` <span style="font-weight:400;font-size:.76rem">· ${parseFloat(a.quantite_suggeree).toLocaleString("en-US", {maximumFractionDigits:4})} actions</span>`
+        : "";
+      wrap.style.background = color + "13";
+      wrap.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <span style="background:${color};color:#fff;padding:4px 12px;border-radius:20px;
+                       font-weight:700;font-size:.82rem">${icon} ${a.action}${qty}</span>
+          <span style="font-size:.72rem;color:var(--sde-muted)">${_dateFr(a.date_conseil || new Date().toISOString().slice(0,10))}</span>
+          <button onclick="refreshAdvice('${ticker}')"
+                  style="margin-left:auto;background:none;border:1px solid var(--sde-border);
+                         border-radius:6px;padding:2px 8px;font-size:.72rem;
+                         color:var(--sde-muted);cursor:pointer">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+        </div>
+        <p style="margin:0;font-size:.8rem;color:var(--sde-text);line-height:1.6">${a.raisonnement || ""}</p>`;
+    })
+    .catch(() => {
+      wrap.innerHTML = `<p class="text-danger small" style="padding:4px 0">Erreur régénération.</p>`;
+    });
+  }
+
+  window.loadOverview    = loadOverview;
+  window.refreshAdvice   = refreshAdvice;
+
+  document.addEventListener("DOMContentLoaded", loadOverview);
+})();
+</script>
+{% endblock %}

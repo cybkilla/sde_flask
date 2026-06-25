@@ -18,6 +18,14 @@ def home():
     return render_template("home.html")
 
 
+# ── Mes positions ─────────────────────────────────────────────────────────────
+
+@bp.route("/mes-positions")
+@login_required
+def mes_positions():
+    return render_template("portfolio.html")
+
+
 # ── Autocomplete search ───────────────────────────────────────────────────────
 
 @bp.route("/api/search")

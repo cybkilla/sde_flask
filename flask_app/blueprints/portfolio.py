@@ -83,6 +83,68 @@ def delete_position(position_id: int):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+# ── Vue d'ensemble toutes positions ──────────────────────────────────────────
+
+@bp.route("/overview")
+@login_required
+def get_overview():
+    """
+    Retourne toutes les positions de l'utilisateur avec prix live et conseil du jour.
+    Une seule requête Supabase pour les positions, une pour les conseils.
+    """
+    try:
+        from portfolio.positions import get_positions, get_portfolio_summary
+        from portfolio.advisor   import get_all_today_advice, ACTION_LABELS
+        from data.market         import get_live_price
+
+        _SYM = {"USD":"$","EUR":"€","GBP":"£","JPY":"¥","CHF":"Fr","CAD":"CA$","AUD":"A$","HKD":"HK$"}
+
+        all_lots = get_positions(current_user.id)
+        if not all_lots:
+            return jsonify({"ok": True, "positions": [], "labels": ACTION_LABELS})
+
+        # Tickers uniques, dans l'ordre d'apparition
+        tickers = list(dict.fromkeys(l["ticker"] for l in all_lots))
+
+        # Conseils du jour en une seule requête
+        advices = get_all_today_advice(current_user.id, tickers)
+
+        result = []
+        for ticker in tickers:
+            try:
+                live    = get_live_price(ticker)
+                price   = live.get("price") or 0
+                var_1d  = live.get("var_1d") or 0
+                summary = get_portfolio_summary(current_user.id, ticker, price)
+                if not summary:
+                    continue
+                currency = summary.get("currency", "USD")
+                company  = next(
+                    (l["company"] for l in all_lots
+                     if l["ticker"] == ticker and l.get("company")),
+                    ticker,
+                )
+                # Exclure les lots du résumé (détail non nécessaire ici)
+                s = {k: v for k, v in summary.items() if k != "lots"}
+                result.append({
+                    "ticker":   ticker,
+                    "company":  company,
+                    "currency": currency,
+                    "sym":      _SYM.get(currency, "$"),
+                    "price":    price,
+                    "var_1d":   var_1d,
+                    "summary":  s,
+                    "advice":   advices.get(ticker),
+                })
+            except Exception as e:
+                print(f"[Overview] {ticker} erreur : {e}", flush=True)
+
+        return jsonify({"ok": True, "positions": result, "labels": ACTION_LABELS})
+
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 # ── Conseil du jour ───────────────────────────────────────────────────────────
 
 @bp.route("/advice/<ticker>/reset", methods=["POST"])
