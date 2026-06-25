@@ -14,7 +14,10 @@ def _init():
         return
     _ready = True
     url = os.getenv("SUPABASE_URL", "").strip()
-    key = os.getenv("SUPABASE_KEY", "").strip()
+    # Préférer la service role key (bypass RLS côté serveur).
+    # Fallback sur la clé anon si service key absente (dev local).
+    key = (os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+           or os.getenv("SUPABASE_KEY", "").strip())
     if url and key:
         try:
             from supabase import create_client
