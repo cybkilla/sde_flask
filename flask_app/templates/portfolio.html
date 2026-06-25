@@ -282,6 +282,9 @@
     const today    = new Date().toISOString().slice(0, 10);
     const followed = (s.lots || []).some(l => l.conseil_date === today);
 
+    const sellLots = (s.lots || []).filter(l => l.type === 'vente');
+    const cashRecu = sellLots.reduce((sum, l) => sum + parseFloat(l.quantite) * parseFloat(l.prix_achat), 0);
+
     const _ms = window.sdeMarketStatus ? window.sdeMarketStatus() : { isOpen: false };
     const mktBadge = _ms.isOpen
       ? `<span style="display:inline-block;background:#E1F5EE;color:#1D9E75;font-size:.64rem;
@@ -323,9 +326,10 @@
     <span style="color:var(--sde-muted);font-size:.8rem">
       ${s.position_fermee
         ? `<span style="background:#F1F5F9;border-radius:5px;padding:2px 7px;font-size:.74rem;color:var(--sde-muted);font-weight:600">Position clôturée</span>`
-        : `<strong style="color:var(--sde-text)">${parseFloat(s.total_shares).toLocaleString("en-US", {maximumFractionDigits:4})}</strong> actions`}
+        : `<strong style="color:#2563EB">${parseFloat(s.total_shares).toLocaleString("en-US", {maximumFractionDigits:4})}</strong> actions`}
       &nbsp;·&nbsp; coût moy. <strong style="color:var(--sde-text)">${sym}${parseFloat(s.cout_moyen).toFixed(2)}</strong>
       &nbsp;·&nbsp; investi <strong style="color:var(--sde-text)">${sym}${parseFloat(s.total_investi).toFixed(2)}</strong>
+      ${cashRecu > 0 ? `&nbsp;·&nbsp; <span style="color:var(--sde-muted)">encaissé</span> <strong style="color:#2563EB">${sym}${cashRecu.toFixed(2)}</strong>` : ""}
     </span>
     <span style="margin-left:auto;text-align:right;flex-shrink:0">
       ${s.position_fermee ? (() => {
@@ -389,6 +393,40 @@
           return;
         }
         wrap.innerHTML = data.positions.map(renderCard).join("");
+
+        // Bannière liquidités globales (cash encaissé de toutes les ventes)
+        const cashByCurrency = {};
+        data.positions.forEach(pos => {
+          const sells = (pos.summary.lots || []).filter(l => l.type === 'vente');
+          const cash  = sells.reduce((s, l) => s + parseFloat(l.quantite) * parseFloat(l.prix_achat), 0);
+          if (cash > 0.001) {
+            if (!cashByCurrency[pos.currency]) cashByCurrency[pos.currency] = { sym: pos.sym, total: 0 };
+            cashByCurrency[pos.currency].total += cash;
+          }
+        });
+        const cashEntries = Object.values(cashByCurrency);
+        if (cashEntries.length > 0) {
+          const cashStr = cashEntries
+            .map(e => `<strong>${e.sym}${e.total.toFixed(2)}</strong>`)
+            .join("&nbsp;&nbsp;+&nbsp;&nbsp;");
+          wrap.insertAdjacentHTML("afterbegin", `
+            <div style="background:linear-gradient(135deg,#EFF6FF,#F0FDF4);
+                        border:1px solid #BFDBFE;border-radius:10px;
+                        padding:12px 16px;display:flex;align-items:center;
+                        gap:12px;margin-bottom:12px">
+              <i class="bi bi-wallet2" style="font-size:1.3rem;color:#2563EB;flex-shrink:0"></i>
+              <div>
+                <div style="font-size:.68rem;color:var(--sde-muted);font-weight:700;
+                            letter-spacing:.05em;text-transform:uppercase;margin-bottom:3px">
+                  Liquidités disponibles
+                </div>
+                <div style="font-size:1rem;color:#2563EB">${cashStr}</div>
+                <div style="font-size:.68rem;color:var(--sde-muted);margin-top:2px">
+                  Total encaissé de vos ventes — disponible pour réinvestissement
+                </div>
+              </div>
+            </div>`);
+        }
       })
       .catch(() => {
         wrap.innerHTML = `<p class="text-danger small">Erreur lors du chargement.</p>`;
