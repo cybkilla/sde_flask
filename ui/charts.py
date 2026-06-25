@@ -27,8 +27,8 @@ def plot_price(hist: pd.DataFrame, ticker: str):
     close = df["Close"]
     color = "#00e57a" if close.iloc[-1] >= close.iloc[0] else "#ff3d5a"
 
-    fig = plt.figure(figsize=(11, 6))
-    gs  = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.04)
+    fig = plt.figure(figsize=(11, 6), constrained_layout=True)
+    gs  = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.04, figure=fig)
     ax1 = fig.add_subplot(gs[0])
     ax2 = fig.add_subplot(gs[1], sharex=ax1)
 
@@ -49,14 +49,14 @@ def plot_price(hist: pd.DataFrame, ticker: str):
     ax2.grid(True, alpha=0.3)
     ax2.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m"))
     fig.autofmt_xdate(rotation=30)
-    plt.tight_layout(); return fig
+    return fig
 
 def plot_rsi(hist: pd.DataFrame):
     """RSI 14j avec zones colorées depuis pd.Series."""
     df = hist.tail(30)["RSI"]
     v  = df.iloc[-1]
     c  = "#ff3d5a" if v > 70 else "#00e57a" if v < 30 else "#f5c842"
-    fig, ax = plt.subplots(figsize=(11, 3))
+    fig, ax = plt.subplots(figsize=(11, 3), constrained_layout=True)
     ax.plot(df.index, df, color="#4da6ff", lw=2)
     ax.axhline(70, color="#ff3d5a", ls="--", lw=1, alpha=0.8, label="Surachat 70")
     ax.axhline(30, color="#00e57a", ls="--", lw=1, alpha=0.8, label="Survente 30")
@@ -67,12 +67,13 @@ def plot_rsi(hist: pd.DataFrame):
                 textcoords="offset points", color=c, fontsize=9, fontweight="bold")
     ax.set_ylim(0,100); ax.legend(fontsize=8); ax.grid(True,alpha=0.3)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m"))
-    fig.autofmt_xdate(rotation=30); plt.tight_layout(); return fig
+    fig.autofmt_xdate(rotation=30)
+    return fig
 
 def plot_macd(hist: pd.DataFrame):
     """MACD avec histogramme vert/rouge via pd.Series.where()."""
     df = hist.tail(30)
-    fig, ax = plt.subplots(figsize=(11, 3))
+    fig, ax = plt.subplots(figsize=(11, 3), constrained_layout=True)
     ax.plot(df.index, df["MACD"],     color="#4da6ff", lw=1.5, label="MACD")
     ax.plot(df.index, df["MACD_sig"], color="#f5c842", lw=1.5, label="Signal")
     pos = df["MACD_hist"].where(df["MACD_hist"] >= 0).fillna(0)
@@ -82,7 +83,8 @@ def plot_macd(hist: pd.DataFrame):
     ax.axhline(0, color="#5a6a7a", lw=1, alpha=0.5)
     ax.legend(fontsize=8); ax.grid(True, alpha=0.3)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m"))
-    fig.autofmt_xdate(rotation=30); plt.tight_layout(); return fig
+    fig.autofmt_xdate(rotation=30)
+    return fig
 
 
 def plot_candlestick(hist: pd.DataFrame, ticker: str) -> go.Figure:
