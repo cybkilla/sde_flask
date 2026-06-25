@@ -357,5 +357,13 @@ def get_market_data(ticker: str) -> dict:
     try:
         return _get_yfinance(ticker)
     except Exception as e:
-        print(f"[Market] yfinance indisponible pour {ticker} ({e}) — bascule Finnhub+TwelveData")
+        print(f"[Market] yfinance indisponible pour {ticker} ({e}) — bascule Finnhub+TwelveData", flush=True)
+    try:
         return _get_finnhub_fallback(ticker)
+    except Exception as e2:
+        print(f"[Market] {ticker} introuvable sur toutes les sources : {e2}", flush=True)
+        raise ValueError(
+            f"Ticker « {ticker} » introuvable sur nos sources de données. "
+            f"Vérifiez le symbole ou ajoutez le suffixe du marché "
+            f"(ex : AIR.PA pour Euronext, DND.TO pour TSX, VOD.L pour London)."
+        )
