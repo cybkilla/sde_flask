@@ -49,6 +49,11 @@
       <i class="bi {% if in_watchlist %}bi-bookmark-star-fill{% else %}bi-bookmark-star{% endif %} me-1"></i>
       <span class="hide-xs">{% if in_watchlist %}Watchlist{% else %}Ajouter{% endif %}</span>
     </button>
+    <button class="sde-nav-btn" title="Aller à ma position"
+            onclick="document.getElementById('sde-portfolio-section').scrollIntoView({behavior:'smooth'})">
+      <i class="bi bi-briefcase me-1"></i>
+      <span class="hide-xs">Position</span>
+    </button>
     {% endif %}
     <a href="{{ url_for('stock.analyze', ticker=ticker) }}?nocache=1"
        class="sde-nav-btn" title="Régénérer l'analyse"
@@ -721,7 +726,7 @@ const sdePortfolio = (function () {
                 <div>
                   <span style="font-size:.78rem;color:var(--sde-muted)">${dateFr}</span>
                   <span style="font-size:.82rem;margin-left:8px">
-                    <strong>${parseFloat(l.quantite).toLocaleString()} actions</strong>
+                    <strong>${parseFloat(l.quantite).toLocaleString('en-US', {maximumFractionDigits:4})} actions</strong>
                     @ ${SYM}${parseFloat(l.prix_achat).toFixed(4)}
                   </span>
                 </div>
@@ -741,14 +746,14 @@ const sdePortfolio = (function () {
             <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:.8rem">
               <span>
                 <span style="color:var(--sde-muted)">Investi</span>
-                <strong> ${SYM}${s.total_investi.toLocaleString(undefined,{minimumFractionDigits:2})}</strong>
+                <strong> ${SYM}${parseFloat(s.total_investi).toFixed(2)}</strong>
               </span>
               <span>
                 <span style="color:var(--sde-muted)">Coût moy.</span>
                 <strong> ${SYM}${parseFloat(s.cout_moyen).toFixed(4)}</strong>
               </span>
               <span style="color:var(--sde-muted)">
-                ${parseFloat(s.total_shares).toLocaleString()} actions
+                ${parseFloat(s.total_shares).toLocaleString('en-US', {maximumFractionDigits:4})} actions
               </span>
             </div>
             <div style="font-size:.85rem;font-weight:700;color:${pnlColor}">
@@ -783,7 +788,7 @@ const sdePortfolio = (function () {
         const color  = ACTION_COLOR[a.action] || "#5a6a7a";
         const icon   = ACTION_ICON[a.action]  || "◆";
         const qtyTxt = a.quantite_suggeree
-          ? ` <span style="font-weight:400;font-size:.78rem">· ${parseFloat(a.quantite_suggeree).toLocaleString()} actions</span>` : "";
+          ? ` <span style="font-weight:400;font-size:.78rem">· ${parseFloat(a.quantite_suggeree).toLocaleString('en-US', {maximumFractionDigits:4})} actions</span>` : "";
 
         // Date lisible en français
         const rawDate = a.date_conseil || new Date().toISOString().slice(0,10);
