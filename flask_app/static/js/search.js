@@ -135,6 +135,7 @@
       if (badge)      badge.classList.remove("d-none");
       btn.disabled   = false;
       if (directWrap) directWrap.classList.add("d-none");
+      navigateTo(selectedTicker);
     }
 
     function clearSelection() {
