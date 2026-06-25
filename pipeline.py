@@ -52,9 +52,7 @@ def run(ticker: str, use_cache: bool = True) -> dict:
             from snapshot import get_snapshot
             snap = get_snapshot(ticker)
             if snap:
-                # Peuple le cache in-memory (sans history pour économiser la RAM)
-                _lite = {**snap, "market": {k: v for k, v in snap["market"].items() if k != "history"}}
-                set_cached(ticker, _lite, ttl_minutes=15)
+                set_cached(ticker, snap, ttl_minutes=15)
                 return snap
         except Exception as e:
             print(f"[Pipeline] get_snapshot erreur : {e}", flush=True)
@@ -165,9 +163,8 @@ def run(ticker: str, use_cache: bool = True) -> dict:
             "tokens": 0,
         }
 
-    # Cache in-memory sans history (économise la RAM)
-    _cacheable = {**result, "market": {k: v for k, v in result["market"].items() if k != "history"}}
-    set_cached(ticker, _cacheable, ttl_minutes=15)
+    # Cache in-memory complet — history tronqué à 45 lignes, impact RAM négligeable
+    set_cached(ticker, result, ttl_minutes=15)
 
     # Snapshot Supabase (silencieux si Supabase indisponible)
     try:
