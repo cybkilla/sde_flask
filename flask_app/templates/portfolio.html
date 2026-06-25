@@ -165,12 +165,6 @@
         </span>
         <span style="font-size:.72rem;color:var(--sde-muted)">${_dateFr(a.date_conseil || new Date().toISOString().slice(0,10))}</span>
         ${a.prix_jour ? `<span style="font-size:.72rem;color:var(--sde-muted)">${sym}${parseFloat(a.prix_jour).toFixed(2)}</span>` : ""}
-        <button onclick="refreshAdvice('${ticker}')"
-                style="margin-left:auto;background:none;border:1px solid var(--sde-border);
-                       border-radius:6px;padding:2px 8px;font-size:.72rem;
-                       color:var(--sde-muted);cursor:pointer" title="Régénérer le conseil">
-          <i class="bi bi-arrow-clockwise"></i>
-        </button>
       </div>
       <p style="margin:0;font-size:.8rem;color:var(--sde-text);line-height:1.6">${a.raisonnement || ""}</p>
     </div>`;
@@ -330,51 +324,6 @@
       });
   }
 
-  /* ── Régénération conseil ── */
-  function refreshAdvice(ticker) {
-    const wrap = document.getElementById("advice-wrap-" + ticker);
-    if (!wrap) return;
-    const card = document.getElementById("card-" + ticker);
-    const sym  = card ? card.dataset.sym : "$";
-    wrap.style.background = "#F1F5F9";
-    wrap.innerHTML = `<p class="text-muted" style="font-size:.8rem;padding:4px 0">
-      <span class="spinner-border spinner-border-sm me-1"></span>Régénération…</p>`;
-    fetch("/portfolio/advice/" + ticker + "/reset", {
-      method: "POST", headers: { "X-CSRFToken": CSRF },
-    })
-    .then(() => fetch("/portfolio/advice/" + ticker))
-    .then(r => r.json())
-    .then(data => {
-      if (!data.ok || !data.advice) {
-        wrap.style.background = "#F1F5F9";
-        wrap.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <i class="bi bi-info-circle" style="color:var(--sde-muted)"></i>
-          <span style="font-size:.8rem;color:var(--sde-muted)">Conseil non disponible —</span>
-          <a href="/analyze/${ticker}" style="font-size:.8rem;font-weight:500">Analyser d'abord →</a>
-        </div>`; return;
-      }
-      const a = data.advice;
-      const color = ACTION_COLOR[a.action] || "#5a6a7a";
-      const icon  = ACTION_ICON[a.action]  || "◆";
-      const qty   = a.quantite_suggeree
-        ? ` <span style="font-weight:400;font-size:.76rem">· ${parseFloat(a.quantite_suggeree).toLocaleString("en-US",{maximumFractionDigits:4})} actions</span>` : "";
-      wrap.style.background = color + "13";
-      wrap.innerHTML = `
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-          <span style="background:${color};color:#fff;padding:4px 12px;border-radius:20px;
-                       font-weight:700;font-size:.82rem">${icon} ${a.action}${qty}</span>
-          <span style="font-size:.72rem;color:var(--sde-muted)">${_dateFr(a.date_conseil || new Date().toISOString().slice(0,10))}</span>
-          <button onclick="refreshAdvice('${ticker}')"
-                  style="margin-left:auto;background:none;border:1px solid var(--sde-border);
-                         border-radius:6px;padding:2px 8px;font-size:.72rem;color:var(--sde-muted);cursor:pointer">
-            <i class="bi bi-arrow-clockwise"></i>
-          </button>
-        </div>
-        <p style="margin:0;font-size:.8rem;color:var(--sde-text);line-height:1.6">${a.raisonnement || ""}</p>`;
-    })
-    .catch(() => { wrap.innerHTML = `<p class="text-danger small" style="padding:4px 0">Erreur.</p>`; });
-  }
-
   /* ── Modal ajout ── */
   function openAddModal(ticker, company, currency) {
     _modalTicker   = ticker;
@@ -433,7 +382,6 @@
   }
 
   window.loadOverview  = loadOverview;
-  window.refreshAdvice = refreshAdvice;
   window.openAddModal  = openAddModal;
   window.setPosType    = setPosType;
   window.submitAdd     = submitAdd;
