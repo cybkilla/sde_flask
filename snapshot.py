@@ -8,7 +8,7 @@ import pandas as pd
 from datetime import datetime, timezone, timedelta
 
 _TABLE        = "ticker_snapshots"
-MAX_AGE_HOURS = 12
+MAX_AGE_HOURS = 24   # pipeline complet max 1×/jour par ticker
 
 
 # ── Sérialisation ─────────────────────────────────────────────────────────────

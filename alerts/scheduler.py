@@ -2,7 +2,10 @@
 # Surveille périodiquement tous les tickers de toutes les watchlists.
 # Envoie une alerte si la recommandation change
 # ou si la variation du cours dépasse le seuil.
-# Lancer depuis le dossier stockengine/ : python alerts/scheduler.py
+#
+# Architecture deux vitesses :
+#   Chemin rapide  (chaque passage) : get_live_price() → Finnhub quote seul
+#   Chemin complet (snapshot > 24h) : pipeline.run()  → tous les modules
 
 import sys
 import time
@@ -10,7 +13,6 @@ import yaml
 from datetime import datetime, timedelta
 from pathlib  import Path
 
-# Assure que la racine du projet est dans sys.path (utile en mode one-shot)
 _ROOT = Path(__file__).parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
@@ -30,7 +32,6 @@ def get_all_users() -> dict:
                 return {r["username"]: r.get("email", "") for r in rows}
     except Exception as e:
         print(f"[Scheduler] Supabase get_all_users erreur : {e}", flush=True)
-    # Fallback YAML (dev local sans Supabase)
     try:
         with open(USERS_FILE) as f:
             config = yaml.safe_load(f) or {}
@@ -41,23 +42,90 @@ def get_all_users() -> dict:
         return {}
 
 
-def check_all():
+def _check_ticker(ticker: str, company: str, username: str, email: str) -> None:
     """
-    Parcourt toutes les watchlists et analyse chaque ticker.
-    Envoie un email si :
-      - La recommandation a changé depuis la dernière vérification
-      - La variation du cours dépasse ALERT_VAR_THRESHOLD (défaut 5%)
+    Vérifie un ticker et envoie une alerte si nécessaire.
+
+    Chemin rapide  : get_live_price() (Finnhub /quote) + snapshot Supabase
+                     → 1 appel API léger, pas de NewsAPI, pas de Groq
+    Chemin complet : pipeline.run() si snapshot expiré (> 24h)
+                     → renouvelle le snapshot, consomme tous les quotas
     """
-    from pipeline            import run
-    from watchlist.watchlist import get_watchlist, get_last_score, save_last_score
+    from data.market         import get_live_price
+    from snapshot            import get_snapshot, MAX_AGE_HOURS
+    from watchlist.watchlist import get_last_score, save_last_score
     from alerts.mailer       import send_alert
 
-    users = get_all_users()
-    now  = datetime.now()
+    # ── 1. Prix live — toujours (appel léger Finnhub) ────
+    live      = get_live_price(ticker)
+    prix_live = live.get("price") or 0
+
+    # ── 2. Reco + score — snapshot ou pipeline complet ───
+    snap = get_snapshot(ticker, max_age_hours=MAX_AGE_HOURS)
+
+    if snap:
+        new_reco  = snap["recommandation"]
+        new_score = snap["score_global"]
+        context   = snap.get("explication", {}).get("texte", "")
+        prix      = prix_live or snap["market"].get("price", 0)
+        print(f"  [{ticker}] chemin rapide — snapshot Supabase utilisé", flush=True)
+    else:
+        # Snapshot absent ou expiré → pipeline complet → met à jour Supabase
+        print(f"  [{ticker}] chemin complet — pipeline lancé", flush=True)
+        from pipeline import run as pipeline_run
+        res       = pipeline_run(ticker, use_cache=False)
+        new_reco  = res["recommandation"]
+        new_score = res["score_global"]
+        context   = res.get("explication", {}).get("texte", "")
+        prix      = prix_live or res["market"]["price"]
+
+    # ── 3. Variation par rapport au dernier prix enregistré ──
+    last      = get_last_score(ticker)
+    old_reco  = last.get("reco", "")
+    last_prix = last.get("prix")
+
+    if last_prix and last_prix > 0 and prix_live:
+        variation_tracked = round((prix_live - last_prix) / last_prix * 100, 2)
+    else:
+        variation_tracked = live.get("var_1d", 0) or 0
+
+    # ── 4. Conditions d'alerte ────────────────────────────
+    reco_change = bool(old_reco) and old_reco != new_reco
+    var_alert   = abs(variation_tracked) >= ALERT_VAR_THRESHOLD
+
+    if reco_change or var_alert:
+        print(f"  → Alerte {ticker} pour {username} "
+              f"({old_reco}→{new_reco}, var={variation_tracked:+.1f}%)", flush=True)
+        send_alert(
+            to_email      = email,
+            username      = username,
+            ticker        = ticker,
+            company       = company,
+            old_reco      = old_reco or "—",
+            new_reco      = new_reco,
+            score         = new_score,
+            prix          = prix,
+            variation     = variation_tracked,
+            reco_changed  = reco_change,
+            var_triggered = var_alert,
+            context       = context,
+        )
+
+    # ── 5. Mise à jour du dernier état connu ─────────────
+    save_last_score(ticker, new_score, new_reco, prix_live or prix)
+
+
+def check_all():
+    """Parcourt toutes les watchlists et vérifie chaque ticker."""
+    from watchlist.watchlist import get_watchlist
+
+    users    = get_all_users()
+    now      = datetime.now()
     next_run = now + timedelta(minutes=CHECK_INTERVAL_MIN)
-    print(f"[Scheduler] Vérification de {len(users)} utilisateur(s)…  "
-          f"| Exécution : {now.strftime('%Y-%m-%d %H:%M')}  "
-          f"| Prochaine : {next_run.strftime('%Y-%m-%d %H:%M')}", flush=True)
+    print(f"[Scheduler] {len(users)} utilisateur(s) | "
+          f"{now.strftime('%Y-%m-%d %H:%M')} → {next_run.strftime('%H:%M')}", flush=True)
+
+    seen_tickers: set = set()   # évite de re-vérifier un ticker commun à plusieurs users
 
     for username, email in users.items():
         watchlist = get_watchlist(username)
@@ -69,71 +137,20 @@ def check_all():
             company = item.get("company", ticker)
 
             try:
-                # Relance le pipeline complet pour ce ticker
-                res      = run(ticker, use_cache=False)
-                new_reco = res["recommandation"]
-                new_score= res["score_global"]
-                prix     = res["market"]["price"]
-                variation= res["market"]["var_1d"]
-
-                # Récupère le dernier état connu
-                last      = get_last_score(ticker)
-                old_reco  = last.get("reco", "")
-                last_prix = last.get("prix")
-
-                # Variation relative au DERNIER prix enregistré par le scheduler.
-                # Plus fiable que var_1d (yfinance) qui mesure toujours
-                # "hier → aujourd'hui" et rate les chutes des jours précédents.
-                if last_prix and last_prix > 0:
-                    variation_tracked = round(
-                        (prix - last_prix) / last_prix * 100, 2
-                    )
-                else:
-                    # Premier passage pour ce ticker → fallback sur var_1d
-                    variation_tracked = variation
-
-                # Conditions d'alerte
-                reco_change = bool(old_reco) and old_reco != new_reco
-                var_alert   = abs(variation_tracked) >= ALERT_VAR_THRESHOLD
-
-                if reco_change or var_alert:
-                    print(f"  → Alerte {ticker} pour {username} "
-                          f"({old_reco}→{new_reco}, "
-                          f"var_tracked={variation_tracked:+.1f}%)")
-                    context = res.get("explication", {}).get("texte", "")
-                    send_alert(
-                        to_email      = email,
-                        username      = username,
-                        ticker        = ticker,
-                        company       = company,
-                        old_reco      = old_reco or "—",
-                        new_reco      = new_reco,
-                        score         = new_score,
-                        prix          = prix,
-                        variation     = variation_tracked,
-                        reco_changed  = reco_change,
-                        var_triggered = var_alert,
-                        context       = context,
-                    )
-
-                # Met à jour le dernier état connu (prix inclus)
-                save_last_score(ticker, new_score, new_reco, prix)
-
+                _check_ticker(ticker, company, username, email)
+                seen_tickers.add(ticker)
             except Exception as e:
-                print(f"  ✗ Erreur {ticker} : {e}")
+                print(f"  ✗ Erreur {ticker} : {e}", flush=True)
+
+    print(f"[Scheduler] Terminé — {len(seen_tickers)} ticker(s) vérifiés", flush=True)
 
 
 if __name__ == "__main__":
-    import sys
     if "--once" in sys.argv:
-        # Mode GitHub Actions : un seul passage puis exit
         print("[Scheduler] Mode one-shot (--once)")
         check_all()
     else:
-        # Mode local : boucle infinie
-        print(f"[Scheduler] Démarré — vérification toutes les "
-              f"{CHECK_INTERVAL_MIN} minutes")
+        print(f"[Scheduler] Démarré — vérification toutes les {CHECK_INTERVAL_MIN} min")
         while True:
             check_all()
             time.sleep(CHECK_INTERVAL_MIN * 60)
-        

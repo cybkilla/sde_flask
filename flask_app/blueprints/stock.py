@@ -60,8 +60,9 @@ def analyze(ticker: str):
     snapshot_age_min = res.pop("_sde_snapshot_age_min", None)
     snapshot_ts      = res.pop("_sde_snapshot_ts",      None)
 
-    # Prix live : rafraîchit le cours si on sert un snapshot de + de 5 min
-    if snapshot_age_min is not None and snapshot_age_min > 5:
+    # Prix live : Finnhub quote systématique sur tout hit cache (in-memory ou Supabase).
+    # Sur un pipeline frais le prix est déjà current ; l'appel est négligeable (~100 ms).
+    if snapshot_age_min is not None:
         try:
             from data.market import get_live_price
             live = get_live_price(ticker)
