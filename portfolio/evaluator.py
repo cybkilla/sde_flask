@@ -5,10 +5,24 @@ from datetime import date, datetime, timezone, timedelta
 from collections import defaultdict
 
 
+def _market_open_now() -> bool:
+    """Retourne True si le NASDAQ est actuellement ouvert (heure Paris)."""
+    try:
+        import zoneinfo
+        now = datetime.now(zoneinfo.ZoneInfo("Europe/Paris"))
+        wd  = now.weekday()
+        tot = now.hour * 60 + now.minute
+        return wd < 5 and 15 * 60 + 30 <= tot < 22 * 60
+    except Exception:
+        return False   # fail-safe : on suppose fermé si tzdata absent
+
+
 def evaluate_pending(days_back: int = 60) -> dict:
     """
     Évalue tous les conseils non évalués des `days_back` derniers jours.
     Requiert Supabase. Utilise yfinance pour les prix de clôture J+1.
+    Skip les conseils dont le J+1 est aujourd'hui si le marché est encore ouvert
+    (prix intraday non représentatif — le scheduler s'en chargera via evaluate_yesterday_advice).
     Retourne {"evaluated": int, "skipped": int, "errors": int}.
     """
     from db import _init, _client, is_available
@@ -70,6 +84,13 @@ def evaluate_pending(days_back: int = 60) -> dict:
                         skipped += 1
                         continue
 
+                    j1_date = suivants.index[0].date()
+                    # Si J+1 est aujourd'hui et le marché est encore ouvert :
+                    # on skip — le prix intraday n'est pas la clôture finale.
+                    if j1_date == today and _market_open_now():
+                        skipped += 1
+                        continue
+
                     prix_j1 = float(suivants.iloc[0]["Close"])
                     prix_j0 = float(row["prix_jour"])
                     if prix_j0 == 0:
@@ -110,6 +131,60 @@ def evaluate_pending(days_back: int = 60) -> dict:
             errors += len(ticker_rows)
 
     return {"evaluated": evaluated, "skipped": skipped, "errors": errors}
+
+
+def reset_intraday_evals() -> int:
+    """
+    Remet à NULL les évaluations faites HORS de la fenêtre 20h-22h Paris
+    (prix d'ouverture ou intraday non représentatifs).
+    Appelée avant evaluate_pending() dans la route admin/stats.
+    Retourne le nombre de lignes invalidées.
+    """
+    try:
+        import zoneinfo
+        from db import _init, _client, is_available
+        if not is_available():
+            return 0
+        _init()
+
+        # Récupérer les évaluations récentes (7 derniers jours) ayant un evaluated_at
+        rows = (
+            _client.table("daily_advice")
+            .select("id,evaluated_at")
+            .not_.is_("bon_conseil", "null")
+            .not_.is_("evaluated_at", "null")
+            .gte("date_conseil", str(date.today() - timedelta(days=7)))
+            .execute()
+            .data or []
+        )
+
+        reset_count = 0
+        paris_tz = zoneinfo.ZoneInfo("Europe/Paris")
+        for row in rows:
+            try:
+                ts = datetime.fromisoformat(row["evaluated_at"].replace("Z", "+00:00"))
+                ts_paris = ts.astimezone(paris_tz)
+                wd  = ts_paris.weekday()
+                tot = ts_paris.hour * 60 + ts_paris.minute
+                in_eval_window = wd < 5 and 20 * 60 <= tot < 22 * 60
+                if not in_eval_window:
+                    _client.table("daily_advice").update({
+                        "bon_conseil":  None,
+                        "prix_j1":      None,
+                        "variation_j1": None,
+                        "evaluated_at": None,
+                    }).eq("id", row["id"]).execute()
+                    reset_count += 1
+            except Exception:
+                pass
+
+        if reset_count:
+            print(f"[Evaluator] {reset_count} évaluation(s) hors-fenêtre invalidée(s)", flush=True)
+        return reset_count
+
+    except Exception as e:
+        print(f"[Evaluator] reset_intraday_evals erreur : {e}", flush=True)
+        return 0
 
 
 def get_global_stats() -> dict:

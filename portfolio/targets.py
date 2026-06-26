@@ -35,31 +35,28 @@ def get_targets(username: str, ticker: str) -> dict | None:
 
 def save_targets(username: str, ticker: str,
                  take_profit: float | None, stop_loss: float | None) -> dict:
-    """Upsert les niveaux TP/SL. Réinitialise les flags d'alerte à chaque modif."""
+    """Upsert les niveaux TP/SL. Réinitialise les flags d'alerte à chaque modif.
+    Lève une exception si la DB est indisponible ou si l'upsert échoue."""
     if not _db_ok():
-        return {}
-    try:
-        from db import _init, _client
-        from datetime import datetime, timezone
-        _init()
-        row = {
-            "username":       username,
-            "ticker":         ticker.upper(),
-            "take_profit":    round(float(take_profit), 4) if take_profit else None,
-            "stop_loss":      round(float(stop_loss),   4) if stop_loss  else None,
-            "tp_alerted_at":  None,   # reset à chaque mise à jour
-            "sl_alerted_at":  None,
-            "updated_at":     datetime.now(timezone.utc).isoformat(),
-        }
-        result = (
-            _client.table(_TABLE)
-            .upsert(row, on_conflict="username,ticker")
-            .execute()
-        )
-        return result.data[0] if result.data else row
-    except Exception as e:
-        print(f"[Targets] save_targets erreur : {e}", flush=True)
-        return {}
+        raise RuntimeError("Base de données non disponible")
+    from db import _init, _client
+    from datetime import datetime, timezone
+    _init()
+    row = {
+        "username":       username,
+        "ticker":         ticker.upper(),
+        "take_profit":    round(float(take_profit), 4) if take_profit else None,
+        "stop_loss":      round(float(stop_loss),   4) if stop_loss  else None,
+        "tp_alerted_at":  None,
+        "sl_alerted_at":  None,
+        "updated_at":     datetime.now(timezone.utc).isoformat(),
+    }
+    result = (
+        _client.table(_TABLE)
+        .upsert(row, on_conflict="username,ticker")
+        .execute()
+    )
+    return result.data[0] if result.data else row
 
 
 def delete_targets(username: str, ticker: str) -> bool:

@@ -206,8 +206,9 @@ def data_delete():
 def stats():
     _require_admin()
     try:
-        from portfolio.evaluator import evaluate_pending, get_global_stats
-        eval_result = evaluate_pending(days_back=90)
+        from portfolio.evaluator import evaluate_pending, reset_intraday_evals, get_global_stats
+        reset_intraday_evals()     # Invalide les évaluations faites hors fenêtre (20h-22h)
+        eval_result  = evaluate_pending(days_back=90)
         global_stats = get_global_stats()
         return jsonify({"ok": True, "eval": eval_result, "stats": global_stats})
     except Exception as e:

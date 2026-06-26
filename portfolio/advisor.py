@@ -287,21 +287,33 @@ def _is_market_open(now_paris=None) -> bool:
     return wd < 5 and 15 * 60 + 30 <= tot < 22 * 60
 
 
+def _is_eval_window(now_paris=None) -> bool:
+    """
+    Fenêtre d'évaluation J+1 : 2 dernières heures de séance (20h00-22h00 Paris).
+    Les prix sont stables (pas de bruit d'ouverture ni de mid-day).
+    Utilisé pour décider si on peut évaluer le conseil de la veille.
+    """
+    if now_paris is None:
+        now_paris = _paris_now()
+    wd  = now_paris.weekday()
+    tot = now_paris.hour * 60 + now_paris.minute
+    return wd < 5 and 20 * 60 <= tot < 22 * 60
+
+
 def evaluate_yesterday_advice(username: str, ticker: str, current_price: float):
     """
     Appelé par le scheduler : évalue le conseil d'hier avec le prix actuel.
-    Met à jour prix_j1, variation_j1, bon_conseil dans daily_advice.
-    N'évalue qu'après l'ouverture du NASDAQ (15h30 Paris) pour éviter
-    les faux-négatifs liés au prix de clôture de la veille encore en cache.
-    Ré-évalue si une évaluation précédente était hors heures de marché.
+    N'évalue que dans la fenêtre 20h00-22h00 Paris (fin de séance, prix stables)
+    pour éviter le bruit des prix d'ouverture ou intraday.
+    Ré-évalue si une évaluation précédente était hors de cette fenêtre.
     """
     from datetime import timedelta
     try:
         now_paris = _paris_now()
-        if not _is_market_open(now_paris):
-            return   # Prix non significatif hors marché
+        if not _is_eval_window(now_paris):
+            return   # Hors fenêtre d'évaluation (20h-22h) — on attend les prix stables
     except Exception:
-        return   # tzdata absent → on ne risque pas une évaluation erronée
+        return   # tzdata absent → fail-closed
 
     yesterday = str(date.today() - timedelta(days=1))
     try:
@@ -318,13 +330,13 @@ def evaluate_yesterday_advice(username: str, ticker: str, current_price: float):
             return
 
         if row.get("evaluated_at"):
-            # Ré-évaluer si l'évaluation précédente était hors heures de marché
+            # Ré-évaluer seulement si l'évaluation précédente était hors fenêtre (20h-22h)
             try:
                 prev_eval  = datetime.fromisoformat(row["evaluated_at"])
                 import zoneinfo
                 prev_paris = prev_eval.astimezone(zoneinfo.ZoneInfo("Europe/Paris"))
-                if _is_market_open(prev_paris):
-                    return  # Déjà évalué pendant les heures de marché — on garde
+                if _is_eval_window(prev_paris):
+                    return  # Déjà évalué en fin de séance — valeur fiable, on garde
                 # Sinon : évaluation hors marché → on corrige
                 print(f"[Advisor] {ticker} ré-évaluation (précédente hors marché à "
                       f"{prev_paris.strftime('%H:%M')} Paris)", flush=True)

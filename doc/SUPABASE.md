@@ -46,9 +46,9 @@ CREATE TABLE scores (
 
 -- Cache pipeline sérialisé (TTL 24h)
 CREATE TABLE ticker_snapshots (
-  ticker     TEXT PRIMARY KEY,
-  payload    JSONB NOT NULL,
-  updated_at TIMESTAMPTZ DEFAULT now()
+  ticker       TEXT PRIMARY KEY,
+  data         JSONB NOT NULL,       -- colonne "data" (pas "payload")
+  refreshed_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- Lots d'achat ET de vente par utilisateur (supporte le DCA et les ventes partielles)

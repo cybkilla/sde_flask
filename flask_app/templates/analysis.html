@@ -1293,16 +1293,25 @@ window.sdePortfolio = (function () {
     })
     .then(r => r.json())
     .then(data => {
+      const btn = document.querySelector("[onclick='sdePortfolio.saveTargets()']");
       if (data.ok) {
         _renderTargetsBar();
-        const btn = document.querySelector("[onclick='sdePortfolio.saveTargets()']");
         if (btn) {
           const orig = btn.textContent;
           btn.textContent = "✓ Enregistré";
-          setTimeout(() => { btn.textContent = orig; }, 1500);
+          setTimeout(() => { btn.textContent = orig; }, 1800);
         }
+      } else {
+        if (btn) {
+          const orig = btn.textContent;
+          btn.style.background = "#D85A30";
+          btn.textContent = "✗ Erreur : " + (data.error || "sauvegarde impossible");
+          setTimeout(() => { btn.textContent = orig; btn.style.background = ""; }, 3000);
+        }
+        console.error("[SDE] saveTargets:", data.error);
       }
-    });
+    })
+    .catch(err => console.error("[SDE] saveTargets réseau:", err));
   }
 
   document.addEventListener("DOMContentLoaded", function () {
