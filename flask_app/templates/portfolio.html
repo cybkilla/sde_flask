@@ -69,6 +69,10 @@
           <label class="form-label small fw-semibold" id="sde-pos-price-label">Prix unitaire d'achat</label>
           <input type="number" id="sde-pos-price" class="form-control form-control-sm"
                  placeholder="ex : 1.85" min="0.0001" step="any">
+          <div id="sde-import-price-note" class="d-none mt-1"
+               style="font-size:.75rem;color:#6366F1;background:#EEF2FF;border-radius:6px;padding:5px 8px">
+            Prix bloqué au cours actuel — le P&amp;L de cette position partira de zéro.
+          </div>
         </div>
         <div class="mb-2">
           <label class="form-label small fw-semibold">Quantité (actions entières)</label>
@@ -115,7 +119,7 @@
 
   // Ticker actif pour le modal
   let _modalTicker = "", _modalCompany = "", _modalCurrency = "USD",
-      _modalPosType = "achat", _modalTotalShares = 0;
+      _modalPosType = "achat", _modalTotalShares = 0, _modalLivePrice = 0;
 
   function setPosType(type) {
     if (type === "vente" && _modalTotalShares <= 0) return;
@@ -141,8 +145,29 @@
     const dateLabel  = document.getElementById("sde-pos-date-label");
     const priceLabel = document.getElementById("sde-pos-price-label");
     const submitBtn  = document.getElementById("sde-pos-submit-btn");
-    if (dateLabel)  dateLabel.textContent  = isVente ? "Date de vente" : isImport ? "Date d'entrée en position" : "Date d'achat";
-    if (priceLabel) priceLabel.textContent = isVente ? "Prix unitaire de vente" : isImport ? "Prix d'entrée moyen" : "Prix unitaire d'achat";
+    if (dateLabel)  dateLabel.textContent  = isVente ? "Date de vente" : isImport ? "Date d'import" : "Date d'achat";
+    if (priceLabel) priceLabel.textContent = isVente ? "Prix unitaire de vente" : isImport ? "Prix actuel (auto)" : "Prix unitaire d'achat";
+    // Verrou prix + date en mode import
+    const priceInput = document.getElementById("sde-pos-price");
+    const dateInput  = document.getElementById("sde-pos-date");
+    const priceNote  = document.getElementById("sde-import-price-note");
+    if (priceInput && dateInput) {
+      if (isImport) {
+        priceInput.value      = _modalLivePrice > 0 ? _modalLivePrice.toFixed(4) : "";
+        priceInput.disabled   = true;
+        priceInput.style.background = "#F1F5F9";
+        dateInput.value       = new Date().toISOString().slice(0, 10);
+        dateInput.disabled    = true;
+        dateInput.style.background  = "#F1F5F9";
+        if (priceNote) priceNote.classList.remove("d-none");
+      } else {
+        priceInput.disabled   = false;
+        priceInput.style.background = "";
+        dateInput.disabled    = false;
+        dateInput.style.background  = "";
+        if (priceNote) priceNote.classList.add("d-none");
+      }
+    }
     if (submitBtn) {
       submitBtn.style.background = isVente ? "#D85A30" : isImport ? "#6366F1" : "#1D9E75";
       submitBtn.innerHTML = `<i class="bi bi-check-circle me-1"></i>${
@@ -516,7 +541,8 @@
     _modalPosType     = t;
     _modalConseilDate = (t === "import") ? null : (conseilDate || null);
     _modalTotalShares = parseFloat(totalShares) || 0;
-    setPosType(t);
+    _modalLivePrice   = parseFloat(price) || 0;
+    // Remplir les champs avant setPosType (qui verrouille prix+date en mode import)
     document.getElementById("sde-modal-ticker-label").textContent = ticker;
     document.getElementById("sde-pos-date").value   = new Date().toISOString().slice(0, 10);
     document.getElementById("sde-pos-price").value  = (price && !isNaN(price))
@@ -526,6 +552,7 @@
     document.getElementById("sde-pos-amount").value = "";
     document.getElementById("sde-pos-notes").value  = "";
     document.getElementById("sde-pos-error").classList.add("d-none");
+    setPosType(t);   // après les champs — verrouille prix/date si import
     _calcAmount();
     new bootstrap.Modal(document.getElementById("sde-position-modal")).show();
   }

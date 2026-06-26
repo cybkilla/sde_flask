@@ -673,10 +673,14 @@
           <label class="form-label small fw-semibold" id="sde-pos-date-label">Date d'achat</label>
           <input type="date" id="sde-pos-date" class="form-control form-control-sm">
         </div>
-        <div class="mb-2">
+        <div class="mb-2" id="sde-pos-price-wrap">
           <label class="form-label small fw-semibold" id="sde-pos-price-label">Prix unitaire d'achat</label>
           <input type="number" id="sde-pos-price" class="form-control form-control-sm"
                  placeholder="ex : 1.85" min="0.0001" step="any">
+          <div id="sde-import-price-note" class="d-none mt-1"
+               style="font-size:.75rem;color:#6366F1;background:#EEF2FF;border-radius:6px;padding:5px 8px">
+            Prix bloqué au cours actuel — le P&amp;L de cette position partira de zéro.
+          </div>
         </div>
         <div class="mb-2">
           <label class="form-label small fw-semibold">Quantité (actions entières)</label>
@@ -988,9 +992,28 @@ window.sdePortfolio = (function () {
       btnV.title = "";
     }
     document.getElementById("sde-pos-date-label").textContent  =
-      isVente ? "Date de vente" : isImport ? "Date d'entrée en position" : "Date d'achat";
+      isVente ? "Date de vente" : isImport ? "Date d'import" : "Date d'achat";
     document.getElementById("sde-pos-price-label").textContent =
-      isVente ? "Prix unitaire de vente" : isImport ? "Prix d'entrée moyen" : "Prix unitaire d'achat";
+      isVente ? "Prix unitaire de vente" : isImport ? "Prix actuel (auto)" : "Prix unitaire d'achat";
+    // Verrou prix + date en mode import
+    const priceInput = document.getElementById("sde-pos-price");
+    const dateInput  = document.getElementById("sde-pos-date");
+    const priceNote  = document.getElementById("sde-import-price-note");
+    if (isImport) {
+      priceInput.value    = LIVE_PRICE.toFixed(4);
+      priceInput.disabled = true;
+      priceInput.style.background = "#F1F5F9";
+      dateInput.value    = new Date().toISOString().slice(0, 10);
+      dateInput.disabled = true;
+      dateInput.style.background = "#F1F5F9";
+      priceNote.classList.remove("d-none");
+    } else {
+      priceInput.disabled = false;
+      priceInput.style.background = "";
+      dateInput.disabled  = false;
+      dateInput.style.background  = "";
+      priceNote.classList.add("d-none");
+    }
     const btn = document.getElementById("sde-pos-submit-btn");
     btn.style.background = isVente ? "#D85A30" : isImport ? "#6366F1" : "#1D9E75";
     btn.innerHTML = isVente
@@ -1048,7 +1071,7 @@ window.sdePortfolio = (function () {
     const t = type || "achat";
     _posType     = t;
     _conseilDate = (t === "import") ? null : (conseilDate || null);
-    setPosType(t);
+    // Remplir les champs avant setPosType (qui verrouille prix+date en mode import)
     document.getElementById("sde-pos-date").value   = new Date().toISOString().slice(0,10);
     document.getElementById("sde-pos-price").value  = (price != null && !isNaN(price))
       ? parseFloat(price).toFixed(4) : "";
@@ -1057,7 +1080,8 @@ window.sdePortfolio = (function () {
     document.getElementById("sde-pos-amount").value = "";
     document.getElementById("sde-pos-notes").value  = "";
     document.getElementById("sde-pos-error").classList.add("d-none");
-    _updateAmount();  // pré-calcule le montant si prix + qté fournis
+    setPosType(t);   // après les champs — verrouille prix/date si import
+    _updateAmount();
     new bootstrap.Modal(document.getElementById("sde-position-modal")).show();
   }
 
