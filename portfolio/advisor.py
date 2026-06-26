@@ -271,8 +271,21 @@ def evaluate_yesterday_advice(username: str, ticker: str, current_price: float):
     """
     Appelé par le scheduler : évalue le conseil d'hier avec le prix actuel.
     Met à jour prix_j1, variation_j1, bon_conseil dans daily_advice.
+    N'évalue qu'après l'ouverture du NASDAQ (15h30 Paris) pour éviter
+    les faux-négatifs liés au prix de clôture de la veille encore en cache.
     """
     from datetime import timedelta
+    try:
+        import zoneinfo
+        paris = zoneinfo.ZoneInfo("Europe/Paris")
+        now_paris = datetime.now(paris)
+        wd  = now_paris.weekday()   # 0=lun … 6=dim
+        tot = now_paris.hour * 60 + now_paris.minute
+        if wd >= 5 or tot < 15 * 60 + 30:
+            return   # Marché pas encore ouvert — prix non significatif
+    except Exception:
+        pass   # Si zoneinfo indispo, on laisse passer
+
     yesterday = str(date.today() - timedelta(days=1))
     try:
         from db import find_one, update_one, is_available
