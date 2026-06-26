@@ -127,6 +127,44 @@ def data_reset():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@bp.route("/data/reset-password", methods=["POST"])
+@login_required
+def data_reset_password():
+    """Envoie un lien de réinitialisation de mot de passe à l'utilisateur cible."""
+    _require_admin()
+    data = request.get_json(silent=True) or {}
+    if not _check_data_password(data.get("password", "")):
+        return jsonify({"ok": False, "error": "Mot de passe incorrect"}), 403
+
+    username = data.get("username", "").strip()
+    if not username or username == "__all__":
+        return jsonify({"ok": False, "error": "Sélectionnez un utilisateur précis"}), 400
+
+    try:
+        from db import find_one, is_available
+        if not is_available():
+            return jsonify({"ok": False, "error": "Supabase indisponible"})
+        user = find_one("users", {"username": username})
+        if not user:
+            return jsonify({"ok": False, "error": "Utilisateur introuvable"}), 404
+        email = user.get("email", "")
+        if not email:
+            return jsonify({"ok": False, "error": f"Aucun email associé au compte {username}"}), 400
+
+        from auth.auth_tokens import generate, send_reset
+        token = generate(username, "reset", hours=24)
+        if not token:
+            return jsonify({"ok": False, "error": "Impossible de générer le token"}), 500
+        sent = send_reset(email, username, token)
+        if not sent:
+            return jsonify({"ok": False, "error": "Erreur envoi email (vérifiez RESEND_API_KEY)"}), 500
+
+        print(f"[Admin] Reset password envoyé à {email} ({username}) par {current_user.id}", flush=True)
+        return jsonify({"ok": True, "email": email})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @bp.route("/data/delete", methods=["POST"])
 @login_required
 def data_delete():

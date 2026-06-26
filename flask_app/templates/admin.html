@@ -98,9 +98,13 @@
             <option value="">Chargement…</option>
           </select>
         </div>
+        <button onclick="openDataModal('reset-pwd')"
+                class="sde-nav-btn" style="color:#6366F1;font-size:.8rem;white-space:nowrap">
+          <i class="bi bi-key me-1"></i>Envoyer reset mdp
+        </button>
         <button onclick="openDataModal('reset')"
                 class="sde-nav-btn" style="color:#D85A30;font-size:.8rem;white-space:nowrap">
-          <i class="bi bi-arrow-counterclockwise me-1"></i>Réinitialiser
+          <i class="bi bi-arrow-counterclockwise me-1"></i>Réinitialiser données
         </button>
         <button onclick="openDataModal('delete')"
                 style="background:#991b1b;color:#fff;border:none;border-radius:7px;
@@ -466,7 +470,16 @@
 
     const scope = username === "__all__" ? "TOUS les utilisateurs" : username;
 
-    if (action === "reset") {
+    if (action === "reset-pwd") {
+      if (username === "__all__") {
+        showFeedback("Sélectionnez un utilisateur précis pour envoyer un reset de mot de passe.", false);
+        return;
+      }
+      title.textContent = "Envoyer un lien de réinitialisation";
+      desc.innerHTML = `Envoie un email de reset de mot de passe à <strong>${username}</strong>.<br>Le lien expire dans 24h.`;
+      btn.style.background = "#6366F1";
+      btn.textContent = "Envoyer";
+    } else if (action === "reset") {
       title.textContent = "Réinitialiser les données";
       desc.innerHTML = `Efface positions, conseils, watchlist, historique et config de <strong>${scope}</strong>.<br>Les comptes sont conservés.`;
       btn.style.background = "#D85A30";
@@ -504,10 +517,12 @@
     btn.disabled = true;
     btn.textContent = "…";
 
-    const url  = _dataAction === "reset" ? "/admin/data/reset" : "/admin/data/delete";
+    const url  = _dataAction === "reset-pwd" ? "/admin/data/reset-password"
+               : _dataAction === "reset"    ? "/admin/data/reset"
+               :                              "/admin/data/delete";
     const body = _dataAction === "reset"
       ? { target: username, password: pwd }
-      : { username,          password: pwd };
+      : { username, password: pwd };
 
     fetch(url, {
       method: "POST",
@@ -524,9 +539,11 @@
         return;
       }
       closeDataModal();
-      if (_dataAction === "delete" || data.deleted_user) {
+      if (data.deleted_user) {
         showFeedback(`✓ Compte "${data.deleted_user}" supprimé.`, true);
         loadUsers();
+      } else if (data.email) {
+        showFeedback(`✓ Lien de reset envoyé à ${data.email}.`, true);
       } else {
         showFeedback(`✓ Données réinitialisées pour : ${data.scope}.`, true);
       }

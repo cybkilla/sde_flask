@@ -49,12 +49,19 @@
       </div>
 
       <!-- Se souvenir de moi -->
-      <div class="mb-4 form-check">
+      <div class="mb-1 form-check">
         <input type="checkbox" class="form-check-input" id="remember_me"
                name="remember_me" value="1">
         <label class="form-check-label small text-muted" for="remember_me">
           Se souvenir de moi (30 jours)
         </label>
+      </div>
+
+      <div class="text-end mb-3">
+        <a href="{{ url_for('auth.forgot_password') }}"
+           class="sde-link" style="font-size:.8rem">
+          Mot de passe oublié ?
+        </a>
       </div>
 
       <button type="submit" class="btn btn-sde-teal btn-sm w-100">

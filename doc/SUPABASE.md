@@ -181,6 +181,30 @@ CREATE TABLE IF NOT EXISTS position_targets (
 );
 ```
 
+**Table `auth_tokens`** (activation de compte + reset de mot de passe — à créer si absente) :
+
+```sql
+CREATE TABLE IF NOT EXISTS auth_tokens (
+  id         BIGSERIAL PRIMARY KEY,
+  username   TEXT NOT NULL,
+  token      TEXT NOT NULL UNIQUE,
+  type       TEXT NOT NULL,        -- 'activation' | 'reset'
+  expires_at TIMESTAMPTZ NOT NULL,
+  used       BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE auth_tokens ENABLE ROW LEVEL SECURITY;
+```
+
+**Table `users`** (colonne activation — à ajouter si absente) :
+
+```sql
+-- Les comptes existants restent actifs (DEFAULT TRUE)
+-- Les nouvelles inscriptions avec email partent à FALSE jusqu'à activation
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT TRUE;
+```
+
 **Table `positions`** (colonnes ajoutées après création initiale) :
 
 ```sql
