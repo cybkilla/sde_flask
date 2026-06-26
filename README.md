@@ -36,6 +36,7 @@ Application web d'aide à la décision boursière. Analyse n'importe quelle acti
 - **Breakdown par type** : taux par action (ACHETER, RENFORCER, TENIR, SURVEILLER, ALLÉGER, VENDRE)
 - **Breakdown par ticker** : taux de fiabilité et dernier conseil pour chaque valeur suivie
 - **Gestion des données** : réinitialisation (positions, conseils, watchlist, historique) ou suppression de compte par utilisateur ou pour tous — protégé par `ADMIN_DATA_PASSWORD`
+- **Suppression granulaire** : suppression d'un ticker précis pour n'importe quel utilisateur (positions + TP/SL + conseils liés) — protégé par `ADMIN_DATA_PASSWORD`
 - **Reset mot de passe** : envoi d'un lien de réinitialisation par email pour n'importe quel utilisateur
 
 ### Plateforme

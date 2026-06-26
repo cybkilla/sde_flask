@@ -112,7 +112,25 @@
           <i class="bi bi-trash3 me-1"></i>Supprimer le compte
         </button>
       </div>
-      <p id="sde-data-feedback" class="small d-none"></p>
+
+      <!-- Suppression de position par ticker -->
+      <div style="border-top:1px solid #E2E8F0;padding-top:14px;margin-top:6px">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="small fw-semibold" style="color:var(--sde-navy)">
+            <i class="bi bi-layers me-1"></i>Supprimer une position (par ticker)
+          </span>
+          <button id="sde-pos-load-btn" onclick="loadPositions()"
+                  class="sde-nav-btn" style="font-size:.8rem;white-space:nowrap">
+            <i class="bi bi-eye me-1"></i>Voir les positions
+          </button>
+        </div>
+        <div id="sde-pos-wrap" class="d-none">
+          <p id="sde-pos-empty" class="small text-muted d-none">Aucune position pour cet utilisateur.</p>
+          <div id="sde-pos-list"></div>
+        </div>
+      </div>
+
+      <p id="sde-data-feedback" class="small d-none mt-2"></p>
     </div>
   </details>
 </div>
@@ -129,6 +147,14 @@
     <input type="password" id="sde-modal-pwd" class="form-control form-control-sm mb-1"
            placeholder="Saisir le mot de passe…"
            onkeydown="if(event.key==='Enter') confirmDataAction()">
+    <div id="sde-modal-related" class="d-none mt-2">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="sde-modal-delete-related" checked>
+        <label class="form-check-label small" for="sde-modal-delete-related">
+          Supprimer aussi les données liées (objectifs TP/SL, conseils du ticker)
+        </label>
+      </div>
+    </div>
     <p id="sde-modal-error" class="small text-danger d-none mt-1"></p>
     <div class="d-flex gap-2 justify-content-end mt-3">
       <button onclick="closeDataModal()" class="sde-nav-btn" style="font-size:.8rem">Annuler</button>
@@ -441,7 +467,8 @@
   });
 
   /* ── Gestion des données ── */
-  let _dataAction = null;   // 'reset' | 'delete'
+  let _dataAction       = null;   // 'reset' | 'delete' | 'delete-position'
+  let _deletePosTicket  = null;   // ticker courant pour delete-position
 
   function loadUsers() {
     fetch("/admin/users")
@@ -456,7 +483,7 @@
       });
   }
 
-  window.openDataModal = function(action) {
+  window.openDataModal = function(action, ticker) {
     const username = document.getElementById("sde-data-user").value;
     if (!username) return;
     _dataAction = action;
@@ -469,6 +496,9 @@
     err.classList.add("d-none");
 
     const scope = username === "__all__" ? "TOUS les utilisateurs" : username;
+
+    const relatedWrap = document.getElementById("sde-modal-related");
+    relatedWrap.classList.add("d-none");
 
     if (action === "reset-pwd") {
       if (username === "__all__") {
@@ -484,6 +514,17 @@
       desc.innerHTML = `Efface positions, conseils, watchlist, historique et config de <strong>${scope}</strong>.<br>Les comptes sont conservés.`;
       btn.style.background = "#D85A30";
       btn.textContent = "Réinitialiser";
+    } else if (action === "delete-position") {
+      _deletePosTicket = ticker;
+      if (!username || username === "__all__") {
+        showFeedback("Sélectionnez un utilisateur précis.", false);
+        return;
+      }
+      title.textContent = `Supprimer la position ${ticker}`;
+      desc.innerHTML = `Supprime tous les lots <strong>${ticker}</strong> de <strong>${username}</strong>. Irréversible.`;
+      btn.style.background = "#991b1b";
+      btn.textContent = "Supprimer";
+      relatedWrap.classList.remove("d-none");
     } else {
       if (username === "__all__") {
         showFeedback("La suppression de compte est possible pour un seul utilisateur à la fois.", false);
@@ -502,7 +543,8 @@
 
   window.closeDataModal = function() {
     document.getElementById("sde-data-modal").style.display = "none";
-    _dataAction = null;
+    _dataAction      = null;
+    _deletePosTicket = null;
   };
 
   window.confirmDataAction = function() {
@@ -517,11 +559,16 @@
     btn.disabled = true;
     btn.textContent = "…";
 
-    const url  = _dataAction === "reset-pwd" ? "/admin/data/reset-password"
-               : _dataAction === "reset"    ? "/admin/data/reset"
-               :                              "/admin/data/delete";
+    const isDelPos = _dataAction === "delete-position";
+    const url  = _dataAction === "reset-pwd"      ? "/admin/data/reset-password"
+               : _dataAction === "reset"           ? "/admin/data/reset"
+               : isDelPos                          ? "/admin/data/delete-position"
+               :                                     "/admin/data/delete";
     const body = _dataAction === "reset"
       ? { target: username, password: pwd }
+      : isDelPos
+      ? { username, ticker: _deletePosTicket, password: pwd,
+          delete_related: document.getElementById("sde-modal-delete-related").checked }
       : { username, password: pwd };
 
     fetch(url, {
@@ -544,6 +591,15 @@
         loadUsers();
       } else if (data.email) {
         showFeedback(`✓ Lien de reset envoyé à ${data.email}.`, true);
+      } else if (data.ticker) {
+        const d = data.deleted || {};
+        const detail = [
+          `${d.positions || 0} lot(s)`,
+          d.position_targets !== undefined ? `${d.position_targets} TP/SL` : null,
+          d.daily_advice !== undefined ? `${d.daily_advice} conseil(s)` : null,
+        ].filter(Boolean).join(", ");
+        showFeedback(`✓ ${data.ticker} supprimé pour ${data.username} (${detail}).`, true);
+        loadPositions();
       } else {
         showFeedback(`✓ Données réinitialisées pour : ${data.scope}.`, true);
       }
@@ -553,6 +609,63 @@
       err.textContent = "Erreur réseau.";
       err.classList.remove("d-none");
     });
+  };
+
+  window.loadPositions = function() {
+    const username = document.getElementById("sde-data-user").value;
+    if (!username || username === "__all__") {
+      showFeedback("Sélectionnez un utilisateur précis pour voir ses positions.", false);
+      return;
+    }
+    const wrap  = document.getElementById("sde-pos-wrap");
+    const list  = document.getElementById("sde-pos-list");
+    const empty = document.getElementById("sde-pos-empty");
+    wrap.classList.remove("d-none");
+    list.innerHTML = `<p class="small text-muted">Chargement…</p>`;
+    empty.classList.add("d-none");
+
+    fetch(`/admin/data/positions/${encodeURIComponent(username)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) { list.innerHTML = `<p class="small text-danger">${data.error}</p>`; return; }
+        if (!data.tickers || data.tickers.length === 0) {
+          list.innerHTML = "";
+          empty.classList.remove("d-none");
+          return;
+        }
+        list.innerHTML = `
+          <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+            <thead>
+              <tr style="border-bottom:2px solid #E2E8F0;color:var(--sde-muted)">
+                <th style="padding:6px 8px;text-align:left">Ticker</th>
+                <th style="padding:6px 8px;text-align:right">Lots</th>
+                <th style="padding:6px 8px;text-align:right">Actions nettes</th>
+                <th style="padding:6px 8px"></th>
+              </tr>
+            </thead>
+            <tbody id="sde-pos-tbody"></tbody>
+          </table>`;
+        const tbody = document.getElementById("sde-pos-tbody");
+        data.tickers.forEach(t => {
+          const tr = document.createElement("tr");
+          tr.style.borderBottom = "1px solid #F1F5F9";
+          tr.innerHTML = `
+            <td style="padding:6px 8px;font-weight:600;color:var(--sde-navy)">${t.ticker}
+              ${t.company ? `<span style="font-weight:400;color:var(--sde-muted)"> · ${t.company}</span>` : ""}
+            </td>
+            <td style="padding:6px 8px;text-align:right">${t.lots}</td>
+            <td style="padding:6px 8px;text-align:right">${t.net_shares}</td>
+            <td style="padding:6px 8px;text-align:right">
+              <button onclick="openDataModal('delete-position','${t.ticker}')"
+                      style="background:#991b1b;color:#fff;border:none;border-radius:6px;
+                             padding:3px 10px;font-size:.78rem;font-weight:600;cursor:pointer">
+                <i class="bi bi-trash3 me-1"></i>Supprimer
+              </button>
+            </td>`;
+          tbody.appendChild(tr);
+        });
+      })
+      .catch(() => { list.innerHTML = `<p class="small text-danger">Erreur réseau.</p>`; });
   };
 
   function showFeedback(msg, ok) {

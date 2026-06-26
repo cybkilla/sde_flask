@@ -201,6 +201,93 @@ def data_delete():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@bp.route("/data/positions/<username>")
+@login_required
+def list_user_positions(username):
+    """Retourne toutes les positions d'un utilisateur, groupées par ticker."""
+    _require_admin()
+    try:
+        from db import _init, _client, is_available
+        if not is_available():
+            return jsonify({"ok": False, "error": "Supabase indisponible"})
+        _init()
+        rows = (
+            _client.table("positions")
+            .select("id,ticker,company,date_achat,prix_achat,quantite,type,conseil_date")
+            .eq("username", username)
+            .order("ticker")
+            .order("date_achat")
+            .execute()
+            .data or []
+        )
+        # Group by ticker
+        by_ticker: dict = {}
+        for r in rows:
+            t = r["ticker"]
+            g = by_ticker.setdefault(t, {
+                "ticker": t, "company": r.get("company", ""),
+                "lots": 0, "total_achat": 0.0, "total_vente": 0.0,
+                "rows": [],
+            })
+            g["lots"] += 1
+            qty = float(r.get("quantite") or 0)
+            if r.get("type") == "vente":
+                g["total_vente"] += qty
+            else:
+                g["total_achat"] += qty
+            g["rows"].append(r)
+        tickers = [
+            {**v, "net_shares": round(v["total_achat"] - v["total_vente"], 4)}
+            for v in by_ticker.values()
+        ]
+        return jsonify({"ok": True, "tickers": tickers})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@bp.route("/data/delete-position", methods=["POST"])
+@login_required
+def delete_position():
+    """Supprime toutes les positions d'un ticker pour un utilisateur, et ses données liées."""
+    _require_admin()
+    data = request.get_json(silent=True) or {}
+    if not _check_data_password(data.get("password", "")):
+        return jsonify({"ok": False, "error": "Mot de passe incorrect"}), 403
+
+    username = data.get("username", "").strip()
+    ticker   = data.get("ticker", "").strip().upper()
+    delete_related = bool(data.get("delete_related", True))
+
+    if not username or not ticker:
+        return jsonify({"ok": False, "error": "Utilisateur et ticker requis"}), 400
+
+    try:
+        from db import _init, _client, is_available
+        if not is_available():
+            return jsonify({"ok": False, "error": "Supabase indisponible"})
+        _init()
+
+        res = _client.table("positions").delete().eq("username", username).eq("ticker", ticker).execute()
+        deleted = {"positions": len(res.data or [])}
+
+        if delete_related:
+            try:
+                r2 = _client.table("position_targets").delete().eq("username", username).eq("ticker", ticker).execute()
+                deleted["position_targets"] = len(r2.data or [])
+            except Exception:
+                deleted["position_targets"] = 0
+            try:
+                r3 = _client.table("daily_advice").delete().eq("username", username).eq("ticker", ticker).execute()
+                deleted["daily_advice"] = len(r3.data or [])
+            except Exception:
+                deleted["daily_advice"] = 0
+
+        print(f"[Admin] Suppression position {ticker}/{username} par {current_user.id}: {deleted}", flush=True)
+        return jsonify({"ok": True, "ticker": ticker, "username": username, "deleted": deleted})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @bp.route("/stats")
 @login_required
 def stats():
