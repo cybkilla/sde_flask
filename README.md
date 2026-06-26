@@ -29,12 +29,12 @@ Application web d'aide à la décision boursière. Analyse n'importe quelle acti
 
 ### Dashboard Admin
 - Accessible aux emails listés dans `ADMIN_EMAILS`
-- **Évaluation automatique J+1** : `evaluate_pending()` évalue les conseils passés via yfinance (variation J → J+1)
+- **Évaluation automatique J+1** : deux chemins — `evaluate_yesterday_advice()` via scheduler (fenêtre 20h–22h Paris, prix fin de séance Finnhub) + `evaluate_pending()` via admin (yfinance historique, skip si J+1 = aujourd'hui marché ouvert)
+- `reset_intraday_evals()` : invalide automatiquement les évaluations hors-fenêtre (7j) à chaque refresh admin pour forcer une ré-évaluation propre
 - **Taux de pertinence global** : % de bons conseils sur l'ensemble de l'historique
 - **Taux sur conseils suivis** : pertinence uniquement sur les conseils qui ont déclenché une transaction
 - **Breakdown par type** : taux par action (ACHETER, RENFORCER, TENIR, SURVEILLER, ALLÉGER, VENDRE)
 - **Breakdown par ticker** : taux de fiabilité et dernier conseil pour chaque valeur suivie
-- Note automatique si consulté avant 22h00 (évaluations J+1 incomplètes avant clôture)
 - **Gestion des données** : réinitialisation (positions, conseils, watchlist, historique) ou suppression de compte par utilisateur ou pour tous — protégé par `ADMIN_DATA_PASSWORD`
 - **Reset mot de passe** : envoi d'un lien de réinitialisation par email pour n'importe quel utilisateur
 
@@ -236,9 +236,13 @@ Voir `doc/SUPABASE.md` pour le schéma SQL complet et les politiques RLS.
 | `auth_tokens` | Tokens one-use d'activation de compte et de reset de mot de passe (expiry, type) |
 | `watchlist` | Tickers suivis par utilisateur |
 | `scores` | Dernier score/reco connu par ticker |
-| `ticker_snapshots` | Résultats pipeline sérialisés (cache 24h) |
+| `ticker_snapshots` | Résultats pipeline sérialisés (cache 24h) — colonne `data` (JSONB) |
 | `positions` | Lots d'achat ET de vente — colonnes `type` (achat/vente) et `conseil_date` |
-| `daily_advice` | Conseils journaliers + évaluation J+1 (`bon_conseil`, `variation_j1`) |
+| `daily_advice` | Conseils journaliers + évaluation J+1 (`bon_conseil`, `variation_j1`, `evaluated_at`) |
+| `position_targets` | Take Profit / Stop Loss par user/ticker + alertes email (`tp_alerted_at`, `sl_alerted_at`) |
+| `portfolio_snapshots` | Historique de valeur du portefeuille (snapshot quotidien) |
+| `advisor_config` | Seuils du moteur de conseil configurables par utilisateur |
+| `weekly_reports` | Anti-doublon rapports hebdomadaires envoyés par email |
 
 ## Horaires de trading NASDAQ
 

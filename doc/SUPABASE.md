@@ -90,24 +90,23 @@ CREATE TABLE daily_advice (
 
 ---
 
-## Activer RLS (Row Level Security)
+## Activer RLS (Row Level Security) — tables initiales
 
 RLS doit être activé sur **toutes les tables**. L'app utilise la `service_role` key côté serveur, qui bypasse RLS — l'activation empêche tout accès direct non autorisé via la clé anon.
 
 ```sql
+-- À exécuter juste après le schéma initial (6 tables ci-dessus)
 ALTER TABLE users             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE watchlist         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scores            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ticker_snapshots  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE positions         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE daily_advice      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE position_targets    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE portfolio_snapshots ENABLE ROW LEVEL SECURITY;
-ALTER TABLE advisor_config      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE weekly_reports      ENABLE ROW LEVEL SECURITY;
 ```
 
 Aucune policy supplémentaire n'est nécessaire : l'app accède toujours via `service_role` (bypass RLS).
+
+> Les tables créées par migration (weekly_reports, advisor_config, portfolio_snapshots, position_targets, auth_tokens) activent RLS dans leur propre bloc ci-dessous.
 
 ---
 
@@ -179,6 +178,8 @@ CREATE TABLE IF NOT EXISTS position_targets (
   updated_at     TIMESTAMPTZ DEFAULT now(),
   UNIQUE(username, ticker)
 );
+
+ALTER TABLE position_targets ENABLE ROW LEVEL SECURITY;
 ```
 
 **Table `users`** (colonne avatar — à ajouter si absente) :
@@ -307,6 +308,28 @@ pnl_total       = pnl_realise + pnl_non_realise
 ```
 
 La colonne `conseil_date` est renseignée quand l'utilisateur clique sur un badge conseil (date du conseil cliqué). Elle est `NULL` pour les saisies manuelles. Utilisée pour le ✓ Suivi et les KPIs admin.
+
+---
+
+## Évaluation J+1 des conseils (`daily_advice`)
+
+La colonne `bon_conseil` est remplie par deux chemins :
+
+| Chemin | Déclencheur | Fenêtre | Source prix |
+|---|---|---|---|
+| `evaluate_yesterday_advice()` | Scheduler (toutes les 30 min) | **20h00–22h00 Paris** | Finnhub live |
+| `evaluate_pending()` | Ouverture dashboard admin | Conseils antérieurs à aujourd'hui | yfinance historique |
+
+**Fenêtre 20h–22h** : restreinte à la fin de séance pour éviter le bruit du prix d'ouverture (les 5–15 premières minutes du marché sont volatiles et peu représentatives de la tendance J+1).
+
+**`reset_intraday_evals()`** : appelée automatiquement avant `evaluate_pending()` dans la route admin. Invalide les évaluations des 7 derniers jours qui ont été faites hors de la fenêtre 20h–22h (e.g. évaluations hors-marché avec prix stale) pour forcer une ré-évaluation propre.
+
+**Colonnes clés `daily_advice`** :
+- `prix_jour` : prix au moment de la génération du conseil (J0)
+- `prix_j1` : prix de clôture le lendemain évalué (J+1, fin de séance)
+- `variation_j1` : `(prix_j1 - prix_jour) / prix_jour × 100`
+- `bon_conseil` : `TRUE` si le sens était correct (NULL = pas encore évalué)
+- `evaluated_at` : timestamp de l'évaluation (utile pour détecter les évaluations hors-fenêtre)
 
 ---
 
