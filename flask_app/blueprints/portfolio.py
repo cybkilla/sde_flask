@@ -191,6 +191,43 @@ def get_overview():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+# ── Take Profit / Stop Loss ───────────────────────────────────────────────────
+
+@bp.route("/targets/<ticker>")
+@login_required
+def get_targets(ticker: str):
+    """Retourne les niveaux TP/SL pour un ticker."""
+    try:
+        from portfolio.targets import get_targets as _get
+        data = _get(current_user.id, ticker.upper())
+        return jsonify({"ok": True, "targets": data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@bp.route("/targets/<ticker>", methods=["POST"])
+@login_required
+def save_targets(ticker: str):
+    """Sauvegarde (upsert) les niveaux TP/SL."""
+    data = request.get_json(silent=True) or {}
+    tp   = data.get("take_profit")
+    sl   = data.get("stop_loss")
+    try:
+        tp = float(tp) if tp not in (None, "", 0) else None
+        sl = float(sl) if sl not in (None, "", 0) else None
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Valeurs invalides"}), 400
+    try:
+        from portfolio.targets import save_targets as _save, delete_targets as _del
+        if tp is None and sl is None:
+            _del(current_user.id, ticker.upper())
+            return jsonify({"ok": True, "targets": None})
+        row = _save(current_user.id, ticker.upper(), tp, sl)
+        return jsonify({"ok": True, "targets": row})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 # ── Conseil du jour ───────────────────────────────────────────────────────────
 
 @bp.route("/advice/<ticker>/reset", methods=["POST"])

@@ -118,10 +118,17 @@ def _check_ticker(ticker: str, company: str, username: str, email: str) -> None:
     if prix_live:
         try:
             from portfolio.advisor import evaluate_yesterday_advice
-            # Pour chaque utilisateur qui a ce ticker en watchlist
             evaluate_yesterday_advice(username, ticker, prix_live)
         except Exception as e:
             print(f"  [Advisor] evaluate J+1 erreur ({ticker}) : {e}", flush=True)
+
+    # ── 7. Vérification Take Profit / Stop Loss ───────────
+    if prix_live and email:
+        try:
+            from portfolio.targets import check_and_alert
+            check_and_alert(username, ticker, company, prix_live, email)
+        except Exception as e:
+            print(f"  [Targets] TP/SL check erreur ({ticker}) : {e}", flush=True)
 
 
 def check_all():

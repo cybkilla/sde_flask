@@ -101,6 +101,7 @@ ALTER TABLE scores            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ticker_snapshots  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE positions         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE daily_advice      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE position_targets  ENABLE ROW LEVEL SECURITY;
 ```
 
 Aucune policy supplémentaire n'est nécessaire : l'app accède toujours via `service_role` (bypass RLS).
@@ -109,7 +110,23 @@ Aucune policy supplémentaire n'est nécessaire : l'app accède toujours via `se
 
 ## Migrations sur une installation existante
 
-Si la table `positions` a été créée avant l'ajout des colonnes `type` et `conseil_date` :
+**Table `position_targets`** (Take Profit / Stop Loss — à créer si absente) :
+
+```sql
+CREATE TABLE IF NOT EXISTS position_targets (
+  id             BIGSERIAL PRIMARY KEY,
+  username       TEXT NOT NULL,
+  ticker         TEXT NOT NULL,
+  take_profit    FLOAT,
+  stop_loss      FLOAT,
+  tp_alerted_at  TIMESTAMPTZ,
+  sl_alerted_at  TIMESTAMPTZ,
+  updated_at     TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(username, ticker)
+);
+```
+
+**Table `positions`** (colonnes ajoutées après création initiale) :
 
 ```sql
 -- Ajouter la colonne type (achat par défaut pour les lots existants)

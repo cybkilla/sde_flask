@@ -154,3 +154,86 @@ def send_alert(to_email: str, username: str,
         "html":    body,
     })
     print(f"[Mailer] Email envoyé à {to_email} ({ticker})", flush=True)
+
+
+def send_tp_sl_alert(to_email: str, username: str,
+                     ticker: str, company: str,
+                     level_type: str,   # "take_profit" | "stop_loss"
+                     prix_live: float, prix_cible: float):
+    """Envoie une alerte Take Profit ou Stop Loss."""
+    is_tp     = level_type == "take_profit"
+    color     = "#1D9E75" if is_tp else "#D85A30"
+    icon      = "🎯" if is_tp else "🛡️"
+    label     = "Take Profit atteint" if is_tp else "Stop Loss atteint"
+    variation = round((prix_live - prix_cible) / prix_cible * 100, 2)
+    var_str   = f"{variation:+.2f}%"
+
+    subject = f"[StockDecisionEngine] {icon} {ticker} — {label} ({var_str})"
+
+    body = f"""
+    <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:20px">
+      <div style="border-left:4px solid {color};padding-left:16px;margin-bottom:16px">
+        <h2 style="margin:0 0 4px;color:#111827">{ticker} — {company}</h2>
+        <p style="margin:0;color:#6b7280;font-size:13px">
+          Alerte StockDecisionEngine pour {username}
+        </p>
+      </div>
+
+      <div style="background:{'#EAF3DE' if is_tp else '#FAECE7'};
+                  border-left:4px solid {color};border-radius:6px;
+                  padding:14px 16px;margin-bottom:16px">
+        <div style="font-size:20px;font-weight:700;color:{color};margin-bottom:6px">
+          {icon} {label}
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <tr>
+            <td style="padding:4px 0;color:#6b7280">Cours actuel</td>
+            <td style="padding:4px 0;font-weight:700;color:{color}">${prix_live:.4f}</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;color:#6b7280">Niveau {'TP' if is_tp else 'SL'} défini</td>
+            <td style="padding:4px 0;font-weight:600">${prix_cible:.4f}</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;color:#6b7280">Écart</td>
+            <td style="padding:4px 0;font-weight:600;color:{color}">{var_str}</td>
+          </tr>
+        </table>
+      </div>
+
+      <p style="font-size:13px;color:#374151;line-height:1.6">
+        {"Félicitations — votre objectif de prise de bénéfices a été atteint. Pensez à réévaluer votre position." if is_tp
+          else "Votre seuil de protection a été franchi. Une revue de votre position est recommandée."}
+      </p>
+
+      <div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:8px">
+        <a href="{SDE_BASE_URL}/analyze/{ticker}"
+           style="display:inline-block;background:{color};color:#fff;
+                  font-size:13px;font-weight:600;text-decoration:none;
+                  padding:8px 18px;border-radius:6px;margin-bottom:10px">
+          Voir l'analyse de {ticker} →
+        </a>
+        <p style="color:#9ca3af;font-size:11px;margin:0">
+          Cet email a été envoyé automatiquement par StockDecisionEngine.
+          Outil éducatif — pas un conseil financier.
+        </p>
+      </div>
+    </div>
+    """
+
+    api_key   = os.getenv("RESEND_API_KEY", "")
+    from_addr = os.getenv("RESEND_FROM", "SDE StockDecisionEngine <onboarding@resend.dev>")
+
+    if not api_key:
+        print(f"[Mailer] RESEND_API_KEY manquante — TP/SL email non envoyé", flush=True)
+        return
+
+    resend.api_key = api_key
+    resend.Emails.send({
+        "from":    from_addr,
+        "to":      [to_email],
+        "subject": subject,
+        "html":    body,
+    })
+    print(f"[Mailer] TP/SL email envoyé à {to_email} ({ticker} {label})", flush=True)
+    print(f"[Mailer] Email envoyé à {to_email} ({ticker})", flush=True)
