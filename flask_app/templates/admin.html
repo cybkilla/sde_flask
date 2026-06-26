@@ -73,6 +73,70 @@
   </details>
 </div>
 
+<!-- Gestion des données (collapsible) -->
+<div class="sde-card mt-3">
+  <details id="sde-data-details">
+    <summary style="cursor:pointer;list-style:none;display:flex;
+                    align-items:center;justify-content:space-between">
+      <h6 class="fw-semibold mb-0" style="font-size:.85rem;color:#D85A30">
+        <i class="bi bi-database-x me-1"></i>Gestion des données
+      </h6>
+      <span id="sde-data-arrow" style="color:var(--sde-muted);font-size:.8rem">▼ Afficher</span>
+    </summary>
+    <div style="margin-top:16px">
+      <p class="small text-muted mb-3">
+        <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>
+        <strong>Opérations irréversibles.</strong>
+        Réinitialiser supprime les données opérationnelles mais conserve le compte.
+        Supprimer efface le compte et toutes ses données définitivement.
+      </p>
+
+      <div class="d-flex gap-2 align-items-end flex-wrap mb-3">
+        <div style="flex:1;min-width:180px">
+          <label class="form-label small fw-semibold" style="color:var(--sde-navy)">Utilisateur cible</label>
+          <select id="sde-data-user" class="form-select form-select-sm">
+            <option value="">Chargement…</option>
+          </select>
+        </div>
+        <button onclick="openDataModal('reset')"
+                class="sde-nav-btn" style="color:#D85A30;font-size:.8rem;white-space:nowrap">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>Réinitialiser
+        </button>
+        <button onclick="openDataModal('delete')"
+                style="background:#991b1b;color:#fff;border:none;border-radius:7px;
+                       padding:5px 14px;font-size:.8rem;font-weight:600;cursor:pointer;white-space:nowrap">
+          <i class="bi bi-trash3 me-1"></i>Supprimer le compte
+        </button>
+      </div>
+      <p id="sde-data-feedback" class="small d-none"></p>
+    </div>
+  </details>
+</div>
+
+<!-- Modal confirmation mot de passe admin -->
+<div id="sde-data-modal"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);
+            z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;padding:28px 32px;
+              max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <h6 id="sde-modal-title" class="fw-bold mb-1" style="color:#1E3A5F"></h6>
+    <p id="sde-modal-desc" class="small text-muted mb-3"></p>
+    <label class="form-label small fw-semibold">Mot de passe admin</label>
+    <input type="password" id="sde-modal-pwd" class="form-control form-control-sm mb-1"
+           placeholder="Saisir le mot de passe…"
+           onkeydown="if(event.key==='Enter') confirmDataAction()">
+    <p id="sde-modal-error" class="small text-danger d-none mt-1"></p>
+    <div class="d-flex gap-2 justify-content-end mt-3">
+      <button onclick="closeDataModal()" class="sde-nav-btn" style="font-size:.8rem">Annuler</button>
+      <button id="sde-modal-confirm" onclick="confirmDataAction()"
+              style="font-size:.8rem;border:none;border-radius:7px;
+                     padding:5px 16px;font-weight:600;cursor:pointer;color:#fff">
+        Confirmer
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Présentation utilisateurs -->
 <div class="sde-card mt-3 d-flex align-items-center justify-content-between" style="padding:14px 18px">
   <div>
@@ -368,6 +432,134 @@
       det.addEventListener("toggle", () => {
         arrow.textContent = det.open ? "▲ Masquer" : "▼ Afficher";
         if (det.open && !loaded) { loaded = true; loadConfig(); }
+      });
+    }
+  });
+
+  /* ── Gestion des données ── */
+  let _dataAction = null;   // 'reset' | 'delete'
+
+  function loadUsers() {
+    fetch("/admin/users")
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) return;
+        const sel = document.getElementById("sde-data-user");
+        sel.innerHTML = `<option value="__all__">— Tous les utilisateurs —</option>` +
+          data.users.map(u =>
+            `<option value="${u.username}">${u.username}${u.email ? " · " + u.email : ""}</option>`
+          ).join("");
+      });
+  }
+
+  window.openDataModal = function(action) {
+    const username = document.getElementById("sde-data-user").value;
+    if (!username) return;
+    _dataAction = action;
+
+    const title = document.getElementById("sde-modal-title");
+    const desc  = document.getElementById("sde-modal-desc");
+    const btn   = document.getElementById("sde-modal-confirm");
+    const err   = document.getElementById("sde-modal-error");
+    document.getElementById("sde-modal-pwd").value = "";
+    err.classList.add("d-none");
+
+    const scope = username === "__all__" ? "TOUS les utilisateurs" : username;
+
+    if (action === "reset") {
+      title.textContent = "Réinitialiser les données";
+      desc.innerHTML = `Efface positions, conseils, watchlist, historique et config de <strong>${scope}</strong>.<br>Les comptes sont conservés.`;
+      btn.style.background = "#D85A30";
+      btn.textContent = "Réinitialiser";
+    } else {
+      if (username === "__all__") {
+        showFeedback("La suppression de compte est possible pour un seul utilisateur à la fois.", false);
+        return;
+      }
+      title.textContent = "Supprimer le compte";
+      desc.innerHTML = `Supprime définitivement le compte <strong>${username}</strong> et toutes ses données. Cette action est irréversible.`;
+      btn.style.background = "#991b1b";
+      btn.textContent = "Supprimer";
+    }
+
+    const modal = document.getElementById("sde-data-modal");
+    modal.style.display = "flex";
+    setTimeout(() => document.getElementById("sde-modal-pwd").focus(), 50);
+  };
+
+  window.closeDataModal = function() {
+    document.getElementById("sde-data-modal").style.display = "none";
+    _dataAction = null;
+  };
+
+  window.confirmDataAction = function() {
+    const pwd  = document.getElementById("sde-modal-pwd").value;
+    const err  = document.getElementById("sde-modal-error");
+    const btn  = document.getElementById("sde-modal-confirm");
+    const username = document.getElementById("sde-data-user").value;
+    const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+
+    if (!pwd) { err.textContent = "Mot de passe requis."; err.classList.remove("d-none"); return; }
+    err.classList.add("d-none");
+    btn.disabled = true;
+    btn.textContent = "…";
+
+    const url  = _dataAction === "reset" ? "/admin/data/reset" : "/admin/data/delete";
+    const body = _dataAction === "reset"
+      ? { target: username, password: pwd }
+      : { username,          password: pwd };
+
+    fetch(url, {
+      method: "POST",
+      headers: {"Content-Type":"application/json","X-CSRFToken":CSRF},
+      body: JSON.stringify(body),
+    })
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false;
+      btn.textContent = _dataAction === "reset" ? "Réinitialiser" : "Supprimer";
+      if (!data.ok) {
+        err.textContent = data.error || "Erreur.";
+        err.classList.remove("d-none");
+        return;
+      }
+      closeDataModal();
+      if (_dataAction === "delete" || data.deleted_user) {
+        showFeedback(`✓ Compte "${data.deleted_user}" supprimé.`, true);
+        loadUsers();
+      } else {
+        showFeedback(`✓ Données réinitialisées pour : ${data.scope}.`, true);
+      }
+    })
+    .catch(() => {
+      btn.disabled = false;
+      err.textContent = "Erreur réseau.";
+      err.classList.remove("d-none");
+    });
+  };
+
+  function showFeedback(msg, ok) {
+    const fb = document.getElementById("sde-data-feedback");
+    fb.textContent = msg;
+    fb.className = `small ${ok ? "text-success" : "text-danger"}`;
+    fb.classList.remove("d-none");
+    setTimeout(() => fb.classList.add("d-none"), 5000);
+  }
+
+  // Fermer le modal en cliquant sur le fond
+  document.getElementById("sde-data-modal").addEventListener("click", function(e) {
+    if (e.target === this) closeDataModal();
+  });
+
+  // Lazy loading section gestion données
+  document.addEventListener("DOMContentLoaded", () => {
+    const det   = document.getElementById("sde-data-details");
+    const arrow = document.getElementById("sde-data-arrow");
+    let   loaded = false;
+    if (det) {
+      det.addEventListener("toggle", () => {
+        arrow.textContent = det.open ? "▲ Masquer" : "▼ Afficher";
+        if (det.open && !loaded) { loaded = true; loadUsers(); }
       });
     }
   });
