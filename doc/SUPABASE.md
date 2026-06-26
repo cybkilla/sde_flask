@@ -181,6 +181,12 @@ CREATE TABLE IF NOT EXISTS position_targets (
 );
 ```
 
+**Table `users`** (colonne avatar — à ajouter si absente) :
+
+```sql
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT '';
+```
+
 **Table `auth_tokens`** (activation de compte + reset de mot de passe — à créer si absente) :
 
 ```sql

@@ -1,0 +1,323 @@
+{% extends "base.html" %}
+{% block title %}SDE — Mon profil{% endblock %}
+
+{% block content %}
+<div style="max-width:560px;margin:0 auto">
+
+  <!-- En-tête profil -->
+  <div class="sde-card mb-3 d-flex align-items-center gap-4" style="padding:24px">
+    <!-- Avatar cliquable -->
+    <div style="position:relative;flex-shrink:0;cursor:pointer" onclick="document.getElementById('avatar-input').click()" title="Changer la photo">
+      <div id="avatar-display"
+           style="width:80px;height:80px;border-radius:50%;overflow:hidden;
+                  border:3px solid var(--sde-teal);display:flex;
+                  align-items:center;justify-content:center;background:#E0F5EE">
+        {% if current_user.avatar %}
+          <img id="avatar-img" src="{{ current_user.avatar }}"
+               style="width:100%;height:100%;object-fit:cover">
+        {% else %}
+          <span id="avatar-initial"
+                style="font-size:2rem;font-weight:800;color:#1D9E75">
+            {{ current_user.name[0].upper() }}
+          </span>
+        {% endif %}
+      </div>
+      <span style="position:absolute;bottom:0;right:0;background:#1D9E75;color:#fff;
+                   border-radius:50%;width:24px;height:24px;display:flex;
+                   align-items:center;justify-content:center;font-size:12px;
+                   border:2px solid #fff">
+        <i class="bi bi-camera-fill"></i>
+      </span>
+    </div>
+    <input type="file" id="avatar-input" accept="image/*" class="d-none">
+
+    <div style="flex:1">
+      <div style="font-size:1.2rem;font-weight:800;color:var(--sde-navy)">
+        {{ current_user.name }}
+      </div>
+      <div class="sde-ticker-meta">@{{ current_user.username }}</div>
+      {% if current_user.email %}
+      <div class="sde-ticker-meta mt-1">
+        <i class="bi bi-envelope me-1"></i>{{ current_user.email }}
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Bouton supprimer avatar (si présent) -->
+    {% if current_user.avatar %}
+    <button onclick="deleteAvatar()"
+            class="sde-nav-btn" style="font-size:.75rem;color:#D85A30;align-self:flex-start"
+            title="Supprimer la photo">
+      <i class="bi bi-trash3"></i>
+    </button>
+    {% endif %}
+  </div>
+
+  <!-- Infos générales -->
+  <div class="sde-card mb-3">
+    <h6 class="fw-semibold mb-3" style="font-size:.85rem;color:var(--sde-navy)">
+      <i class="bi bi-person me-1"></i>Informations générales
+    </h6>
+    <div class="mb-3">
+      <label class="form-label small fw-semibold">Nom affiché</label>
+      <input type="text" id="info-name" class="form-control form-control-sm"
+             value="{{ current_user.name }}">
+    </div>
+    <div class="mb-3">
+      <label class="form-label small fw-semibold">
+        Adresse email
+        <span class="text-muted fw-normal">(optionnel)</span>
+      </label>
+      <input type="email" id="info-email" class="form-control form-control-sm"
+             value="{{ current_user.email or '' }}" placeholder="jean@exemple.com">
+      <div class="form-text" style="font-size:.7rem">
+        L'email est utilisé pour les alertes et le rapport hebdomadaire.
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <button onclick="saveInfo()"
+              style="background:#1D9E75;color:#fff;border:none;border-radius:7px;
+                     padding:5px 16px;font-size:.8rem;font-weight:600;cursor:pointer">
+        <i class="bi bi-check-circle me-1"></i>Enregistrer
+      </button>
+      <span id="info-feedback" class="small d-none"></span>
+    </div>
+  </div>
+
+  <!-- Mot de passe -->
+  <div class="sde-card mb-3">
+    <h6 class="fw-semibold mb-3" style="font-size:.85rem;color:var(--sde-navy)">
+      <i class="bi bi-shield-lock me-1"></i>Changer le mot de passe
+    </h6>
+
+    <div class="mb-2">
+      <label class="form-label small fw-semibold">Mot de passe actuel</label>
+      <div class="input-group input-group-sm">
+        <input type="password" id="pwd-current" class="form-control" placeholder="••••••••">
+        <button class="btn btn-outline-secondary" type="button"
+                onclick="togglePwd('pwd-current','eye-current')">
+          <i class="bi bi-eye" id="eye-current"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="mb-2">
+      <label class="form-label small fw-semibold">Nouveau mot de passe</label>
+      <div class="input-group input-group-sm">
+        <input type="password" id="pwd-new" class="form-control" placeholder="••••••••"
+               oninput="checkStrength(this.value)">
+        <button class="btn btn-outline-secondary" type="button"
+                onclick="togglePwd('pwd-new','eye-new')">
+          <i class="bi bi-eye" id="eye-new"></i>
+        </button>
+      </div>
+      <div id="pwd-rules" class="mt-1" style="font-size:.72rem;line-height:1.8">
+        <span id="rule-len"     style="color:#94a3b8">✗ 8 caractères min</span> ·
+        <span id="rule-upper"   style="color:#94a3b8">✗ 1 majuscule</span> ·
+        <span id="rule-digit"   style="color:#94a3b8">✗ 1 chiffre</span> ·
+        <span id="rule-special" style="color:#94a3b8">✗ 1 caractère spécial</span>
+      </div>
+      <div class="progress mt-1" style="height:3px">
+        <div id="pwd-bar" class="progress-bar" style="width:0%;transition:width .3s,background .3s"></div>
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label small fw-semibold">Confirmer</label>
+      <div class="input-group input-group-sm">
+        <input type="password" id="pwd-confirm" class="form-control" placeholder="••••••••">
+        <button class="btn btn-outline-secondary" type="button"
+                onclick="togglePwd('pwd-confirm','eye-confirm')">
+          <i class="bi bi-eye" id="eye-confirm"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="d-flex align-items-center gap-2">
+      <button onclick="savePassword()"
+              style="background:#6366F1;color:#fff;border:none;border-radius:7px;
+                     padding:5px 16px;font-size:.8rem;font-weight:600;cursor:pointer">
+        <i class="bi bi-shield-check me-1"></i>Modifier
+      </button>
+      <span id="pwd-feedback" class="small d-none"></span>
+    </div>
+  </div>
+
+  <!-- Infos compte -->
+  <div class="sde-card" style="padding:14px 18px">
+    <div style="font-size:.78rem;color:var(--sde-muted);display:flex;gap:24px;flex-wrap:wrap">
+      <span><i class="bi bi-person-badge me-1"></i>Identifiant : <strong style="color:var(--sde-navy)">{{ current_user.username }}</strong></span>
+      <span><i class="bi bi-info-circle me-1"></i>L'identifiant ne peut pas être modifié.</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal upload en cours -->
+<div id="avatar-overlay"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);
+            z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;padding:24px 32px;text-align:center">
+    <div class="spinner-border" style="color:#1D9E75;width:2rem;height:2rem"></div>
+    <p class="mt-2 mb-0 small">Traitement de l'image…</p>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+
+/* ── Toggle mot de passe ── */
+function togglePwd(id, eyeId) {
+  const inp = document.getElementById(id);
+  const eye = document.getElementById(eyeId);
+  if (inp.type === "password") { inp.type="text"; eye.classList.replace("bi-eye","bi-eye-slash"); }
+  else { inp.type="password"; eye.classList.replace("bi-eye-slash","bi-eye"); }
+}
+
+/* ── Indicateur force mot de passe ── */
+function checkStrength(pwd) {
+  const rules = [
+    { id:"rule-len",     ok: pwd.length >= 8 },
+    { id:"rule-upper",   ok: /[A-Z]/.test(pwd) },
+    { id:"rule-digit",   ok: /[0-9]/.test(pwd) },
+    { id:"rule-special", ok: /[^A-Za-z0-9]/.test(pwd) },
+  ];
+  let score = 0;
+  rules.forEach(r => {
+    const el = document.getElementById(r.id);
+    if (!el) return;
+    if (r.ok) { score++; el.style.color="#1D9E75"; el.textContent=el.textContent.replace("✗","✓"); }
+    else       { el.style.color="#94a3b8"; el.textContent=el.textContent.replace("✓","✗"); }
+  });
+  const bar = document.getElementById("pwd-bar");
+  const colors = ["","#D85A30","#BA7517","#BA7517","#1D9E75"];
+  if (bar) { bar.style.width=(score*25)+"%"; bar.style.background=colors[score]||"#15803d"; }
+}
+
+/* ── Feedback helper ── */
+function feedback(id, msg, ok) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = `small ${ok ? "text-success" : "text-danger"}`;
+  el.classList.remove("d-none");
+  if (ok) setTimeout(() => el.classList.add("d-none"), 4000);
+}
+
+/* ── Infos générales ── */
+function saveInfo() {
+  const name  = document.getElementById("info-name").value.trim();
+  const email = document.getElementById("info-email").value.trim();
+  if (!name) { feedback("info-feedback","Le nom ne peut pas être vide.",false); return; }
+  fetch("/profile/info", {
+    method:"POST",
+    headers:{"Content-Type":"application/json","X-CSRFToken":CSRF},
+    body: JSON.stringify({name, email}),
+  }).then(r=>r.json()).then(d => {
+    if (d.ok) {
+      feedback("info-feedback","✓ Informations mises à jour.",true);
+      // Mettre à jour l'affichage en-tête
+      document.querySelectorAll(".sde-user-pill span:last-child, [data-user-name]")
+        .forEach(el => { el.textContent = d.name.split(" ")[0]; });
+    } else {
+      feedback("info-feedback", d.error||"Erreur.", false);
+    }
+  });
+}
+
+/* ── Mot de passe ── */
+function savePassword() {
+  const current  = document.getElementById("pwd-current").value;
+  const password = document.getElementById("pwd-new").value;
+  const confirm  = document.getElementById("pwd-confirm").value;
+  fetch("/profile/password", {
+    method:"POST",
+    headers:{"Content-Type":"application/json","X-CSRFToken":CSRF},
+    body: JSON.stringify({current, password, confirm}),
+  }).then(r=>r.json()).then(d => {
+    if (d.ok) {
+      feedback("pwd-feedback","✓ Mot de passe modifié.",true);
+      ["pwd-current","pwd-new","pwd-confirm"].forEach(id => {
+        document.getElementById(id).value = "";
+      });
+      checkStrength("");
+    } else {
+      feedback("pwd-feedback", d.error||"Erreur.", false);
+    }
+  });
+}
+
+/* ── Avatar ── */
+document.getElementById("avatar-input").addEventListener("change", function() {
+  const file = this.files[0];
+  if (!file) return;
+  const overlay = document.getElementById("avatar-overlay");
+  overlay.style.display = "flex";
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      // Resize à 128×128 via canvas
+      const SIZE = 128;
+      const canvas = document.createElement("canvas");
+      canvas.width = SIZE; canvas.height = SIZE;
+      const ctx = canvas.getContext("2d");
+      // Centrer + rogner en carré
+      const ratio = Math.max(SIZE / img.width, SIZE / img.height);
+      const w = img.width * ratio, h = img.height * ratio;
+      ctx.drawImage(img, (SIZE-w)/2, (SIZE-h)/2, w, h);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+
+      fetch("/profile/avatar", {
+        method:"POST",
+        headers:{"Content-Type":"application/json","X-CSRFToken":CSRF},
+        body: JSON.stringify({avatar: dataUrl}),
+      }).then(r=>r.json()).then(d => {
+        overlay.style.display = "none";
+        if (d.ok) {
+          // Mettre à jour l'affichage sans rechargement
+          const display = document.getElementById("avatar-display");
+          display.innerHTML = `<img src="${d.avatar}" style="width:100%;height:100%;object-fit:cover">`;
+          // Mettre à jour navbar
+          const navAvatar = document.querySelector(".sde-user-pill img");
+          if (navAvatar) {
+            navAvatar.src = d.avatar;
+          } else {
+            const pill = document.querySelector(".sde-user-pill");
+            if (pill) {
+              const initSpan = pill.querySelector("span:first-child");
+              if (initSpan && initSpan.style.borderRadius === "50%") {
+                const newImg = document.createElement("img");
+                newImg.src = d.avatar;
+                newImg.style.cssText = "width:22px;height:22px;border-radius:50%;object-fit:cover;flex-shrink:0";
+                pill.replaceChild(newImg, initSpan);
+              }
+            }
+          }
+        } else {
+          alert(d.error || "Erreur lors du téléversement.");
+        }
+      }).catch(() => {
+        overlay.style.display = "none";
+        alert("Erreur réseau.");
+      });
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+function deleteAvatar() {
+  if (!confirm("Supprimer la photo de profil ?")) return;
+  fetch("/profile/avatar", {
+    method:"DELETE",
+    headers:{"X-CSRFToken":CSRF},
+  }).then(r=>r.json()).then(d => {
+    if (d.ok) location.reload();
+  });
+}
+</script>
+{% endblock %}

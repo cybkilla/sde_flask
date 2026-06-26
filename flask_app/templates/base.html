@@ -58,14 +58,24 @@
       {% if current_user.email in admin_emails %}
       <a href="{{ url_for('admin.dashboard') }}" class="sde-nav-btn"
          title="Dashboard admin">
-        <i class="bi bi-bar-chart-line"></i>
+        <i class="bi bi-gear-fill"></i>
         <span class="hide-xs">Admin</span>
       </a>
       {% endif %}
-      <span class="sde-user-pill hide-xs">
-        <i class="bi bi-person-circle"></i>
+      <a href="{{ url_for('profile.page') }}" class="sde-user-pill hide-xs"
+         title="Mon profil" style="text-decoration:none">
+        {% if current_user.avatar %}
+          <img src="{{ current_user.avatar }}"
+               style="width:22px;height:22px;border-radius:50%;object-fit:cover;flex-shrink:0">
+        {% else %}
+          <span style="width:22px;height:22px;border-radius:50%;background:#1D9E75;
+                       color:#fff;font-size:11px;font-weight:800;display:flex;
+                       align-items:center;justify-content:center;flex-shrink:0">
+            {{ current_user.name[0].upper() }}
+          </span>
+        {% endif %}
         <span>{{ current_user.name.split(' ')[0] }}</span>
-      </span>
+      </a>
       <a href="{{ url_for('auth.logout') }}" class="sde-nav-btn">
         <i class="bi bi-box-arrow-right"></i>
         <span class="hide-xs">Déconnexion</span>

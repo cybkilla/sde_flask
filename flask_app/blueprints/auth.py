@@ -35,11 +35,12 @@ def _rate_hit(ip: str):
 # ── Modèle utilisateur ────────────────────────────────────────────────────────
 
 class User(UserMixin):
-    def __init__(self, username: str, name: str, email: str):
+    def __init__(self, username: str, name: str, email: str, avatar: str = ""):
         self.id       = username
         self.username = username
         self.name     = name
         self.email    = email
+        self.avatar   = avatar
 
 
 # ── Backends de stockage ──────────────────────────────────────────────────────
@@ -165,7 +166,8 @@ def load_user(username: str):
     data = _find_user(username)
     if not data:
         return None
-    return User(data["username"], data.get("name", username), data.get("email", ""))
+    return User(data["username"], data.get("name", username),
+                data.get("email", ""), data.get("avatar", ""))
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -176,7 +178,7 @@ def login():
         return redirect(url_for("stock.home"))
 
     errors  = {}
-    prefill = {}
+    prefill = {"username": request.args.get("username", "")}
 
     if request.method == "POST":
         username    = request.form.get("username", "").strip()
@@ -347,7 +349,7 @@ def reset_password(token: str):
             _update_password(username, hashed)
             consume(token)
             flash("Mot de passe modifié avec succès ! Connectez-vous.", "success")
-            return redirect(url_for("auth.login"))
+            return redirect(url_for("auth.login", username=username))
 
     return render_template("auth/reset_password.html", token=token, errors=errors)
 
