@@ -58,7 +58,7 @@ def get_portfolio_summary(username: str, ticker: str, current_price: float) -> d
     if not lots:
         return None
 
-    buy_lots  = [l for l in lots if l.get("type", "achat") == "achat"]
+    buy_lots  = [l for l in lots if l.get("type", "achat") in ("achat", "import")]
     sell_lots = [l for l in lots if l.get("type") == "vente"]
 
     if not buy_lots:
@@ -118,7 +118,7 @@ def add_position(username: str, ticker: str, company: str,
         "quantite":     float(quantite),
         "currency":     currency,
         "notes":        notes,
-        "type":         type_op if type_op in ("achat", "vente") else "achat",
+        "type":         type_op if type_op in ("achat", "vente", "import") else "achat",
         "conseil_date": conseil_date or None,
     }
     if _db_ok():

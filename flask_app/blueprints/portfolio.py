@@ -139,7 +139,7 @@ def get_overview():
                     continue
 
                 # Calcul summary directement depuis les lots déjà chargés (0 appel DB extra)
-                buy_lots      = [l for l in ticker_lots if l.get("type", "achat") == "achat"]
+                buy_lots      = [l for l in ticker_lots if l.get("type", "achat") in ("achat", "import")]
                 sell_lots     = [l for l in ticker_lots if l.get("type") == "vente"]
                 if not buy_lots:
                     continue

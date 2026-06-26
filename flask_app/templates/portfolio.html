@@ -49,6 +49,12 @@
                   style="background:#1D9E75;color:#fff;border:none;border-radius:7px;font-weight:600">
             ↑ Achat
           </button>
+          <button type="button" id="sde-type-import" onclick="setPosType('import')"
+                  class="btn btn-sm flex-fill"
+                  style="background:#F1F5F9;color:var(--sde-muted);border:1px solid var(--sde-border);border-radius:7px;font-weight:600"
+                  title="Position existante avant SDE — n'est pas comptée comme un conseil suivi">
+            ↩ Importé
+          </button>
           <button type="button" id="sde-type-vente" onclick="setPosType('vente')"
                   class="btn btn-sm flex-fill"
                   style="background:#F1F5F9;color:var(--sde-muted);border:1px solid var(--sde-border);border-radius:7px;font-weight:600">
@@ -112,41 +118,37 @@
       _modalPosType = "achat", _modalTotalShares = 0;
 
   function setPosType(type) {
-    // Bloquer la vente si aucune action disponible
     if (type === "vente" && _modalTotalShares <= 0) return;
     _modalPosType = type;
-    const isVente = type === "vente";
-    const canSell = _modalTotalShares > 0;
+    const isVente  = type === "vente";
+    const isImport = type === "import";
+    const canSell  = _modalTotalShares > 0;
+    const OFF = "background:#F1F5F9;color:var(--sde-muted);border:1px solid var(--sde-border);border-radius:7px;font-weight:600;cursor:pointer";
     const btnA = document.getElementById("sde-type-achat");
+    const btnI = document.getElementById("sde-type-import");
     const btnV = document.getElementById("sde-type-vente");
-    if (btnA) {
-      btnA.style.background  = isVente ? "#F1F5F9" : "#1D9E75";
-      btnA.style.color       = isVente ? "var(--sde-muted)" : "#fff";
-      btnA.style.border      = isVente ? "1px solid var(--sde-border)" : "none";
-    }
+    if (btnA) btnA.style.cssText = (!isVente && !isImport) ? "background:#1D9E75;color:#fff;border:none;border-radius:7px;font-weight:600" : OFF;
+    if (btnI) btnI.style.cssText = isImport ? "background:#6366F1;color:#fff;border:none;border-radius:7px;font-weight:600" : OFF;
     if (btnV) {
       if (!canSell) {
-        btnV.style.background  = "#F1F5F9";
-        btnV.style.color       = "#CBD5E1";
-        btnV.style.border      = "1px solid var(--sde-border)";
-        btnV.style.cursor      = "not-allowed";
-        btnV.title             = "Aucune action à vendre";
+        btnV.style.cssText = "background:#F1F5F9;color:#CBD5E1;border:1px solid var(--sde-border);border-radius:7px;font-weight:600;cursor:not-allowed";
+        btnV.title = "Aucune action à vendre";
       } else {
-        btnV.style.background  = isVente ? "#D85A30" : "#F1F5F9";
-        btnV.style.color       = isVente ? "#fff" : "var(--sde-muted)";
-        btnV.style.border      = isVente ? "none" : "1px solid var(--sde-border)";
-        btnV.style.cursor      = "pointer";
-        btnV.title             = "";
+        btnV.style.cssText = isVente ? "background:#D85A30;color:#fff;border:none;border-radius:7px;font-weight:600;cursor:pointer" : OFF;
+        btnV.title = "";
       }
     }
     const dateLabel  = document.getElementById("sde-pos-date-label");
     const priceLabel = document.getElementById("sde-pos-price-label");
     const submitBtn  = document.getElementById("sde-pos-submit-btn");
-    if (dateLabel)  dateLabel.textContent  = isVente ? "Date de vente"           : "Date d'achat";
-    if (priceLabel) priceLabel.textContent = isVente ? "Prix unitaire de vente" : "Prix unitaire d'achat";
+    if (dateLabel)  dateLabel.textContent  = isVente ? "Date de vente" : isImport ? "Date d'entrée en position" : "Date d'achat";
+    if (priceLabel) priceLabel.textContent = isVente ? "Prix unitaire de vente" : isImport ? "Prix d'entrée moyen" : "Prix unitaire d'achat";
     if (submitBtn) {
-      submitBtn.style.background = isVente ? "#D85A30" : "#1D9E75";
-      submitBtn.innerHTML = `<i class="bi bi-check-circle me-1"></i>${isVente ? "Enregistrer la vente" : "Enregistrer"}`;
+      submitBtn.style.background = isVente ? "#D85A30" : isImport ? "#6366F1" : "#1D9E75";
+      submitBtn.innerHTML = `<i class="bi bi-check-circle me-1"></i>${
+        isVente  ? "Enregistrer la vente" :
+        isImport ? "Enregistrer la position importée" :
+                   "Enregistrer"}`;
     }
   }
 
@@ -215,10 +217,14 @@
   function lotsHtml(ticker, sym, lots, company, currency) {
     const rows = lots.map(l => {
       const isVente  = l.type === "vente";
-      const dotColor = isVente ? "#D85A30" : "var(--sde-muted)";
+      const isImport = l.type === "import";
+      const dotColor = isVente ? "#D85A30" : isImport ? "#6366F1" : "var(--sde-muted)";
       const typeTag  = isVente
         ? `<span style="font-size:.68rem;font-weight:600;color:#D85A30;
                         background:#FAECE7;border-radius:4px;padding:1px 5px;margin-left:4px">↓ Vente</span>`
+        : isImport
+        ? `<span style="font-size:.68rem;font-weight:600;color:#6366F1;
+                        background:#EEF2FF;border-radius:4px;padding:1px 5px;margin-left:4px">↩ Importé</span>`
         : "";
       const d      = new Date(l.date_achat + "T00:00:00");
       const dateFr = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
@@ -245,11 +251,13 @@
         </div>`;
     }).join("");
 
-    const nbAchats = lots.filter(l => l.type !== "vente").length;
-    const nbVentes = lots.filter(l => l.type === "vente").length;
-    const summary  = [
-      nbAchats ? `${nbAchats} achat${nbAchats > 1 ? "s" : ""}` : "",
-      nbVentes ? `${nbVentes} vente${nbVentes > 1 ? "s" : ""}` : "",
+    const nbAchats  = lots.filter(l => l.type === "achat").length;
+    const nbImports = lots.filter(l => l.type === "import").length;
+    const nbVentes  = lots.filter(l => l.type === "vente").length;
+    const summary   = [
+      nbAchats  ? `${nbAchats} achat${nbAchats > 1 ? "s" : ""}`           : "",
+      nbImports ? `${nbImports} importé${nbImports > 1 ? "s" : ""}`        : "",
+      nbVentes  ? `${nbVentes} vente${nbVentes > 1 ? "s" : ""}`            : "",
     ].filter(Boolean).join(" · ");
 
     const companyEsc = company.replace(/'/g, "\\'");
@@ -506,7 +514,7 @@
     _modalCompany     = company;
     _modalCurrency    = currency || "USD";
     _modalPosType     = t;
-    _modalConseilDate = conseilDate || null;
+    _modalConseilDate = (t === "import") ? null : (conseilDate || null);
     _modalTotalShares = parseFloat(totalShares) || 0;
     setPosType(t);
     document.getElementById("sde-modal-ticker-label").textContent = ticker;
@@ -555,7 +563,7 @@
 
   /* ── Suppression d'un lot ── */
   function deletePos(id, ticker) {
-    if (!confirm("Supprimer ce lot d'achat ?")) return;
+    if (!confirm("Supprimer ce lot ?")) return;
     fetch("/portfolio/positions/delete/" + id, {
       method: "DELETE",
       headers: { "X-CSRFToken": CSRF },
