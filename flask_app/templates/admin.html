@@ -9,7 +9,7 @@
         <i class="bi bi-bar-chart-line me-1"></i>Dashboard Admin
       </span>
     </div>
-    <div class="sde-ticker-meta mt-1">Pertinence des conseils · Évaluation automatique J+1</div>
+    <div class="sde-ticker-meta mt-1">Pertinence des conseils · Évaluation automatique J+1 · Bon si var &gt;0% (Acheter/Renforcer), &lt;0% (Alléger/Vendre), |Δ|&lt;3% (Tenir/Surveiller)</div>
   </div>
   <button class="sde-nav-btn" onclick="loadStats(true)" title="Actualiser">
     <i class="bi bi-arrow-clockwise me-1"></i>
@@ -89,10 +89,6 @@
   </a>
 </div>
 
-<p class="sde-disclaimer mt-2">
-  Un conseil est évalué "bon" si la variation de prix J+1 est dans le sens prévu
-  (>0% pour Acheter/Renforcer, &lt;0% pour Alléger/Vendre, |Δ|&lt;3% pour Tenir/Surveiller).
-</p>
 {% endblock %}
 
 {% block scripts %}
