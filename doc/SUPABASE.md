@@ -104,6 +104,7 @@ ALTER TABLE daily_advice      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE position_targets    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE portfolio_snapshots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE advisor_config      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE weekly_reports      ENABLE ROW LEVEL SECURITY;
 ```
 
 Aucune policy supplémentaire n'est nécessaire : l'app accède toujours via `service_role` (bypass RLS).
@@ -111,6 +112,20 @@ Aucune policy supplémentaire n'est nécessaire : l'app accède toujours via `se
 ---
 
 ## Migrations sur une installation existante
+
+**Table `weekly_reports`** (anti-doublon rapport hebdo — à créer si absente) :
+
+```sql
+CREATE TABLE IF NOT EXISTS weekly_reports (
+  id         BIGSERIAL PRIMARY KEY,
+  username   TEXT NOT NULL,
+  week_start DATE NOT NULL,
+  sent_at    TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(username, week_start)
+);
+
+ALTER TABLE weekly_reports ENABLE ROW LEVEL SECURITY;
+```
 
 **Table `advisor_config`** (seuils de conseil configurables — à créer si absente) :
 

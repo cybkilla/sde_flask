@@ -158,6 +158,16 @@ def check_all():
             except Exception as e:
                 print(f"  ✗ Erreur {ticker} : {e}", flush=True)
 
+        # ── Rapport hebdomadaire (dimanche ≥ 22h Paris) ──────────
+        if email:
+            try:
+                from alerts.weekly_report import should_send, send_weekly_report
+                if should_send(username):
+                    print(f"[Weekly] Génération rapport pour {username}…", flush=True)
+                    send_weekly_report(username, email, watchlist)
+            except Exception as e:
+                print(f"  [Weekly] Erreur rapport {username} : {e}", flush=True)
+
     print(f"[Scheduler] Terminé — {len(seen_tickers)} ticker(s) vérifiés", flush=True)
 
 

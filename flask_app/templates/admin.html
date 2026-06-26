@@ -41,30 +41,36 @@
   <div id="sde-ticker-body"></div>
 </div>
 
-<!-- Configuration des seuils de conseil -->
-<div class="sde-card mt-3" id="sde-config-wrap">
-  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-    <h6 class="fw-semibold mb-0" style="font-size:.85rem;color:var(--sde-navy)">
-      <i class="bi bi-sliders me-1"></i>Calibration des règles de conseil
-    </h6>
-    <div class="d-flex gap-2">
-      <button onclick="resetConfig()"
-              class="sde-nav-btn" style="font-size:.75rem;color:#D85A30">
-        <i class="bi bi-arrow-counterclockwise me-1"></i>Défauts
-      </button>
-      <button onclick="saveConfig()"
-              style="font-size:.75rem;background:#6366F1;color:#fff;border:none;
-                     border-radius:7px;padding:4px 14px;font-weight:600;cursor:pointer">
-        <i class="bi bi-check-circle me-1"></i>Enregistrer
-      </button>
+<!-- Configuration des seuils de conseil (collapsible) -->
+<div class="sde-card mt-3">
+  <details id="sde-config-details">
+    <summary style="cursor:pointer;list-style:none;display:flex;
+                    align-items:center;justify-content:space-between">
+      <h6 class="fw-semibold mb-0" style="font-size:.85rem;color:var(--sde-navy)">
+        <i class="bi bi-sliders me-1"></i>Calibration des règles de conseil
+      </h6>
+      <span id="sde-config-arrow" style="color:var(--sde-muted);font-size:.8rem">▼ Afficher</span>
+    </summary>
+    <div style="margin-top:16px">
+      <div class="d-flex gap-2 justify-content-end mb-3">
+        <button onclick="resetConfig()"
+                class="sde-nav-btn" style="font-size:.75rem;color:#D85A30">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>Défauts
+        </button>
+        <button onclick="saveConfig()"
+                style="font-size:.75rem;background:#6366F1;color:#fff;border:none;
+                       border-radius:7px;padding:4px 14px;font-weight:600;cursor:pointer">
+          <i class="bi bi-check-circle me-1"></i>Enregistrer
+        </button>
+      </div>
+      <div id="sde-config-body">
+        <p class="text-muted small text-center py-2">
+          <span class="spinner-border spinner-border-sm me-1"></span>Chargement…
+        </p>
+      </div>
+      <p id="sde-config-feedback" class="small mt-2 d-none"></p>
     </div>
-  </div>
-  <div id="sde-config-body">
-    <p class="text-muted small text-center py-2">
-      <span class="spinner-border spinner-border-sm me-1"></span>Chargement…
-    </p>
-  </div>
-  <p id="sde-config-feedback" class="small mt-2 d-none"></p>
+  </details>
 </div>
 
 <p class="sde-disclaimer mt-2">
@@ -341,7 +347,18 @@
     });
   };
 
-  document.addEventListener("DOMContentLoaded", loadConfig);
+  // Charger le config seulement à l'ouverture du details, et toggler la flèche
+  document.addEventListener("DOMContentLoaded", () => {
+    const det   = document.getElementById("sde-config-details");
+    const arrow = document.getElementById("sde-config-arrow");
+    let   loaded = false;
+    if (det) {
+      det.addEventListener("toggle", () => {
+        arrow.textContent = det.open ? "▲ Masquer" : "▼ Afficher";
+        if (det.open && !loaded) { loaded = true; loadConfig(); }
+      });
+    }
+  });
 
   document.addEventListener("DOMContentLoaded", () => {
     loadStats(false);
