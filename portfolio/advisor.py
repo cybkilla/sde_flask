@@ -20,15 +20,24 @@ ACTION_LABELS = {
 # ── Génération du conseil ─────────────────────────────────────────────────────
 
 def _get_data_date(snapshot: dict) -> str:
-    """Retourne la date de la dernière donnée marché au format DD.MM.YYYY."""
+    """
+    Retourne la date du dernier jour de TRADING au format DD.MM.YYYY.
+    Ignore les lignes weekend (artefacts yfinance/TwelveData sur les snapshots dominicaux).
+    """
     try:
         hist = snapshot.get("market", {}).get("history")
         if hist is not None and len(hist) > 0:
-            idx = hist.index[-1]
-            if hasattr(idx, "strftime"):
-                return idx.strftime("%d.%m.%Y")
-            y, m, d = str(idx)[:10].split("-")
-            return f"{d}.{m}.{y}"
+            for idx in reversed(list(hist.index)):
+                if hasattr(idx, "weekday"):
+                    wd = idx.weekday()
+                else:
+                    from datetime import datetime
+                    wd = datetime.strptime(str(idx)[:10], "%Y-%m-%d").weekday()
+                if wd < 5:  # lundi(0)–vendredi(4) uniquement
+                    if hasattr(idx, "strftime"):
+                        return idx.strftime("%d.%m.%Y")
+                    y, m, d = str(idx)[:10].split("-")
+                    return f"{d}.{m}.{y}"
     except Exception:
         pass
     return ""
@@ -38,23 +47,25 @@ def _dominant_signals_note(snapshot: dict, data_date: str = "",
                            direction: str = "", threshold: int = 10) -> str:
     """
     Retourne des lignes HTML pour les signaux à fort impact (|points| >= threshold).
-    direction : "baissier" → filtre les signaux négatifs (conseil VENDRE/ALLÉGER)
-                "haussier" → filtre les signaux positifs (conseil ACHETER/RENFORCER)
-                ""         → tous les signaux (TENIR/SURVEILLER)
-    Chaque signal est sur sa propre ligne, préfixé de sa date.
+    - Signaux techniques → préfixés de data_date (date du dernier cours)
+    - Signaux fondamentaux (EPS, PE…) → sans date (métriques de bilan, pas de cours)
+    direction filtre par sens selon le conseil final.
     """
-    sigs = snapshot.get("signals_tech", []) + snapshot.get("signals_fund", [])
-    dominant = [s for s in sigs if abs(s.get("points", 0)) >= threshold]
+    tech_sigs = [{"sig": s, "date": data_date} for s in snapshot.get("signals_tech", [])]
+    fund_sigs = [{"sig": s, "date": ""}         for s in snapshot.get("signals_fund", [])]
+    items = [item for item in tech_sigs + fund_sigs
+             if abs(item["sig"].get("points", 0)) >= threshold]
     if direction:
-        dominant = [s for s in dominant if s.get("sens") == direction]
-    if not dominant:
+        items = [item for item in items if item["sig"].get("sens") == direction]
+    if not items:
         return ""
-    dominant.sort(key=lambda s: abs(s.get("points", 0)), reverse=True)
-    d = f"{data_date} : " if data_date else ""
+    items.sort(key=lambda x: abs(x["sig"].get("points", 0)), reverse=True)
     lines = []
-    for s in dominant[:3]:
-        pts = s["points"]
+    for item in items[:3]:
+        s, sig_date = item["sig"], item["date"]
+        pts   = s["points"]
         arrow = "↑" if pts > 0 else "↓"
+        d     = f"{sig_date} : " if sig_date else ""
         lines.append(f"<br><span style='color:var(--sde-muted);font-size:.85em'>"
                      f"{d}{arrow} {s['nom']} ({pts:+.0f})</span>")
     return "".join(lines)
