@@ -981,12 +981,15 @@ window.sdePortfolio = (function () {
         wrap.innerHTML = `
           <div style="background:${color}13;border-radius:10px;padding:14px 16px;margin-bottom:14px">
             <div style="display:flex;justify-content:space-between;align-items:center;
-                        flex-wrap:wrap;gap:8px;margin-bottom:10px">
+                        flex-wrap:wrap;gap:8px;margin-bottom:6px">
               ${badge}
               <span style="font-size:.72rem;color:var(--sde-muted)">
                 ${dateFr}${prixMeta}
               </span>
             </div>
+            <p style="margin:0 0 8px;font-size:.72rem;color:var(--sde-muted)">
+              Conseil personnalisé · basé sur votre position, coût moyen et signaux court terme
+            </p>
             <p style="margin:0;font-size:.83rem;color:var(--sde-text);line-height:1.6">
               ${a.raisonnement || ""}
             </p>
