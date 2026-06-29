@@ -19,6 +19,25 @@ ACTION_LABELS = {
 
 # ── Génération du conseil ─────────────────────────────────────────────────────
 
+def _dominant_signals_note(snapshot: dict, threshold: int = 10) -> str:
+    """
+    Retourne une ligne HTML listant les signaux à fort impact (|points| >= threshold).
+    Annexée au raisonnement pour expliquer les facteurs déterminants du score.
+    """
+    sigs = snapshot.get("signals_tech", []) + snapshot.get("signals_fund", [])
+    dominant = [s for s in sigs if abs(s.get("points", 0)) >= threshold]
+    if not dominant:
+        return ""
+    dominant.sort(key=lambda s: abs(s.get("points", 0)), reverse=True)
+    parts = []
+    for s in dominant[:3]:
+        pts = s["points"]
+        arrow = "↑" if pts > 0 else "↓"
+        parts.append(f"{arrow} {s['nom']} ({pts:+d})")
+    return ("<br><span style='color:var(--sde-muted);font-size:.85em'>"
+            "Signaux dominants : " + " · ".join(parts) + "</span>")
+
+
 def generate_advice(summary: dict | None, market: dict, snapshot: dict,
                     candle_info: dict | None = None,
                     cfg: dict | None = None) -> dict:
@@ -39,6 +58,15 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
     rsi    = float(market.get("rsi") or 50)
     prix   = float(market.get("price") or 0)
 
+    # Note sur les signaux à fort impact — annexée à chaque conseil
+    signals_note = _dominant_signals_note(snapshot)
+
+    def _finalize(conseil, pnl=None, shares=0, px=0):
+        r = _with_candle(conseil, candle_info, pnl, score, reco, shares, px)
+        if signals_note:
+            r["raisonnement"] += signals_note
+        return r
+
     # ── Cas 1 : pas de position ───────────────────────────────────────────────
     if summary is None:
         if reco == "ACHETER" and score >= c["score_acheter"]:
@@ -49,8 +77,7 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
             base = _conseil("SURVEILLER", None, None,
                 f"Pas de position. Signal SDE {reco} ({score:.0f}/100) — "
                 f"attendre un signal plus fort avant d'entrer.")
-        return _with_candle(base, candle_info, pnl_pct=None,
-                            score=score, reco=reco)
+        return _finalize(base)
 
     # ── Cas 2 : position existante ────────────────────────────────────────────
     pnl_pct      = float(summary["pnl_pct"])
@@ -62,7 +89,7 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
         base = _conseil("VENDRE", total_shares, prix,
             f"Stop loss atteint : position à {pnl_pct:+.1f}% (coût moyen {cout_moyen:.2f} $). "
             f"Limitation des pertes recommandée.")
-        return _with_candle(base, candle_info, pnl_pct, score, reco)
+        return _finalize(base, pnl=pnl_pct)
 
     # Prise de bénéfices sur signal vendeur fort
     if pnl_pct >= c["take_profit_pct"] and reco == "VENDRE":
@@ -70,14 +97,14 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
         base = _conseil("ALLÉGER", alleger, prix,
             f"Plus-value de {pnl_pct:+.1f}% + signal SDE baissier ({score:.0f}/100). "
             f"Sécurisation de la moitié de la position recommandée.")
-        return _with_candle(base, candle_info, pnl_pct, score, reco)
+        return _finalize(base, pnl=pnl_pct)
 
     # Signal vendeur fort sans plus-value importante
     if reco == "VENDRE" and score <= c["score_vendre"]:
         base = _conseil("VENDRE", total_shares, prix,
             f"Signal SDE baissier fort ({score:.0f}/100, RSI {rsi:.0f}). "
             f"Sortie de position recommandée (P&L actuelle : {pnl_pct:+.1f}%).")
-        return _with_candle(base, candle_info, pnl_pct, score, reco)
+        return _finalize(base, pnl=pnl_pct)
 
     # Renforcement sur faiblesse
     if pnl_pct <= c["pnl_renforcer"] and reco == "ACHETER" and rsi <= c["rsi_renforcer"]:
@@ -85,20 +112,20 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
         base = _conseil("RENFORCER", renforcer, prix,
             f"RSI bas ({rsi:.0f}) + signal SDE haussier ({score:.0f}/100). "
             f"Opportunité de renforcement sur faiblesse ({pnl_pct:+.1f}% de latence).")
-        return _with_candle(base, candle_info, pnl_pct, score, reco, total_shares, prix)
+        return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
 
     # Signal haussier confirmé en territoire positif
     if reco == "ACHETER" and score >= c["score_tenir"] and pnl_pct > 0:
         base = _conseil("TENIR", None, None,
             f"Signal SDE haussier ({score:.0f}/100) avec position en positif ({pnl_pct:+.1f}%). "
             f"Maintien recommandé, la tendance reste favorable.")
-        return _with_candle(base, candle_info, pnl_pct, score, reco)
+        return _finalize(base, pnl=pnl_pct)
 
     # Défaut : tenir
     base = _conseil("TENIR", None, None,
         f"Position à {pnl_pct:+.1f}% (coût moyen {cout_moyen:.2f} $). "
         f"Signal SDE {reco} ({score:.0f}/100) — maintien de la position.")
-    return _with_candle(base, candle_info, pnl_pct, score, reco, total_shares, prix)
+    return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
 
 
 def _conseil(action, quantite, prix_cible, raisonnement) -> dict:
