@@ -119,19 +119,22 @@ def test_weekly():
         if not username or not to_email:
             return jsonify({"error": "Impossible de trouver utilisateur/email. Passez ?user=X&to=email"}), 400
 
-        watchlist = get_watchlist(username) or []
+        watchlist    = get_watchlist(username) or []
         from portfolio.positions import get_positions
-        positions = get_positions(username)
-        pos_tickers = list({r["ticker"] for r in positions})
+        positions    = get_positions(username)
+        pos_tickers  = list({r["ticker"] for r in positions})
+        debug = {
+            "username":  username,
+            "email":     to_email,
+            "watchlist": [i["ticker"] for i in watchlist],
+            "positions": pos_tickers,
+        }
 
         from alerts.weekly_report import send_weekly_report
         send_weekly_report(username, to_email, watchlist)
-        return jsonify({
-            "ok": True,
-            "message":      f"Rapport hebdo envoyé à {to_email} (user={username})",
-            "watchlist":    [i["ticker"] for i in watchlist],
-            "positions":    pos_tickers,
-        }), 200
+        return jsonify({"ok": True, "message": f"Envoyé à {to_email}", **debug}), 200
     except Exception as e:
         import traceback
-        return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
+        return jsonify({"ok": False, "error": str(e),
+                        "debug": debug if "debug" in dir() else {},
+                        "trace": traceback.format_exc()}), 500
