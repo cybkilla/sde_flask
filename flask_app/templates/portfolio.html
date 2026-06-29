@@ -258,6 +258,10 @@
         ${badge}
         <span style="font-size:.72rem;color:var(--sde-muted)">${_dateFr(a.date_conseil || new Date().toISOString().slice(0,10))}</span>
         ${a.prix_jour ? `<span style="font-size:.72rem;color:var(--sde-muted)">${sym}${parseFloat(a.prix_jour).toFixed(2)}</span>` : ""}
+        <button onclick="resetAdvice('${ticker}')" title="Recalculer le conseil"
+                style="background:none;border:none;padding:0 4px;cursor:pointer;color:var(--sde-muted);font-size:.8rem;line-height:1;margin-left:auto">
+          ⟳
+        </button>
       </div>
       <p style="margin:0;font-size:.8rem;color:var(--sde-text);line-height:1.6">${a.raisonnement || ""}</p>
     </div>`;
@@ -425,6 +429,16 @@
   ${lotsHtml(ticker, sym, s.lots || [], company, currency || "USD")}
 
 </div>`;
+  }
+
+  /* ── Reset conseil du jour ── */
+  function resetAdvice(ticker) {
+    const wrap = document.getElementById("advice-wrap-" + ticker);
+    if (wrap) wrap.style.opacity = "0.4";
+    fetch(`/portfolio/advice/${ticker}/reset`, {
+      method: "POST",
+      headers: { "X-CSRFToken": CSRF }
+    }).then(() => loadOverview());
   }
 
   /* ── Chargement overview ── */

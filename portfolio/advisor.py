@@ -19,23 +19,39 @@ ACTION_LABELS = {
 
 # ── Génération du conseil ─────────────────────────────────────────────────────
 
-def _dominant_signals_note(snapshot: dict, threshold: int = 10) -> str:
+def _get_data_date(snapshot: dict) -> str:
+    """Retourne la date de la dernière donnée marché au format DD.MM.YYYY."""
+    try:
+        hist = snapshot.get("market", {}).get("history")
+        if hist is not None and len(hist) > 0:
+            idx = hist.index[-1]
+            if hasattr(idx, "strftime"):
+                return idx.strftime("%d.%m.%Y")
+            y, m, d = str(idx)[:10].split("-")
+            return f"{d}.{m}.{y}"
+    except Exception:
+        pass
+    return ""
+
+
+def _dominant_signals_note(snapshot: dict, data_date: str = "", threshold: int = 10) -> str:
     """
-    Retourne une ligne HTML listant les signaux à fort impact (|points| >= threshold).
-    Annexée au raisonnement pour expliquer les facteurs déterminants du score.
+    Retourne des lignes HTML pour les signaux à fort impact (|points| >= threshold).
+    Chaque signal est sur sa propre ligne, préfixé de sa date.
     """
     sigs = snapshot.get("signals_tech", []) + snapshot.get("signals_fund", [])
     dominant = [s for s in sigs if abs(s.get("points", 0)) >= threshold]
     if not dominant:
         return ""
     dominant.sort(key=lambda s: abs(s.get("points", 0)), reverse=True)
-    parts = []
+    d = f"{data_date} : " if data_date else ""
+    lines = []
     for s in dominant[:3]:
         pts = s["points"]
         arrow = "↑" if pts > 0 else "↓"
-        parts.append(f"{arrow} {s['nom']} ({pts:+d})")
-    return ("<br><span style='color:var(--sde-muted);font-size:.85em'>"
-            "Signaux dominants : " + " · ".join(parts) + "</span>")
+        lines.append(f"<br><span style='color:var(--sde-muted);font-size:.85em'>"
+                     f"{d}{arrow} {s['nom']} ({pts:+d})</span>")
+    return "".join(lines)
 
 
 def generate_advice(summary: dict | None, market: dict, snapshot: dict,
@@ -58,11 +74,15 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
     rsi    = float(market.get("rsi") or 50)
     prix   = float(market.get("price") or 0)
 
-    # Note sur les signaux à fort impact — annexée à chaque conseil
-    signals_note = _dominant_signals_note(snapshot)
+    # Dates pour préfixer chaque ligne du raisonnement
+    conseil_date_str = date.today().strftime("%d.%m.%Y")
+    data_date_str    = _get_data_date(snapshot)
+    signals_note     = _dominant_signals_note(snapshot, data_date_str)
+    cd = f"{conseil_date_str} : "
 
     def _finalize(conseil, pnl=None, shares=0, px=0):
-        r = _with_candle(conseil, candle_info, pnl, score, reco, shares, px)
+        r = _with_candle(conseil, candle_info, pnl, score, reco, shares, px,
+                         data_date=data_date_str)
         if signals_note:
             r["raisonnement"] += signals_note
         return r
@@ -71,11 +91,11 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
     if summary is None:
         if reco == "ACHETER" and score >= c["score_acheter"]:
             base = _conseil("ACHETER", None, prix,
-                f"Pas de position. Signal SDE haussier ({score:.0f}/100, RSI {rsi:.0f}). "
+                f"{cd}Pas de position. Signal SDE haussier ({score:.0f}/100, RSI {rsi:.0f}). "
                 f"Opportunité d'entrée autour de {prix:.2f} $.")
         else:
             base = _conseil("SURVEILLER", None, None,
-                f"Pas de position. Signal SDE {reco} ({score:.0f}/100) — "
+                f"{cd}Pas de position. Signal SDE {reco} ({score:.0f}/100) — "
                 f"attendre un signal plus fort avant d'entrer.")
         return _finalize(base)
 
@@ -87,7 +107,7 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
     # Stop loss automatique
     if pnl_pct <= c["stop_loss_pct"]:
         base = _conseil("VENDRE", total_shares, prix,
-            f"Stop loss atteint : position à {pnl_pct:+.1f}% (coût moyen {cout_moyen:.2f} $). "
+            f"{cd}Stop loss atteint : position à {pnl_pct:+.1f}% (coût moyen {cout_moyen:.2f} $). "
             f"Limitation des pertes recommandée.")
         return _finalize(base, pnl=pnl_pct)
 
@@ -95,14 +115,14 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
     if pnl_pct >= c["take_profit_pct"] and reco == "VENDRE":
         alleger = max(1, round(total_shares * 0.5))
         base = _conseil("ALLÉGER", alleger, prix,
-            f"Plus-value de {pnl_pct:+.1f}% + signal SDE baissier ({score:.0f}/100). "
+            f"{cd}Plus-value de {pnl_pct:+.1f}% + signal SDE baissier ({score:.0f}/100). "
             f"Sécurisation de la moitié de la position recommandée.")
         return _finalize(base, pnl=pnl_pct)
 
     # Signal vendeur fort sans plus-value importante
     if reco == "VENDRE" and score <= c["score_vendre"]:
         base = _conseil("VENDRE", total_shares, prix,
-            f"Signal SDE baissier fort ({score:.0f}/100, RSI {rsi:.0f}). "
+            f"{cd}Signal SDE baissier fort ({score:.0f}/100, RSI {rsi:.0f}). "
             f"Sortie de position recommandée (P&L actuelle : {pnl_pct:+.1f}%).")
         return _finalize(base, pnl=pnl_pct)
 
@@ -110,20 +130,20 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
     if pnl_pct <= c["pnl_renforcer"] and reco == "ACHETER" and rsi <= c["rsi_renforcer"]:
         renforcer = max(1, round(total_shares * 0.25))
         base = _conseil("RENFORCER", renforcer, prix,
-            f"RSI bas ({rsi:.0f}) + signal SDE haussier ({score:.0f}/100). "
+            f"{cd}RSI bas ({rsi:.0f}) + signal SDE haussier ({score:.0f}/100). "
             f"Opportunité de renforcement sur faiblesse ({pnl_pct:+.1f}% de latence).")
         return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
 
     # Signal haussier confirmé en territoire positif
     if reco == "ACHETER" and score >= c["score_tenir"] and pnl_pct > 0:
         base = _conseil("TENIR", None, None,
-            f"Signal SDE haussier ({score:.0f}/100) avec position en positif ({pnl_pct:+.1f}%). "
+            f"{cd}Signal SDE haussier ({score:.0f}/100) avec position en positif ({pnl_pct:+.1f}%). "
             f"Maintien recommandé, la tendance reste favorable.")
         return _finalize(base, pnl=pnl_pct)
 
     # Défaut : tenir
     base = _conseil("TENIR", None, None,
-        f"Position à {pnl_pct:+.1f}% (coût moyen {cout_moyen:.2f} $). "
+        f"{cd}Position à {pnl_pct:+.1f}% (coût moyen {cout_moyen:.2f} $). "
         f"Signal SDE {reco} ({score:.0f}/100) — maintien de la position.")
     return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
 
@@ -140,7 +160,8 @@ def _conseil(action, quantite, prix_cible, raisonnement) -> dict:
 def _with_candle(conseil: dict, candle_info: dict | None,
                  pnl_pct: float | None,
                  score: float = 50, reco: str = "NEUTRE",
-                 total_shares: float = 0, prix: float = 0) -> dict:
+                 total_shares: float = 0, prix: float = 0,
+                 data_date: str = "") -> dict:
     """
     Enrichit un conseil de base avec le signal du dernier pattern chandelier.
     Peut modifier l'action (ex. TENIR → ALLÉGER sur signal baissier fort)
@@ -148,11 +169,14 @@ def _with_candle(conseil: dict, candle_info: dict | None,
     """
     if not candle_info:
         return conseil
+
+    d = f"{data_date} : " if data_date else ""
+
     if candle_info.get("signal") == "neutre":
         name = candle_info.get("pattern", "")
         if name:
             raison = (f"{conseil['raisonnement']}<br>"
-                      f"<span style='color:var(--sde-muted)'>Figure chandelier : {name} — indécision.</span>")
+                      f"<span style='color:var(--sde-muted)'>{d}Figure chandelier : {name} — indécision.</span>")
             return _conseil(conseil["action"], conseil.get("quantite_suggeree"),
                             conseil.get("prix_cible"), raison)
         return conseil
@@ -168,39 +192,39 @@ def _with_candle(conseil: dict, candle_info: dict | None,
         if action == "TENIR" and pnl_pct is not None and pnl_pct > -10:
             alleger = max(1, round(total_shares * 0.25)) if total_shares > 0 else None
             raison = (f"{raison}<br>"
-                      f"Pattern chandelier {label} ({name}) — allégement partiel conseillé "
+                      f"{d}Pattern chandelier {label} ({name}) — allégement partiel conseillé "
                       f"à court terme.")
             return _conseil("ALLÉGER", alleger, prix or None, raison)
 
         # RENFORCER + baissier → revenir à TENIR
         if action == "RENFORCER":
-            raison = (f"Signal SDE {reco} ({score:.0f}/100) suggère un renforcement,<br>"
-                      f"mais le pattern chandelier {label} ({name}) contre-indique un achat "
+            raison = (f"{d}Signal SDE {reco} ({score:.0f}/100) suggère un renforcement,<br>"
+                      f"{d}mais le pattern chandelier {label} ({name}) contre-indique un achat "
                       f"immédiat. Maintien préférable dans l'attente d'une confirmation haussière.")
             return _conseil("TENIR", None, None, raison)
 
         # Pas de position + baissier → rester sur SURVEILLER
         if action == "ACHETER" and pnl_pct is None:
             raison = (f"{raison}<br>"
-                      f"Pattern chandelier {label} ({name}) — attendre confirmation "
+                      f"{d}Pattern chandelier {label} ({name}) — attendre confirmation "
                       f"avant d'entrer en position.")
             return _conseil("SURVEILLER", None, None, raison)
 
         # Autres cas : note de vigilance seulement
-        raison = f"{raison}<br>Note : pattern chandelier {label} ({name}) — rester vigilant."
+        raison = f"{raison}<br>{d}Note : pattern chandelier {label} ({name}) — rester vigilant."
 
     elif signal == "bullish":
         if action in ("RENFORCER", "ACHETER"):
-            raison = f"{raison}<br>Confirmé par un signal chandelier {label} ({name})."
+            raison = f"{raison}<br>{d}Confirmé par un signal chandelier {label} ({name})."
         elif action == "TENIR" and pnl_pct is not None and pnl_pct < 0:
             raison = (f"{raison}<br>"
-                      f"Pattern chandelier {label} ({name}) — rebond potentiel à surveiller.")
+                      f"{d}Pattern chandelier {label} ({name}) — rebond potentiel à surveiller.")
         elif action in ("ALLÉGER", "VENDRE"):
             raison = (f"{raison}<br>"
-                      f"Attention : signal chandelier {label} ({name}) en contradiction "
+                      f"{d}Attention : signal chandelier {label} ({name}) en contradiction "
                       f"avec la recommandation de vente — surveiller avant d'agir.")
         else:
-            raison = f"{raison}<br>Pattern chandelier {label} ({name}) — tendance positive à court terme."
+            raison = f"{raison}<br>{d}Pattern chandelier {label} ({name}) — tendance positive à court terme."
 
     return _conseil(action, conseil.get("quantite_suggeree"), conseil.get("prix_cible"), raison)
 
