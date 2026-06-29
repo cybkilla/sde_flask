@@ -235,45 +235,51 @@ def send_weekly_report(username: str, email: str, watchlist: list):
         c = "#1D9E75" if v >= 0 else "#D85A30"
         return f'<span style="color:{c};font-weight:600">{v:+.1f}%</span>'
 
-    # Résumé compte
-    summary_block = f"""
-    <div style="background:#F8FAFC;border-radius:8px;padding:14px 16px;margin-bottom:20px">
-      <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px">
-        <div>
-          <div style="color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.05em">
-            Portefeuille
-          </div>
-          <div style="font-size:18px;font-weight:700;color:#111827">
-            ${total_valeur:,.2f}
-          </div>
-        </div>
-        <div>
-          <div style="color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.05em">
-            Investi total
-          </div>
-          <div style="font-size:18px;font-weight:700;color:#374151">
-            ${total_investi:,.2f}
-          </div>
-        </div>
-        <div>
-          <div style="color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.05em">
-            P&L global
-          </div>
-          <div style="font-size:18px;font-weight:700;color:{pnl_color}">
-            {pnl_sign}${abs(total_pnl):,.2f}
-          </div>
-        </div>
-        {f'''<div>
-          <div style="color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.05em">
-            Pertinence (7j)
-          </div>
-          <div style="font-size:18px;font-weight:700;
-                      color:{"#1D9E75" if (week_stats.get("taux_pct") or 0) >= 55 else "#D85A30"}">
+    # Résumé compte — table pour compatibilité email (flexbox ignoré par Gmail/Outlook)
+    pertinence_cell = ""
+    if week_stats.get("taux_pct") is not None:
+        pert_color = "#1D9E75" if (week_stats.get("taux_pct") or 0) >= 55 else "#D85A30"
+        pertinence_cell = f"""
+        <td style="padding:14px 20px;text-align:center;
+                   border-left:1px solid #E5E7EB">
+          <div style="color:#6b7280;font-size:11px;text-transform:uppercase;
+                      letter-spacing:.05em;margin-bottom:4px">Pertinence (7j)</div>
+          <div style="font-size:22px;font-weight:700;color:{pert_color}">
             {week_stats["taux_pct"]}%
           </div>
-        </div>''' if week_stats.get("taux_pct") is not None else ""}
-      </div>
-    </div>"""
+        </td>"""
+
+    summary_block = f"""
+    <table width="100%" cellpadding="0" cellspacing="0"
+           style="background:#F8FAFC;border-radius:8px;margin-bottom:20px;
+                  border:1px solid #E5E7EB;border-collapse:separate;border-spacing:0">
+      <tr>
+        <td style="padding:14px 20px;text-align:center">
+          <div style="color:#6b7280;font-size:11px;text-transform:uppercase;
+                      letter-spacing:.05em;margin-bottom:4px">Valeur portefeuille</div>
+          <div style="font-size:22px;font-weight:700;color:#111827">
+            ${total_valeur:,.2f}
+          </div>
+        </td>
+        <td style="padding:14px 20px;text-align:center;
+                   border-left:1px solid #E5E7EB">
+          <div style="color:#6b7280;font-size:11px;text-transform:uppercase;
+                      letter-spacing:.05em;margin-bottom:4px">Investi total</div>
+          <div style="font-size:22px;font-weight:700;color:#374151">
+            ${total_investi:,.2f}
+          </div>
+        </td>
+        <td style="padding:14px 20px;text-align:center;
+                   border-left:1px solid #E5E7EB">
+          <div style="color:#6b7280;font-size:11px;text-transform:uppercase;
+                      letter-spacing:.05em;margin-bottom:4px">P&amp;L global</div>
+          <div style="font-size:22px;font-weight:700;color:{pnl_color}">
+            {pnl_sign}${abs(total_pnl):,.2f}
+          </div>
+        </td>
+        {pertinence_cell}
+      </tr>
+    </table>"""
 
     # Lignes par ticker
     ticker_html = ""
