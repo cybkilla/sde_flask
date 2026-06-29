@@ -406,17 +406,30 @@
                     <span style="font-size:.78rem;font-weight:400">(${sign}${Math.abs(pct).toFixed(2)}%)</span>
                   </span>`;
         })() : (() => {
-          const hasRealized = s.pnl_realise && Math.abs(parseFloat(s.pnl_realise)) > 0.001;
+          const nonReal   = parseFloat(s.pnl_non_realise ?? s.pnl_euros);
+          const realized  = parseFloat(s.pnl_realise || 0);
+          const total     = parseFloat(s.pnl_euros);
+          const hasReal   = Math.abs(realized) > 0.001;
+          const _sign = v => v >= 0 ? "+" : "−";
+          const _col  = v => v >= 0 ? "#1D9E75" : "#D85A30";
+          const _amt  = v => `${_sign(v)}${sym}${Math.abs(v).toFixed(2)}`;
           return `
-            <span style="font-size:.7rem;color:var(--sde-muted);display:block">
-              ${pColor2 === "#1D9E75" ? "Plus-value" : "Moins-value"} latente
-            </span>
-            <span style="color:${pColor2};font-weight:600">
-              ${_pct(s.pnl_pct)} &nbsp;·&nbsp; ${pSign}${sym}${Math.abs(parseFloat(s.pnl_non_realise ?? s.pnl_euros)).toFixed(2)}
-            </span>
-            ${hasRealized ? `<span style="font-size:.72rem;color:var(--sde-muted);display:block;margin-top:2px">
-              + réalisé ${parseFloat(s.pnl_realise) >= 0 ? "+" : "−"}${sym}${Math.abs(parseFloat(s.pnl_realise)).toFixed(2)}
-            </span>` : ""}`;
+            <div style="font-size:.76rem;line-height:1.7">
+              <div>
+                <span style="color:var(--sde-muted)">Non réalisé&thinsp;</span>
+                <span style="color:${_col(nonReal)};font-weight:600">
+                  ${_pct(s.pnl_pct)} &nbsp;${_amt(nonReal)}
+                </span>
+              </div>
+              ${hasReal ? `<div>
+                <span style="color:var(--sde-muted)">Réalisé (ventes)&thinsp;</span>
+                <span style="color:${_col(realized)};font-weight:600">${_amt(realized)}</span>
+              </div>
+              <div style="border-top:1px solid var(--sde-border);margin-top:2px;padding-top:2px">
+                <span style="color:var(--sde-muted)">Total P&amp;L&thinsp;</span>
+                <span style="color:${_col(total)};font-weight:700">${_amt(total)}</span>
+              </div>` : ""}
+            </div>`;
         })()}
     </span>
     <a href="/analyze/${ticker}" data-sde-loading="Analyse de ${ticker}…"
