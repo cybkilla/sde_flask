@@ -317,10 +317,17 @@ def get_advice(ticker: str):
                     pat_df = detect_patterns(hist.tail(60))
                     if not pat_df.empty:
                         last = pat_df.iloc[-1]
+                        raw_date = last.get("date") if hasattr(last, "get") else last["date"]
+                        try:
+                            candle_date_str = raw_date.strftime("%d.%m.%Y")
+                        except Exception:
+                            parts = str(raw_date)[:10].split("-")
+                            candle_date_str = f"{parts[2]}.{parts[1]}.{parts[0]}" if len(parts) == 3 else ""
                         candle_info = {
                             "signal":      last["signal"],
                             "pattern":     last["pattern"],
                             "description": last.get("description", ""),
+                            "date":        candle_date_str,
                         }
             except Exception as _ce:
                 print(f"[Advice] detect_patterns erreur : {_ce}", flush=True)

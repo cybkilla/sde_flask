@@ -184,7 +184,9 @@ def _with_candle(conseil: dict, candle_info: dict | None,
     if not candle_info:
         return conseil
 
-    d = f"{data_date} : " if data_date else ""
+    # La date du pattern est celle où il a été détecté, pas la dernière bougie
+    candle_date = candle_info.get("date") or data_date
+    d = f"{candle_date} : " if candle_date else ""
 
     if candle_info.get("signal") == "neutre":
         name = candle_info.get("pattern", "")
