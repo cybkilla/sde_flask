@@ -389,7 +389,7 @@ def send_weekly_report(username: str, email: str, watchlist: list):
       </div>''' if week_stats.get("evaluated") else ""}
 
       <div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:20px">
-        <a href="{SDE_BASE_URL}/portfolio"
+        <a href="{SDE_BASE_URL}/mes-positions"
            style="display:inline-block;background:#6366F1;color:#fff;
                   font-size:13px;font-weight:600;text-decoration:none;
                   padding:8px 18px;border-radius:6px;margin-bottom:10px">
