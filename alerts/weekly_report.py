@@ -145,6 +145,16 @@ def send_weekly_report(username: str, email: str, watchlist: list):
     }
 
     tickers = list({item["ticker"].upper() for item in watchlist})
+
+    # Fallback : si watchlist vide, utiliser les tickers du portefeuille
+    if not tickers:
+        try:
+            from portfolio.positions import get_positions
+            portfolio_rows = get_positions(username)
+            tickers = list({r["ticker"].upper() for r in portfolio_rows})
+            print(f"[Weekly] Watchlist vide — fallback portefeuille : {tickers}", flush=True)
+        except Exception:
+            pass
     week_stats = _get_week_advice_stats(username)
 
     # Données par ticker
@@ -207,8 +217,9 @@ def send_weekly_report(username: str, email: str, watchlist: list):
             print(f"[Weekly] erreur ticker {ticker} : {e}", flush=True)
 
     if not ticker_rows:
-        print(f"[Weekly] Aucune donnée — rapport non envoyé pour {username}", flush=True)
-        return
+        msg = f"[Weekly] Aucune donnée (watchlist et portefeuille vides) — rapport non envoyé pour {username}"
+        print(msg, flush=True)
+        raise RuntimeError(msg)
 
     # ── Construction HTML ─────────────────────────────────────────────────────
     week_start = _current_week_start()
