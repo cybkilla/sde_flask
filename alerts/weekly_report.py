@@ -380,12 +380,13 @@ def send_weekly_report(username: str, email: str, watchlist: list):
 
       {f'''<div style="background:#EEF2FF;border-radius:8px;padding:12px 14px;
                   margin-top:16px;font-size:12px;color:#374151">
-        <strong style="color:#6366F1">Conseils cette semaine</strong> ·
-        {week_stats["total"]} générés ·
-        {week_stats["evaluated"]} évalués ·
-        {week_stats["bons"]} bons
-        {f'· <strong style="color:{"#1D9E75" if week_stats["taux_pct"] >= 55 else "#D85A30"}">{week_stats["taux_pct"]}% de pertinence</strong>' if week_stats.get("taux_pct") is not None else ""}
-      </div>''' if week_stats.get("total") else ""}
+        <strong style="color:#6366F1">Pertinence des conseils (7j)</strong> —
+        {week_stats["bons"]} corrects sur {week_stats["evaluated"]} évalués
+        {f'· <strong style="color:{"#1D9E75" if week_stats["taux_pct"] >= 55 else "#D85A30"}">{week_stats["taux_pct"]}%</strong>' if week_stats.get("taux_pct") is not None else ""}
+        <span style="color:#9ca3af;font-size:11px">
+          (conseils dont le résultat J+1 est connu)
+        </span>
+      </div>''' if week_stats.get("evaluated") else ""}
 
       <div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:20px">
         <a href="{SDE_BASE_URL}/portfolio"
