@@ -145,10 +145,8 @@ def check_all():
 
     for username, email in users.items():
         watchlist = get_watchlist(username)
-        if not watchlist:
-            continue
 
-        for item in watchlist:
+        for item in (watchlist or []):
             ticker  = item["ticker"]
             company = item.get("company", ticker)
 
@@ -159,12 +157,13 @@ def check_all():
                 print(f"  ✗ Erreur {ticker} : {e}", flush=True)
 
         # ── Rapport hebdomadaire (dimanche ≥ 22h Paris) ──────────
+        # Déclenché même si la watchlist est vide (le rapport inclut le portefeuille)
         if email:
             try:
                 from alerts.weekly_report import should_send, send_weekly_report
                 if should_send(username):
                     print(f"[Weekly] Génération rapport pour {username}…", flush=True)
-                    send_weekly_report(username, email, watchlist)
+                    send_weekly_report(username, email, watchlist or [])
             except Exception as e:
                 print(f"  [Weekly] Erreur rapport {username} : {e}", flush=True)
 
