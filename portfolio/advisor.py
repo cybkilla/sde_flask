@@ -56,7 +56,7 @@ def _dominant_signals_note(snapshot: dict, data_date: str = "",
         pts = s["points"]
         arrow = "↑" if pts > 0 else "↓"
         lines.append(f"<br><span style='color:var(--sde-muted);font-size:.85em'>"
-                     f"{d}{arrow} {s['nom']} ({pts:+d})</span>")
+                     f"{d}{arrow} {s['nom']} ({pts:+.0f})</span>")
     return "".join(lines)
 
 
