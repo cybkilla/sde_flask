@@ -91,3 +91,38 @@ def test_email():
     except Exception as e:
         import traceback
         return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
+
+
+@bp.route("/test-weekly", methods=["GET", "POST"])
+def test_weekly():
+    """
+    Force l'envoi du rapport hebdomadaire pour un utilisateur donné (?to=email).
+    Bypass le guard dimanche/22h et l'anti-doublon Supabase.
+    Protégé par le même secret que /run.
+    """
+    if not _check_secret():
+        return jsonify({"error": "Token invalide ou absent"}), 403
+
+    to_email = request.args.get("to", "").strip()
+    username = request.args.get("user", "").strip()
+
+    try:
+        from alerts.scheduler import get_all_users
+        from watchlist.watchlist import get_watchlist
+        users = get_all_users()
+
+        if not username:
+            username = next(iter(users), None)
+        if not to_email:
+            to_email = users.get(username, "")
+
+        if not username or not to_email:
+            return jsonify({"error": "Impossible de trouver utilisateur/email. Passez ?user=X&to=email"}), 400
+
+        watchlist = get_watchlist(username) or []
+        from alerts.weekly_report import send_weekly_report
+        send_weekly_report(username, to_email, watchlist)
+        return jsonify({"ok": True, "message": f"Rapport hebdo envoyé à {to_email} (user={username})"}), 200
+    except Exception as e:
+        import traceback
+        return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
