@@ -241,6 +241,29 @@ def analyze(ticker: str):
     )
 
 
+# ── Backtest (AJAX) ──────────────────────────────────────────────────────────
+
+@bp.route("/backtest/<ticker>")
+def backtest(ticker: str):
+    """
+    Rejoue le score technique SDE sur 2 ans et retourne les stats en JSON.
+    Appelé à la demande (bouton dans la page analyse) : le calcul prend
+    ~2 s au premier appel, puis est servi depuis le cache mémoire (TTL 1 h).
+    """
+    ticker = ticker.upper().strip()
+    if not ticker:
+        return jsonify({"ok": False, "error": "ticker manquant"}), 400
+    try:
+        from analysis.backtest import run_backtest
+        return jsonify(run_backtest(ticker))
+    except ValueError as exc:
+        # Historique trop court ou ticker inconnu → erreur "métier" propre
+        return jsonify({"ok": False, "error": str(exc)}), 200
+    except Exception:
+        return jsonify({"ok": False,
+                        "error": "Backtest indisponible pour ce titre."}), 200
+
+
 # ── Watchlist (AJAX) ─────────────────────────────────────────────────────────
 
 @bp.route("/watchlist/add", methods=["POST"])

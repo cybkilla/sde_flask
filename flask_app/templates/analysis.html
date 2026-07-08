@@ -55,8 +55,15 @@
       <i class="bi {% if in_watchlist %}bi-bookmark-star-fill{% else %}bi-bookmark-star{% endif %} me-1"></i>
       <span class="hide-xs">{% if in_watchlist %}Watchlist{% else %}Ajouter{% endif %}</span>
     </button>
-    <button class="sde-nav-btn" title="Aller à ma position"
-            onclick="document.getElementById('sde-portfolio-section').scrollIntoView({behavior:'smooth'})">
+    <button class="sde-nav-btn" title="Enregistrer / voir ma position"
+            onclick="
+              const sec = document.getElementById('sde-portfolio-section');
+              if (sec && sec.style.display !== 'none') {
+                sec.scrollIntoView({behavior:'smooth'});
+              } else {
+                sdePortfolio.openAddModal('achat', {{ market.price | tojson }});
+              }
+            ">
       <i class="bi bi-briefcase me-1"></i>
       <span class="hide-xs">Position</span>
     </button>
@@ -637,9 +644,26 @@
   </div>
 </div>
 
+<!-- ══ BACKTEST ═════════════════════════════════════════════════════════════ -->
+<div class="sde-card mt-3" id="sde-backtest-section">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-1">
+    <div class="sde-section-title mb-0">
+      <i class="bi bi-clock-history me-1"></i>Backtest · fiabilité historique des signaux
+    </div>
+    <button class="sde-nav-btn" id="sde-backtest-btn" onclick="sdeBacktest.run()">
+      <i class="bi bi-play-circle me-1"></i><span>Lancer (2 ans)</span>
+    </button>
+  </div>
+  <p class="text-muted mb-2" style="font-size:.72rem">
+    Rejoue le score technique SDE jour par jour sur 2 ans d'historique et mesure
+    ce que le cours a réellement fait 5 et 20 jours après chaque signal.
+  </p>
+  <div id="sde-backtest-wrap"></div>
+</div>
+
 {% if current_user.is_authenticated %}
 <!-- ══ PORTFOLIO & CONSEIL ══════════════════════════════════════════════════ -->
-<div class="sde-card mt-3" id="sde-portfolio-section">
+<div class="sde-card mt-3" id="sde-portfolio-section" style="display:none">
 
   <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
     <div class="sde-section-title mb-0">
@@ -832,10 +856,11 @@ window.sdePortfolio = (function () {
       .then(r => r.json()).then(data => {
         const wrap = document.getElementById("sde-positions-wrap");
         if (!data.ok || !data.summary) {
-          wrap.innerHTML = `<p class="text-muted small text-center py-1 mb-0">
-            Aucune position enregistrée.</p>`;
+          // Pas de position → garder le bloc masqué, rien à afficher
           return;
         }
+        // Des positions existent → révéler la carte
+        document.getElementById("sde-portfolio-section").style.display = "";
         const s        = data.summary;
         _availableShares = parseFloat(s.total_shares) || 0;
         const pnlColor = s.pnl_euros >= 0 ? "#1D9E75" : "#D85A30";
@@ -1328,6 +1353,112 @@ window.sdePortfolio = (function () {
   return { openAddModal, submitAdd, deletePos, refreshAdvice, setPosType, saveTargets };
 })();
 {% endif %}
+
+/* ── Backtest ───────────────────────────────────────────────────────────── */
+const sdeBacktest = (function () {
+  const TICKER = {{ ticker | tojson }};
+  let done = false;   // évite de relancer si les résultats sont déjà affichés
+
+  function _hitBadge(pct) {
+    if (pct == null) return "—";
+    const color = pct >= 55 ? "#1D9E75" : pct >= 45 ? "#BA7517" : "#D85A30";
+    return `<strong style="color:${color}">${pct}%</strong>`;
+  }
+  function _ret(v) {
+    if (v == null) return "—";
+    const s = v >= 0 ? "+" : "";
+    return `<span style="color:${v >= 0 ? "#1D9E75" : "#D85A30"}">${s}${v.toFixed(2)}%</span>`;
+  }
+
+  function run() {
+    if (done) {
+      document.getElementById("sde-backtest-wrap").scrollIntoView({behavior: "smooth"});
+      return;
+    }
+    const wrap = document.getElementById("sde-backtest-wrap");
+    const btn  = document.getElementById("sde-backtest-btn");
+    btn.disabled = true;
+    wrap.innerHTML = `<p class="text-muted small text-center py-3 mb-0">
+      <span class="spinner-border spinner-border-sm me-1"></span>
+      Rejeu de ~450 journées de scoring…</p>`;
+
+    fetch(`/backtest/${TICKER}`)
+      .then(r => r.json())
+      .then(data => {
+        btn.disabled = false;
+        if (!data.ok) {
+          wrap.innerHTML = `<p class="text-muted small mb-0">${data.error || "Backtest indisponible."}</p>`;
+          return;
+        }
+        done = true;
+        btn.querySelector("span").textContent = "Résultats ↓";
+
+        const s5  = data.stats["5"]  || {};
+        const s20 = data.stats["20"] || {};
+        const rep = data.repartition || {};
+        const row = (action, icon, color) => `
+          <tr>
+            <td style="color:${color};font-weight:600">${icon} ${action}</td>
+            <td class="text-center">${(rep[action] || 0)}&nbsp;j</td>
+            <td class="text-center">${_hitBadge((s5[action]  || {}).hit_pct)}</td>
+            <td class="text-center">${_ret((s5[action]  || {}).ret_moyen)}</td>
+            <td class="text-center">${_hitBadge((s20[action] || {}).hit_pct)}</td>
+            <td class="text-center">${_ret((s20[action] || {}).ret_moyen)}</td>
+          </tr>`;
+
+        const diff    = data.curve.strat_pct - data.curve.bh_pct;
+        const verdict = diff >= 0
+          ? `La stratégie "investi uniquement sur signal ACHETER" aurait <strong style="color:#1D9E75">surperformé</strong> le simple achat-conservation de ${diff.toFixed(1)} pts.`
+          : `Le simple achat-conservation aurait fait mieux (${_ret(data.curve.bh_pct)} vs ${_ret(data.curve.strat_pct)}) — les signaux évitent des baisses mais ratent aussi des hausses.`;
+
+        wrap.innerHTML = `
+          <div class="table-responsive">
+            <table class="table table-sm mb-2" style="font-size:.78rem">
+              <thead class="table-light">
+                <tr>
+                  <th>Signal</th>
+                  <th class="text-center">Jours émis</th>
+                  <th class="text-center">Réussite à 5&nbsp;j</th>
+                  <th class="text-center">Var. moy. 5&nbsp;j</th>
+                  <th class="text-center">Réussite à 20&nbsp;j</th>
+                  <th class="text-center">Var. moy. 20&nbsp;j</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${row("ACHETER", "↑", "#1D9E75")}
+                ${row("NEUTRE",  "◆", "#BA7517")}
+                ${row("VENDRE",  "↓", "#D85A30")}
+              </tbody>
+            </table>
+          </div>
+          <div id="sde-backtest-chart" style="height:260px"></div>
+          <p class="text-muted mt-2 mb-0" style="font-size:.72rem">
+            ${verdict}<br>
+            Période ${data.date_debut} → ${data.date_fin} (${data.n_jours} jours de bourse) ·
+            ${data.note} · Performances passées ≠ performances futures.
+          </p>`;
+
+        Plotly.newPlot("sde-backtest-chart", [
+          { x: data.curve.dates, y: data.curve.buy_hold,  name: "Buy & Hold",
+            line: {color: "#9ca3af", width: 1.5} },
+          { x: data.curve.dates, y: data.curve.strategie, name: "Stratégie SDE (long si ACHETER)",
+            line: {color: "#1D9E75", width: 2} },
+        ], {
+          margin: {l: 40, r: 10, t: 10, b: 30},
+          yaxis:  {title: {text: "Base 100", font: {size: 10}}, tickfont: {size: 9}},
+          xaxis:  {tickfont: {size: 9}},
+          legend: {orientation: "h", y: 1.12, font: {size: 10}},
+          paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+        }, {responsive: true, displayModeBar: false});
+      })
+      .catch(() => {
+        btn.disabled = false;
+        wrap.innerHTML = `<p class="text-danger small mb-0">Erreur lors du backtest.</p>`;
+      });
+  }
+
+  return { run };
+})();
 
 /* ── Graphiques ─────────────────────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", function () {
