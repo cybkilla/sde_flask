@@ -110,6 +110,17 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
         note = _dominant_signals_note(snapshot, data_date_str, direction)
         if note:
             r["raisonnement"] += note
+        # Contexte macro : le score étant déjà ajusté par le régime dans le
+        # pipeline, on EXPLIQUE ici l'ajustement plutôt que de le ré-appliquer
+        # (sinon double comptage). Absent des vieux snapshots → .get défensif.
+        mr = snapshot.get("market_regime")
+        if mr and mr.get("regime") != "haussier":
+            vol_txt = " et volatil" if mr.get("volatil") else ""
+            r["raisonnement"] += (
+                f"<br>{cd}Contexte marché {mr['regime']}{vol_txt} "
+                f"(QQQ {mr.get('var_5j', 0):+.1f}% sur 5j) — "
+                f"le score SDE intègre déjà cette prudence."
+            )
         return r
 
     # ── Cas 1 : pas de position ───────────────────────────────────────────────

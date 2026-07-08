@@ -203,7 +203,25 @@ def _attribution_par_signal(bt: pd.DataFrame, horizon: int = 20) -> list:
     return sorted(out, key=lambda s: s["hit_pct"])
 
 
-def _equity_curve(bt: pd.DataFrame) -> dict:
+def _regime_series(qqq_hist: pd.DataFrame, dates: pd.Index) -> pd.Series:
+    """
+    Régime "investissable" jour par jour, aligné sur les dates du ticker.
+    Version VECTORISÉE de la règle baissière de market_regime.py :
+    non-investissable si QQQ < MA50 OU chute > 3% en 5 jours.
+
+    .reindex(dates, method='ffill') : QQQ et le ticker peuvent avoir des
+    jours de cotation légèrement différents — on propage la dernière
+    valeur connue du régime (forward fill) plutôt que de créer des trous.
+    """
+    from analysis.market_regime import SEUIL_VAR5J_BAISSIER
+    close    = qqq_hist["Close"]
+    ma50     = close.rolling(50).mean()
+    var_5j   = close.pct_change(5) * 100
+    baissier = (close < ma50) | (var_5j < SEUIL_VAR5J_BAISSIER)
+    return (~baissier).reindex(dates, method="ffill").fillna(True)
+
+
+def _equity_curve(bt: pd.DataFrame, regime_ok: pd.Series = None) -> dict:
     """
     Simulation vectorisée : on est investi ("long") uniquement les jours
     où le signal de la VEILLE était ACHETER, en cash sinon.
@@ -211,19 +229,32 @@ def _equity_curve(bt: pd.DataFrame) -> dict:
     Le .shift(1) sur la position est crucial : le signal calculé à la
     clôture de T ne peut être exécuté qu'à partir de T+1. Sans ce décalage,
     on s'achèterait soi-même dans le passé (biais classique de backtest).
+
+    Si regime_ok est fourni (True = marché non baissier), une 3e courbe
+    "SDE + filtre régime" n'investit que si signal ACHETER **ET** marché
+    porteur — c'est la validation chiffrée de l'intérêt du filtre macro.
     """
     ret_1j   = bt["close"].pct_change()                       # rendement quotidien
-    position = (bt["reco"] == "ACHETER").astype(int).shift(1) # 1 = investi, 0 = cash
+    achat    = (bt["reco"] == "ACHETER")
+    position = achat.astype(int).shift(1)                     # 1 = investi, 0 = cash
     strat    = (1 + ret_1j * position.fillna(0)).cumprod() * 100   # base 100
     bh       = (1 + ret_1j.fillna(0)).cumprod() * 100              # buy & hold
 
-    return {
+    out = {
         "dates":     [d.strftime("%Y-%m-%d") for d in bt.index],
         "strategie": [round(float(v), 2) for v in strat.fillna(100)],
         "buy_hold":  [round(float(v), 2) for v in bh],
         "strat_pct": round(float(strat.iloc[-1] - 100), 1),
         "bh_pct":    round(float(bh.iloc[-1] - 100), 1),
     }
+
+    if regime_ok is not None:
+        pos_regime = (achat & regime_ok).astype(int).shift(1)
+        strat_r    = (1 + ret_1j * pos_regime.fillna(0)).cumprod() * 100
+        out["strategie_regime"] = [round(float(v), 2) for v in strat_r.fillna(100)]
+        out["strat_regime_pct"] = round(float(strat_r.iloc[-1] - 100), 1)
+
+    return out
 
 
 def run_backtest(ticker: str, period: str = "2y",
@@ -249,7 +280,17 @@ def run_backtest(ticker: str, period: str = "2y",
 
     bt     = _replay_scores(hist)
     stats  = _stats_par_action(bt, horizons)
-    curve  = _equity_curve(bt)
+
+    # Filtre régime : optionnel — si QQQ est indisponible, le backtest
+    # fonctionne sans la 3e courbe plutôt que d'échouer entièrement.
+    regime_ok = None
+    try:
+        qqq       = _fetch_history("QQQ", period)
+        regime_ok = _regime_series(qqq, bt.index)
+    except Exception as e:
+        print(f"[Backtest] filtre régime indisponible : {e}", flush=True)
+
+    curve  = _equity_curve(bt, regime_ok)
     attrib = _attribution_par_signal(bt, horizon=20)
 
     # Répartition des signaux (pour l'affichage "X j ACHETER / Y j NEUTRE…")

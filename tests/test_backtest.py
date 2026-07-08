@@ -85,6 +85,16 @@ attendu = (bt["close"].iloc[-1] / bt["close"].iloc[0] - 1) * 100
 assert abs(curve["bh_pct"] - attendu) < 0.1, "buy & hold ≠ variation réelle du cours"
 print("✓ _equity_curve : base 100 et buy & hold exacts")
 
+# Avec filtre régime : si regime_ok est False partout, la stratégie filtrée
+# reste 100% cash → courbe plate à 100. Cas limite qui valide le ET logique.
+tout_baissier = pd.Series(False, index=bt.index)
+curve_r = _equity_curve(bt, tout_baissier)
+assert curve_r["strat_regime_pct"] == 0.0, "100% cash devrait rester à base 100"
+# Et si regime_ok est True partout, le filtre ne change rien
+tout_porteur = pd.Series(True, index=bt.index)
+assert _equity_curve(bt, tout_porteur)["strat_regime_pct"] == curve["strat_pct"]
+print("✓ _equity_curve : filtre régime — cas limites tout-cash et sans-effet corrects")
+
 
 # ── _attribution_par_signal : logique d'épisodes et de sens ──
 # On construit un mini-DataFrame à la main pour contrôler exactement

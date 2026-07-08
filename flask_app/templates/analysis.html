@@ -196,6 +196,33 @@
         Confiance&nbsp;: <strong>{{ "%.2f"|format(res.score_global) }}/100</strong>
         &nbsp;·&nbsp; Presse&nbsp;: {{ res.sentiment.label }}
       </div>
+
+      {# ── Contexte marché (régime QQQ) — absent sur les vieux snapshots ── #}
+      {% if res.get('market_regime') %}
+        {% set mr = res.market_regime %}
+        {% set mr_th = {
+          'haussier': ('#E1F5EE', '#1D9E75', '↑'),
+          'baissier': ('#FAECE7', '#D85A30', '↓'),
+          'neutre':   ('#FAEEDA', '#BA7517', '→'),
+        }.get(mr.regime, ('#f3f4f6', '#5a6a7a', '·')) %}
+        <div style="margin-top:10px;padding:8px 12px;border-radius:8px;
+                    background:{{ mr_th[0] }};font-size:.74rem;line-height:1.5">
+          <span style="font-weight:700;color:{{ mr_th[1] }}">
+            {{ mr_th[2] }} Marché {{ mr.regime }}{{ ' · volatil' if mr.volatil else '' }}
+          </span>
+          <span style="color:var(--sde-muted)">
+            — QQQ {{ '%+.1f'|format(mr.var_5j) }}&thinsp;% / 5&thinsp;j
+            {%- if mr.volatil %} · vol {{ mr.vol_20j_ann }}&thinsp;%{% endif %}
+          </span>
+          {% if res.get('regime_effet') and res.regime_effet.delta != 0 %}
+          <br><span style="color:var(--sde-muted)">
+            Score ajusté&nbsp;: {{ res.regime_effet.score_brut }} →
+            <strong style="color:{{ mr_th[1] }}">{{ res.regime_effet.score_ajuste }}</strong>
+            ({{ '%+.1f'|format(res.regime_effet.delta) }})
+          </span>
+          {% endif %}
+        </div>
+      {% endif %}
     </div>
   </div>
 
@@ -1453,9 +1480,15 @@ const sdeBacktest = (function () {
           </tr>`;
 
         const diff    = data.curve.strat_pct - data.curve.bh_pct;
-        const verdict = diff >= 0
+        let verdict = diff >= 0
           ? `La stratégie "investi uniquement sur signal ACHETER" aurait <strong style="color:#1D9E75">surperformé</strong> le simple achat-conservation de ${diff.toFixed(1)} pts.`
           : `Le simple achat-conservation aurait fait mieux (${_ret(data.curve.bh_pct)} vs ${_ret(data.curve.strat_pct)}) — les signaux évitent des baisses mais ratent aussi des hausses.`;
+        if (data.curve.strat_regime_pct != null) {
+          const dr = data.curve.strat_regime_pct - data.curve.strat_pct;
+          verdict += dr >= 0
+            ? ` Le filtre régime (n'acheter que si le NASDAQ est porteur) aurait <strong style="color:#6366F1">amélioré</strong> la stratégie de ${dr.toFixed(1)} pts — ce titre suit le marché global.`
+            : ` Le filtre régime aurait <strong style="color:#D85A30">coûté</strong> ${Math.abs(dr).toFixed(1)} pts — ce titre vit sa propre vie, indépendamment du NASDAQ.`;
+        }
 
         wrap.innerHTML = `
           <div class="table-responsive">
@@ -1485,12 +1518,20 @@ const sdeBacktest = (function () {
             ${data.note} · Performances passées ≠ performances futures.
           </p>`;
 
-        Plotly.newPlot("sde-backtest-chart", [
+        const traces = [
           { x: data.curve.dates, y: data.curve.buy_hold,  name: "Buy & Hold",
             line: {color: "#9ca3af", width: 1.5} },
           { x: data.curve.dates, y: data.curve.strategie, name: "Stratégie SDE (long si ACHETER)",
             line: {color: "#1D9E75", width: 2} },
-        ], {
+        ];
+        if (data.curve.strategie_regime) {
+          traces.push({
+            x: data.curve.dates, y: data.curve.strategie_regime,
+            name: "SDE + filtre régime (marché QQQ porteur)",
+            line: {color: "#6366F1", width: 2, dash: "dot"},
+          });
+        }
+        Plotly.newPlot("sde-backtest-chart", traces, {
           margin: {l: 40, r: 10, t: 10, b: 30},
           yaxis:  {title: {text: "Base 100", font: {size: 10}}, tickfont: {size: 9}},
           xaxis:  {tickfont: {size: 9}},

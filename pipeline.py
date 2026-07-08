@@ -106,8 +106,25 @@ def run(ticker: str, use_cache: bool = True) -> dict:
     exec_risk    = compute_executive_risk_score(df_events, ins_score)
 
     # ── Étape 5 : score global et recommandation ──────────
-    g_score = score_global(tech["score"], fund["score"], media)
-    reco    = recommandation(g_score)
+    g_score_brut = score_global(tech["score"], fund["score"], media)
+
+    # Ajustement par le régime de marché (QQQ) : un ACHETER quand le
+    # NASDAQ plonge n'a pas la même valeur qu'en marché calme.
+    # try/except large : l'analyse d'un ticker ne doit JAMAIS échouer
+    # parce que QQQ est indisponible — sans contexte, score inchangé.
+    g_score      = g_score_brut
+    regime_ctx   = None
+    regime_effet = None
+    try:
+        from analysis.market_regime import get_market_context, apply_regime
+        regime_ctx = get_market_context()
+        if regime_ctx:
+            regime_effet = apply_regime(g_score_brut, regime_ctx)
+            g_score      = regime_effet["score_ajuste"]
+    except Exception as e:
+        print(f"[Pipeline] régime marché ignoré : {e}", flush=True)
+
+    reco = recommandation(g_score)
 
     # DataFrame récapitulatif des 3 composantes (Pandas)
     df_scores = pd.DataFrame([
@@ -129,7 +146,10 @@ def run(ticker: str, use_cache: bool = True) -> dict:
         "sector":         market["sector"],
         # Recommandation finale
         "recommandation": reco,
-        "score_global":   g_score,
+        "score_global":   g_score,          # score APRÈS ajustement régime
+        "score_brut":     g_score_brut,     # score avant contexte marché
+        "market_regime":  regime_ctx,       # dict régime QQQ (ou None)
+        "regime_effet":   regime_effet,     # {score_brut, score_ajuste, delta}
         # Scores détaillés
         "score_tech":     tech["score"],
         "score_fund":     fund["score"],
