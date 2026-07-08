@@ -221,7 +221,8 @@ def _regime_series(qqq_hist: pd.DataFrame, dates: pd.Index) -> pd.Series:
     return (~baissier).reindex(dates, method="ffill").fillna(True)
 
 
-def _equity_curve(bt: pd.DataFrame, regime_ok: pd.Series = None) -> dict:
+def _equity_curve(bt: pd.DataFrame, regime_ok: pd.Series = None,
+                  sensibilite: float = 1.0) -> dict:
     """
     Simulation vectorisée : on est investi ("long") uniquement les jours
     où le signal de la VEILLE était ACHETER, en cash sinon.
@@ -231,8 +232,9 @@ def _equity_curve(bt: pd.DataFrame, regime_ok: pd.Series = None) -> dict:
     on s'achèterait soi-même dans le passé (biais classique de backtest).
 
     Si regime_ok est fourni (True = marché non baissier), une 3e courbe
-    "SDE + filtre régime" n'investit que si signal ACHETER **ET** marché
-    porteur — c'est la validation chiffrée de l'intérêt du filtre macro.
+    "SDE + filtre régime" réduit l'exposition en marché baissier
+    PROPORTIONNELLEMENT à `sensibilite` (R² du ticker vs QQQ, dans [0;1])
+    — validation chiffrée du filtre macro pondéré.
     """
     ret_1j   = bt["close"].pct_change()                       # rendement quotidien
     achat    = (bt["reco"] == "ACHETER")
@@ -249,7 +251,15 @@ def _equity_curve(bt: pd.DataFrame, regime_ok: pd.Series = None) -> dict:
     }
 
     if regime_ok is not None:
-        pos_regime = (achat & regime_ok).astype(int).shift(1)
+        # Position fractionnée pondérée par le R² : en marché baissier,
+        # on ne coupe que la part des mouvements expliquée par le marché.
+        # R²=0.37 (AAPL) → exposition réduite à 63% en régime baissier ;
+        # R²=0.09 (TMC) → on reste investi à 91%. C'est la réplique
+        # backtest de la pondération appliquée en live par apply_regime().
+        expo_baissier = 1.0 - min(sensibilite, 1.0)
+        pos_regime = (achat.astype(float)
+                      * regime_ok.astype(float).replace(0.0, expo_baissier)
+                      ).shift(1)
         strat_r    = (1 + ret_1j * pos_regime.fillna(0)).cumprod() * 100
         out["strategie_regime"] = [round(float(v), 2) for v in strat_r.fillna(100)]
         out["strat_regime_pct"] = round(float(strat_r.iloc[-1] - 100), 1)
@@ -283,14 +293,25 @@ def run_backtest(ticker: str, period: str = "2y",
 
     # Filtre régime : optionnel — si QQQ est indisponible, le backtest
     # fonctionne sans la 3e courbe plutôt que d'échouer entièrement.
+    # Corrélation et bêta estimés ici sur ~2 ans (500 rendements communs) :
+    # bien plus fiables que les ~45 séances dont dispose le pipeline live.
     regime_ok = None
+    corr      = None
+    beta      = None
+    sens      = 1.0
     try:
+        from analysis.market_regime import (
+            compute_beta, compute_correlation, sensibilite_marche,
+        )
         qqq       = _fetch_history("QQQ", period)
         regime_ok = _regime_series(qqq, bt.index)
+        corr      = compute_correlation(hist["Close"], qqq["Close"])
+        beta      = compute_beta(hist["Close"], qqq["Close"])
+        sens      = sensibilite_marche(corr)
     except Exception as e:
         print(f"[Backtest] filtre régime indisponible : {e}", flush=True)
 
-    curve  = _equity_curve(bt, regime_ok)
+    curve  = _equity_curve(bt, regime_ok, sens)
     attrib = _attribution_par_signal(bt, horizon=20)
 
     # Répartition des signaux (pour l'affichage "X j ACHETER / Y j NEUTRE…")
@@ -306,6 +327,9 @@ def run_backtest(ticker: str, period: str = "2y",
         "stats":       stats,
         "curve":       curve,
         "attribution": attrib,
+        "beta":        beta,          # bêta 2 ans vs QQQ (amplitude, affichage)
+        "correlation": corr,          # corrélation 2 ans vs QQQ
+        "sensibilite": sens,          # R² = corr² — pondère le filtre régime
         # Rappel de la limite méthodologique, affiché tel quel dans l'UI
         "note": ("Backtest du score technique uniquement — les scores "
                  "fondamental et médiatique ne sont pas reconstituables "

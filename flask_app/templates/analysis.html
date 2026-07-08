@@ -214,12 +214,23 @@
             — QQQ {{ '%+.1f'|format(mr.var_5j) }}&thinsp;% / 5&thinsp;j
             {%- if mr.volatil %} · vol {{ mr.vol_20j_ann }}&thinsp;%{% endif %}
           </span>
-          {% if res.get('regime_effet') and res.regime_effet.delta != 0 %}
-          <br><span style="color:var(--sde-muted)">
-            Score ajusté&nbsp;: {{ res.regime_effet.score_brut }} →
-            <strong style="color:{{ mr_th[1] }}">{{ res.regime_effet.score_ajuste }}</strong>
-            ({{ '%+.1f'|format(res.regime_effet.delta) }})
-          </span>
+          {% if res.get('regime_effet') %}
+            {% set eff = res.regime_effet %}
+            {% if eff.delta != 0 %}
+            <br><span style="color:var(--sde-muted)">
+              Score ajusté&nbsp;: {{ eff.score_brut }} →
+              <strong style="color:{{ mr_th[1] }}">{{ eff.score_ajuste }}</strong>
+              ({{ '%+.1f'|format(eff.delta) }})
+              {%- if eff.get('correlation') is not none %}
+              · lien NASDAQ&nbsp;: R²&nbsp;{{ (eff.sensibilite * 100) | round | int }}&thinsp;%
+              {%- endif %}
+            </span>
+            {% elif eff.get('sensibilite') is not none and eff.sensibilite < 0.15 %}
+            <br><span style="color:var(--sde-muted)">
+              Titre peu corrélé au NASDAQ (R²&nbsp;{{ (eff.sensibilite * 100) | round | int }}&thinsp;%)
+              — score quasi inchangé ({{ eff.score_ajuste }})
+            </span>
+            {% endif %}
           {% endif %}
         </div>
       {% endif %}
@@ -1485,9 +1496,12 @@ const sdeBacktest = (function () {
           : `Le simple achat-conservation aurait fait mieux (${_ret(data.curve.bh_pct)} vs ${_ret(data.curve.strat_pct)}) — les signaux évitent des baisses mais ratent aussi des hausses.`;
         if (data.curve.strat_regime_pct != null) {
           const dr = data.curve.strat_regime_pct - data.curve.strat_pct;
+          const lien = data.beta != null && data.correlation != null
+            ? ` (bêta ${data.beta.toFixed(2)}, corrélation ${data.correlation.toFixed(2)})`
+            : "";
           verdict += dr >= 0
-            ? ` Le filtre régime (n'acheter que si le NASDAQ est porteur) aurait <strong style="color:#6366F1">amélioré</strong> la stratégie de ${dr.toFixed(1)} pts — ce titre suit le marché global.`
-            : ` Le filtre régime aurait <strong style="color:#D85A30">coûté</strong> ${Math.abs(dr).toFixed(1)} pts — ce titre vit sa propre vie, indépendamment du NASDAQ.`;
+            ? ` Le filtre régime pondéré (réduire l'exposition quand le NASDAQ chute, proportionnellement au lien du titre au marché${lien}) aurait <strong style="color:#6366F1">amélioré</strong> la stratégie de ${dr.toFixed(1)} pts.`
+            : ` Le filtre régime pondéré${lien} aurait coûté ${Math.abs(dr).toFixed(1)} pts — ce titre vit largement sa propre vie.`;
         }
 
         wrap.innerHTML = `
@@ -1525,9 +1539,12 @@ const sdeBacktest = (function () {
             line: {color: "#1D9E75", width: 2} },
         ];
         if (data.curve.strategie_regime) {
+          const sensPct = data.sensibilite != null ? Math.round(data.sensibilite * 100) : null;
           traces.push({
             x: data.curve.dates, y: data.curve.strategie_regime,
-            name: "SDE + filtre régime (marché QQQ porteur)",
+            name: sensPct != null
+              ? `SDE + filtre régime pondéré (R² marché ${sensPct}%)`
+              : "SDE + filtre régime (marché QQQ porteur)",
             line: {color: "#6366F1", width: 2, dash: "dot"},
           });
         }

@@ -116,10 +116,24 @@ def run(ticker: str, use_cache: bool = True) -> dict:
     regime_ctx   = None
     regime_effet = None
     try:
-        from analysis.market_regime import get_market_context, apply_regime
+        from analysis.market_regime import (
+            get_market_context, get_qqq_history, apply_regime,
+            compute_beta, compute_correlation,
+        )
         regime_ctx = get_market_context()
         if regime_ctx:
-            regime_effet = apply_regime(g_score_brut, regime_ctx)
+            # Corrélation ticker/QQQ sur l'historique disponible (~45 séances) :
+            # c'est le couplage RÉCENT au marché — plus pertinent pour un
+            # ajustement du jour que la moyenne 2 ans du backtest, mais plus
+            # bruité (erreur-type ~0.15). Acceptable car il ne fait que
+            # MODULER un ajustement déjà borné (±6 pts).
+            # None (historique trop court) → plein effet, prudence par défaut.
+            corr = beta = None
+            qqq  = get_qqq_history()
+            if qqq is not None and "history" in market:
+                corr = compute_correlation(market["history"]["Close"], qqq["Close"])
+                beta = compute_beta(market["history"]["Close"], qqq["Close"])
+            regime_effet = apply_regime(g_score_brut, regime_ctx, corr, beta)
             g_score      = regime_effet["score_ajuste"]
     except Exception as e:
         print(f"[Pipeline] régime marché ignoré : {e}", flush=True)

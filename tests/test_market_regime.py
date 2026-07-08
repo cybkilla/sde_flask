@@ -11,7 +11,8 @@ import numpy as np
 import pandas as pd
 
 from analysis.market_regime import (
-    compute_regime, apply_regime,
+    compute_regime, apply_regime, compute_beta, compute_correlation,
+    sensibilite_marche,
     SEUIL_VOL_ANNUALISEE, AJUSTEMENT, FACTEUR_CONVICTION_VOLATIL,
 )
 
@@ -76,5 +77,52 @@ print("✓ apply_regime : ajustements exacts, conviction réduite sans inverser 
 # Contexte absent/inconnu → score inchangé (robustesse)
 assert apply_regime(62, {})["score_ajuste"] == 62.0
 print("✓ apply_regime : contexte vide → score inchangé")
+
+
+# ── Bêta, corrélation et sensibilité (R²) ──
+# Ticker = 2× les rendements du QQQ (avec un peu de bruit) → bêta ≈ 2,
+# corrélation ≈ 1. Le clone amplifié DOIT être vu comme très lié au marché.
+np.random.seed(11)
+r_qqq  = np.random.normal(0.001, 0.012, 100)
+dates  = pd.bdate_range("2025-01-02", periods=100)
+qqq_px = pd.Series(400 * np.cumprod(1 + r_qqq), index=dates)
+amp_px = pd.Series(50  * np.cumprod(1 + 2 * r_qqq + np.random.normal(0, 0.001, 100)), index=dates)
+
+beta_amp = compute_beta(amp_px, qqq_px)
+corr_amp = compute_correlation(amp_px, qqq_px)
+assert 1.8 < beta_amp < 2.2,  f"bêta d'un clone 2x devrait être ~2, obtenu {beta_amp}"
+assert corr_amp > 0.95,        f"corrélation d'un clone devrait être ~1, obtenue {corr_amp}"
+assert sensibilite_marche(corr_amp) > 0.9
+
+# Ticker au bruit indépendant → corrélation ~0 → sensibilité ~0
+indep_px = pd.Series(20 * np.cumprod(1 + np.random.normal(0.002, 0.04, 100)), index=dates)
+corr_ind = compute_correlation(indep_px, qqq_px)
+assert abs(corr_ind) < 0.25, f"titre indépendant : corrélation ~0 attendue, obtenue {corr_ind}"
+assert sensibilite_marche(corr_ind) < 0.07   # R² = corr² → encore plus petit
+print("✓ compute_beta/correlation : clone 2x et titre indépendant bien mesurés")
+
+# Corrélation négative → sensibilité 0 (on annule, on n'inverse pas)
+assert sensibilite_marche(-0.6) == 0.0
+# Inconnu → plein effet (prudence)
+assert sensibilite_marche(None) == 1.0
+# Historique commun trop court (< 30 j) → None
+assert compute_beta(amp_px.head(10), qqq_px.head(10)) is None
+print("✓ sensibilite_marche : négatif → 0, inconnu → 1, historique court → None")
+
+# ── apply_regime pondéré par le R² ──
+# R² faible (TMC-like, corr 0.3 → R² 0.09) : l'ajustement baissier -6
+# devient -0.54 — quasi rien
+eff_tmc = apply_regime(62, {"regime": "baissier", "volatil": False}, corr=0.3)
+assert abs(eff_tmc["delta"] - (-6 * 0.09)) < 0.06
+assert eff_tmc["sensibilite"] == 0.09
+
+# Corrélation parfaite → plein effet, identique à l'ancien comportement
+eff_full = apply_regime(62, {"regime": "baissier", "volatil": False}, corr=1.0)
+assert eff_full["score_ajuste"] == 56.0
+
+# Volatil + R² nul → AUCUNE réduction de conviction (le marché ne dit rien)
+eff_zero = apply_regime(70, {"regime": "neutre", "volatil": True}, corr=0.0)
+assert eff_zero["score_ajuste"] == 70.0
+print("✓ apply_regime pondéré : R² faible ≈ sans effet, R²=1 = plein effet")
 
 print("\n✓ Tous les tests test_market_regime.py sont OK (hors réseau)")
