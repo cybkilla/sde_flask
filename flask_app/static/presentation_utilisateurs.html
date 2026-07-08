@@ -400,6 +400,8 @@
     </div>
     <p style="font-size:13px;opacity:.45;margin-top:20px">
       Chaque conseil est expliqué — vous comprenez pourquoi, pas seulement quoi faire.
+      Et chaque conseil est ensuite <strong style="opacity:.9">noté sur ses résultats réels</strong>
+      à 1, 5 et 20 jours.
     </p>
   </div>
 
@@ -591,7 +593,52 @@
     </div>
   </div>
 
-  <!-- ══ SLIDE 9 — Conclusion ════════════════════════════════════════ -->
+  <!-- ══ SLIDE 9 — Boucle d'amélioration ════════════════════════════════════════ -->
+  <div class="slide bg-light">
+    <div class="eyebrow" style="color:#6366F1">Fonctionnalité 5</div>
+    <h2>SDE apprend de ses propres conseils</h2>
+    <div class="divider" style="background:#6366F1"></div>
+    <p class="lead" style="color:#475569;margin-bottom:24px">
+      La plupart des outils donnent des avis et n'en reparlent jamais.
+      SDE boucle : il conseille, mesure le résultat réel, et en tient compte.
+    </p>
+    <div class="cards cards-3">
+      <div class="card" style="border-left:4px solid #1E3A5F">
+        <div class="card-icon">🌐</div>
+        <h3 style="color:#1E3A5F">Contexte de marché</h3>
+        <p style="font-size:14px;color:#64748b;margin-top:6px;line-height:1.6">
+          Un ACHETER quand le NASDAQ plonge ne vaut pas un ACHETER en marché
+          calme. Le score est ajusté selon le régime du marché —
+          proportionnellement au lien réel du titre avec lui.
+        </p>
+      </div>
+      <div class="card" style="border-left:4px solid #1D9E75">
+        <div class="card-icon">📏</div>
+        <h3 style="color:#1E3A5F">Évaluation multi-horizons</h3>
+        <p style="font-size:14px;color:#64748b;margin-top:6px;line-height:1.6">
+          Chaque conseil est noté sur le cours réel à 1, 5 et
+          <strong>20 jours</strong> — l'horizon aligné sur les signaux —
+          avec le gain ou le coût réel en %, pas juste « bon / mauvais ».
+        </p>
+      </div>
+      <div class="card" style="border-left:4px solid #6366F1">
+        <div class="card-icon">🧠</div>
+        <h3 style="color:#1E3A5F">Probabilité apprise</h3>
+        <p style="font-size:14px;color:#64748b;margin-top:6px;line-height:1.6">
+          Un modèle entraîné sur 2 ans estime la probabilité de hausse à
+          20 jours — et affiche franchement quand il ne fait pas mieux que
+          le hasard, plutôt que de faire semblant.
+        </p>
+      </div>
+    </div>
+    <div style="margin-top:24px;padding:14px 20px;background:#EEF2FF;border-radius:10px;
+                font-size:13px;color:#4338CA;max-width:640px">
+      💡 Chaque conseil enregistre aussi les signaux qui l'ont motivé : au fil des mois,
+      SDE saura quels critères fonctionnent sur <em>vos</em> titres — et ajustera ses règles.
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 10 — Conclusion ════════════════════════════════════════ -->
   <div class="slide bg-navy">
     <div class="eyebrow">La suite</div>
     <h2 style="max-width:540px">SDE est en développement actif</h2>
@@ -607,6 +654,8 @@
           <li>NASDAQ &amp; NYSE — actions américaines uniquement pour l'instant</li>
           <li>Gratuit pour les utilisateurs invités (phase test)</li>
           <li>Données en temps réel via des APIs financières professionnelles</li>
+          <li>Un moteur qui se mesure : backtest 2 ans, fiabilité par signal,
+              conseils notés sur leurs résultats réels</li>
         </ul>
       </div>
       <div>
@@ -620,8 +669,8 @@
             <div class="stat-label" style="color:rgba(255,255,255,.5)">surveillance automatique</div>
           </div>
           <div class="stat">
-            <div class="stat-num">1</div>
-            <div class="stat-label" style="color:rgba(255,255,255,.5)">email hebdo récapitulatif</div>
+            <div class="stat-num">3</div>
+            <div class="stat-label" style="color:rgba(255,255,255,.5)">horizons d'évaluation (1, 5, 20 j)</div>
           </div>
         </div>
       </div>
