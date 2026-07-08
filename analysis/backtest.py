@@ -314,6 +314,15 @@ def run_backtest(ticker: str, period: str = "2y",
     curve  = _equity_curve(bt, regime_ok, sens)
     attrib = _attribution_par_signal(bt, horizon=20)
 
+    # Classifieur probabiliste P(hausse à 20j) — optionnel : sans sklearn
+    # ou avec un historique trop court, le backtest vit sans prédiction.
+    prediction = None
+    try:
+        from analysis.predictor import run_predictor
+        prediction = run_predictor(bt)
+    except Exception as e:
+        print(f"[Backtest] prédiction indisponible : {e}", flush=True)
+
     # Répartition des signaux (pour l'affichage "X j ACHETER / Y j NEUTRE…")
     repartition = bt["reco"].value_counts().to_dict()
 
@@ -330,6 +339,7 @@ def run_backtest(ticker: str, period: str = "2y",
         "beta":        beta,          # bêta 2 ans vs QQQ (amplitude, affichage)
         "correlation": corr,          # corrélation 2 ans vs QQQ
         "sensibilite": sens,          # R² = corr² — pondère le filtre régime
+        "prediction":  prediction,    # P(hausse 20j) apprise (None si indispo)
         # Rappel de la limite méthodologique, affiché tel quel dans l'UI
         "note": ("Backtest du score technique uniquement — les scores "
                  "fondamental et médiatique ne sont pas reconstituables "

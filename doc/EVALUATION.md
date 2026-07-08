@@ -9,7 +9,7 @@
 | Sous-critère | Ce qui est fait dans SDE |
 |---|---|
 | **Ambition & Originalité** | Moteur d'analyse boursière multi-source : scoring composite technique + fondamental + sentiment NLP + risque dirigeants + LLM. Gestion de portefeuille avec conseil journalier personnalisé et évaluation automatique de la pertinence (bon/mauvais conseil) via yfinance J+1. |
-| **Fonctionnalités** | Recherche de ticker, analyse complète, watchlist multi-utilisateurs, positions (achat + vente), P&L réalisé/latent, conseil quotidien immutable, dashboard admin KPIs, alertes email automatisées. |
+| **Fonctionnalités** | Recherche de ticker, analyse complète, watchlist multi-utilisateurs, positions (achat + vente), P&L réalisé/latent, conseil quotidien immutable, dashboard admin KPIs, alertes email automatisées. **Backtest 2 ans** (rejeu du scoring jour par jour, taux de réussite à 5/20j, courbes stratégie vs buy & hold), **attribution par signal** (fiabilité de chaque critère en épisodes), **régime de marché QQQ** (score ajusté selon le contexte NASDAQ, pondéré par le R² ticker/marché), **classifieur probabiliste** P(hausse 20j) en régression logistique avec validation walk-forward. |
 | **Description des processus** | `pipeline.py::run(ticker)` orchestre : collecte marché → sous-scores (technique/fondamental/médiatique) → score global → recommandation → explication LLM → conseil position. |
 | **Modélisation du Workflow** | 5 modules d'analyse indépendants agrégés par `scoring.py`. `evaluator.py` évalue en batch les conseils passés. `scheduler.py` deux vitesses (30 min live / 24h pipeline). |
 
@@ -44,7 +44,7 @@
 
 | Sous-critère | Ce qui est fait dans SDE |
 |---|---|
-| **Justification du design** | VADER vs FinBERT (GPU non disponible sur Render). Groq vs Ollama (fallback Python si quota). Scoring pondéré 40/35/25 (technique/fondamental/médiatique). Supabase REST vs SQLAlchemy (compatibilité Render, pas de driver C). `conseil_date` (FK explicite) vs heuristique date+type (trop de faux positifs). |
+| **Justification du design** | VADER vs FinBERT (GPU non disponible sur Render). Groq vs Ollama (fallback Python si quota). Scoring pondéré 40/35/25 (technique/fondamental/médiatique). Supabase REST vs SQLAlchemy (compatibilité Render, pas de driver C). `conseil_date` (FK explicite) vs heuristique date+type (trop de faux positifs). **R² vs bêta** pour pondérer le régime marché : choix tranché empiriquement par backtest (TMC bêta 1.45 mais corr 0.30 — le bêta mesure l'amplitude, le R² la part expliquée). **Walk-forward vs train_test_split** : jamais de mélange aléatoire passé/futur sur séries temporelles. QQQ vs ^VIX : le VIX est indisponible sur Twelve Data (fallback Render). |
 | **Maîtrise du code** | Gestion index Pandas (`_col()` helper pour colonnes absentes). P&L en deux passes (réalisé sur lots vendus, latent sur solde restant). `_calcLock` JS pour éviter les boucles événements dans le modal bidir. Bloc/déblocage bouton Vente côté client + validation serveur. |
 
 ---
@@ -63,7 +63,7 @@
 
 | Sous-critère | Ce qui est fait dans SDE |
 |---|---|
-| **Librairies externes** | `yfinance`, `vaderSentiment`, `feedparser`, `newsapi-python`, `groq`, `bcrypt`, `finnhub-python`, `twelvedata`, `supabase`, `plotly`, `matplotlib`, `ta` (indicateurs techniques). |
+| **Librairies externes** | `yfinance`, `vaderSentiment`, `feedparser`, `newsapi-python`, `groq`, `bcrypt`, `finnhub-python`, `twelvedata`, `supabase`, `plotly`, `matplotlib`, `ta` (indicateurs techniques), `scikit-learn` (régression logistique du classifieur probabiliste). |
 | **Connexion APIs distantes** | **NewsAPI** (articles financiers), **Yahoo Finance** via yfinance (cours, fondamentaux, historique, insider), **Finnhub** (quote temps réel), **Twelve Data** (historique OHLCV fallback), **Groq API** (LLaMA 3.3-70b explication IA), **Supabase REST** (persistance), **Resend** (emails HTTP). |
 | **Maps / GPS / Audio / Vidéo** | Non applicable. |
 
@@ -76,7 +76,7 @@
 | **Routes** | SDE est une application Flask complète avec Blueprints. Routes principales : `/` (accueil), `/analyze/<ticker>` (analyse), `/portfolio/overview` (positions), `/portfolio/advice/<ticker>` (conseil AJAX), `/admin/dashboard` + `/admin/stats` (KPIs), `/scheduler/run` (cron), `/auth/login` · `/register` · `/logout`. |
 | **Authentification** | Flask-Login (session persistante) + bcrypt (hash mots de passe) + Flask-WTF CSRF. Middleware `@login_required` sur toutes les routes protégées. Admin protégé par vérification `current_user.email in ADMIN_EMAILS`. |
 | **SGBD** | PostgreSQL via Supabase REST. Tables : `users`, `watchlist`, `scores`, `ticker_snapshots`, `positions`, `daily_advice`. RLS activé, accès via `service_role` key. |
-| **Modélisation des données** | `positions` : lots typés (achat/vente) avec `conseil_date`. `daily_advice` : conseil + évaluation J+1 (`bon_conseil`, `variation_j1`). `ticker_snapshots` : payload JSONB (DataFrames sérialisés). |
+| **Modélisation des données** | `positions` : lots typés (achat/vente) avec `conseil_date`. `daily_advice` : conseil + évaluation J+1 (`bon_conseil`, `variation_j1`) + `signaux_actifs` JSONB (vecteur des signaux au moment du conseil — dataset d'apprentissage pour la calibration adaptative). `ticker_snapshots` : payload JSONB (DataFrames sérialisés). |
 
 ---
 
@@ -86,8 +86,8 @@
 |---|---|
 | **Collection des données** | `data/market.py` : DataFrame yfinance (OHLCV 90j + fondamentaux). `data/news.py` : DataFrame articles (titre, source, sentiment, type). `portfolio/evaluator.py` : DataFrame historique yfinance pour évaluation batch J+1. |
 | **Visualisation** | `ui/charts.py` : chandelier Plotly interactif, RSI, MAs 20/50j. `flask_app/blueprints/admin.py` : barres de pertinence HTML dynamiques. Jauges score via CSS pur (pas de lib externe). |
-| **Test accessibilité APIs** | Scripts `test_market.py`, `test_news.py` dans le dossier `tests/`. |
-| **Modules externes** | `pandas 2.2`, `numpy 1.26`, `plotly ≥ 5.24`, `ta 0.11` (RSI, MACD, Bollinger). |
+| **Test accessibilité APIs** | Dossier `tests/` : suites hors réseau sur données synthétiques (`test_backtest.py`, `test_market_regime.py`, `test_predictor.py`) — dont un test anti-look-ahead (le score du jour T ne change pas si on ajoute des jours après T) et des cas limites (corrélation négative, historique court). |
+| **Modules externes** | `pandas 2.2`, `numpy 1.26`, `plotly ≥ 5.24`, `ta 0.11` (RSI, MACD, Bollinger), `scikit-learn 1.9` (LogisticRegression, roc_auc_score). |
 
 ---
 
@@ -109,7 +109,7 @@
 | **Proof of work** | Score composite 0-100 → recommandation ACHETER/NEUTRE/VENDRE → conseil journalier 6 niveaux (ACHETER / RENFORCER / TENIR / SURVEILLER / ALLÉGER / VENDRE) → évaluation automatique J+1 → taux de pertinence admin. |
 | **Usages incrémentables** | Multi-utilisateurs, multi-tickers, DCA (plusieurs lots), ventes partielles, conseil lié explicitement à chaque transaction, admin KPIs cross-utilisateur. |
 | **Formulaires / interfaces avancées** | Modal transaction : toggle Achat/Vente, pré-saisie prix live + quantité suggérée, calcul bidir prix×qté↔montant, validation quantité entière, blocage vente si solde nul. Watchlist AJAX modale. Recherche autocomplete. |
-| **Options de développement à venir** | Alertes email sur signal conseil (pas seulement variation). Vue portefeuille consolidé multi-ticker (allocation, bêta). Scoring sectoriel avancé. FinBERT GPU pour sentiment plus précis. |
+| **Options de développement à venir** | Calibration adaptative des poids : croiser l'attribution historique (backtest) avec les données live `signaux_actifs` + `bon_conseil` (~3 mois d'accumulation), avec garde-fous (shrinkage vers la moyenne, ajustements bornés ±50%, mensuels, journalisés). Alertes email sur signal conseil. Vue portefeuille consolidé multi-ticker (allocation, concentration). Calendrier earnings (prudence avant publication). FinBERT GPU pour sentiment plus précis. |
 | **Exploitation commerciale** | Outil d'aide à la décision pour investisseurs particuliers. Base pour un SaaS de screener + coach boursier personnalisé. Différenciant : évaluation objective de la pertinence de ses propres conseils (taux de fiabilité). |
 
 ---
@@ -118,6 +118,8 @@
 
 - **Pipeline entièrement découplé** : chaque source d'analyse est indépendante et testable seule.
 - **Évaluation objective des conseils** : `evaluate_pending()` mesure automatiquement si le conseil J était juste via yfinance J+1 — boucle de rétroaction unique.
+- **SDE se mesure lui-même** : backtest 2 ans sans look-ahead, attribution par signal en épisodes (une période continue d'activation = 1 observation), et un classifieur probabiliste qui AFFICHE quand il ne bat pas le hasard plutôt que de le cacher.
+- **Choix de conception validés par l'expérience** : la pondération du régime marché (R² plutôt que bêta) a été tranchée en comparant 4 schémas sur les données réelles avant d'écrire la règle.
 - **P&L complet** : réalisé (encaissé) et latent calculés séparément, même sur positions clôturées.
 - **`conseil_date`** : lien explicite transaction ↔ conseil, élimine les faux positifs de l'heuristique date/type.
 - **Statut marché temps réel** : `Intl.DateTimeFormat` Europe/Paris côté client — aucune dépendance serveur.
@@ -125,6 +127,8 @@
 
 ## Lacunes à mentionner honnêtement
 
+- Le classifieur probabiliste ne bat pas encore le hasard en test (450 jours, 15 features binaires) — affiché comme EXPÉRIMENTAL avec avertissement, non utilisé pour la recommandation.
+- Le backtest ne rejoue que le score technique (pas d'archives de news/bilans datées pour les scores fondamental et médiatique) — limite affichée dans l'UI.
 - Pas de tests unitaires sur `analysis/scoring.py` et `portfolio/evaluator.py` (couverture partielle).
 - Render free tier : cold start 30–60 s après inactivité, RAM 512 MB (workers=1 obligatoire).
 - Évaluation J+1 imparfaite pour les weekends (samedi → évalué avec le cours du lundi suivant).

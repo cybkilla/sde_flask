@@ -1454,6 +1454,77 @@ const sdeBacktest = (function () {
       </details>`;
   }
 
+  function _predictionHtml(p) {
+    if (!p) return "";
+    const fiable  = p.bat_le_hasard;
+    const pColor  = p.proba_hausse >= 55 ? "#1D9E75"
+                  : p.proba_hausse <= 45 ? "#D85A30" : "#BA7517";
+
+    // Coefficients appris vs poids manuels — désaccord de signe surligné
+    const rows = p.coefficients.map(c => {
+      const desaccord = (c.coef > 0.1 && c.poids_manuel < 0) ||
+                        (c.coef < -0.1 && c.poids_manuel > 0);
+      return `
+        <tr style="${desaccord ? "background:#FEF3C7" : ""}">
+          <td>${c.label}${desaccord ? " ⚡" : ""}</td>
+          <td class="text-center" style="color:${c.coef >= 0 ? "#1D9E75" : "#D85A30"};font-weight:600">
+            ${c.coef >= 0 ? "+" : ""}${c.coef.toFixed(2)}
+          </td>
+          <td class="text-center" style="color:${c.poids_manuel >= 0 ? "#1D9E75" : "#D85A30"}">
+            ${c.poids_manuel >= 0 ? "+" : ""}${c.poids_manuel}
+          </td>
+        </tr>`;
+    }).join("");
+
+    const avert = fiable
+      ? `<span style="font-size:.72rem;color:#1D9E75;font-weight:600">
+           ✓ Sur la période test (${p.n_test} jours jamais vus), le modèle bat le hasard.</span>`
+      : `<span style="font-size:.72rem;color:#92400E;background:#FEF3C7;border:1px solid #F59E0B;
+                       border-radius:4px;padding:2px 8px;font-weight:600;display:inline-block">
+           ⚠️ Sur la période test, ce modèle ne fait PAS mieux que le hasard —
+           probabilité purement indicative, ne pas l'utiliser pour décider.</span>`;
+
+    return `
+      <div class="mt-3" style="border-top:1px solid var(--sde-border);padding-top:12px">
+        <div style="font-size:.8rem;font-weight:600;color:var(--sde-muted);margin-bottom:8px">
+          <i class="bi bi-cpu me-1"></i>Prédiction probabiliste
+          <span style="font-size:.68rem;background:#EEF2FF;color:#6366F1;border-radius:4px;
+                       padding:1px 6px;font-weight:600;margin-left:4px">EXPÉRIMENTAL</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px">
+          <span style="font-size:1.5rem;font-weight:700;color:${pColor}">
+            P(hausse à ${p.horizon} j) : ${p.proba_hausse}%
+          </span>
+          <span style="font-size:.74rem;color:var(--sde-muted)">
+            taux de base : ${p.base_rate}% · précision test : ${p.acc_test}%
+            ${p.auc != null ? "· AUC : " + p.auc.toFixed(2) : ""}
+          </span>
+        </div>
+        ${avert}
+        <details class="mt-2">
+          <summary style="font-size:.76rem;color:var(--sde-muted);cursor:pointer">
+            Poids appris par le modèle vs poids manuels SDE (⚡ = désaccord de signe)
+          </summary>
+          <div class="table-responsive mt-2">
+            <table class="table table-sm mb-1" style="font-size:.74rem">
+              <thead class="table-light">
+                <tr><th>Signal</th><th class="text-center">Coef. appris</th>
+                    <th class="text-center">Poids manuel</th></tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+          <p class="text-muted mb-0" style="font-size:.7rem">
+            Régression logistique entraînée sur ${p.n_train + p.n_test} jours
+            (validation walk-forward : entraînement sur le début de la période,
+            test sur les ${p.n_test} derniers jours, jamais de mélange passé/futur).
+            Un coefficient appris opposé au poids manuel (⚡) signale un critère
+            mal calibré pour ce titre.
+          </p>
+        </details>
+      </div>`;
+  }
+
   function run() {
     if (done) {
       document.getElementById("sde-backtest-wrap").scrollIntoView({behavior: "smooth"});
@@ -1526,6 +1597,7 @@ const sdeBacktest = (function () {
           </div>
           <div id="sde-backtest-chart" style="height:260px"></div>
           ${_attributionHtml(data.attribution)}
+          ${_predictionHtml(data.prediction)}
           <p class="text-muted mt-2 mb-0" style="font-size:.72rem">
             ${verdict}<br>
             Période ${data.date_debut} → ${data.date_fin} (${data.n_jours} jours de bourse) ·
