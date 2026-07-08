@@ -11,6 +11,47 @@ from config import (
 )
 
 
+# ── Poids et labels des signaux techniques ────────────────
+# Hissés au niveau module (et non locaux à score_technique) pour servir
+# de source unique de vérité : le backtest et la future calibration
+# adaptative les importent d'ici — jamais de copie qui pourrait diverger.
+TECH_WEIGHTS = pd.Series({
+    "rsi_survente":    20,   # RSI < 30 → signal haussier fort
+    "rsi_bas":          10,   # RSI 30-45 → légèrement haussier
+    "rsi_haut":        -10,   # RSI 55-70 → légèrement baissier
+    "rsi_surachat":    -20,   # RSI > 70 → signal baissier fort
+    "ma_cross_up":      15,   # MA20 > MA50 → tendance haussière
+    "ma_cross_down":   -15,   # MA20 < MA50 → tendance baissière
+    "macd_bull":        10,   # MACD > Signal line → momentum +
+    "macd_bear":       -10,   # MACD < Signal line → momentum -
+    "vol_anormal":       8,   # Volume > 2x moyenne → signal fort
+    "prix_bb_haut":     -8,   # Prix > bande Bollinger haute
+    "prix_bb_bas":       8,   # Prix < bande Bollinger basse
+    "trend_5j_fort":     8,   # Variation 5j > +5%
+    "trend_5j_mod":      4,   # Variation 5j > +2%
+    "trend_5j_neg":     -8,   # Variation 5j < -5%
+    "trend_5j_neg_mod": -4,   # Variation 5j < -2%
+})
+
+TECH_LABELS = {
+    "rsi_survente":    "RSI en zone de survente (< 30)",
+    "rsi_bas":         "RSI dans zone basse (30-45)",
+    "rsi_haut":        "RSI dans zone haute (55-70)",
+    "rsi_surachat":    "RSI en zone de surachat (> 70)",
+    "ma_cross_up":     "Croisement haussier MA20 > MA50",
+    "ma_cross_down":   "Croisement baissier MA20 < MA50",
+    "macd_bull":       "MACD au-dessus de sa ligne de signal",
+    "macd_bear":       "MACD sous sa ligne de signal",
+    "vol_anormal":     "Volume > 2x la moyenne 20j",
+    "prix_bb_haut":    "Prix au-dessus de Bollinger haute",
+    "prix_bb_bas":     "Prix en dessous de Bollinger basse",
+    "trend_5j_fort":   "Tendance 5j forte (> +5%)",
+    "trend_5j_mod":    "Tendance 5j modérée (> +2%)",
+    "trend_5j_neg":    "Tendance 5j négative (< -5%)",
+    "trend_5j_neg_mod":"Tendance 5j mod. négative (< -2%)",
+}
+
+
 # ── Score technique (Jours 4-5) ───────────────────────────
 def score_technique(data: dict) -> dict:
     """
@@ -36,25 +77,9 @@ def score_technique(data: dict) -> dict:
     signals_series = compute_tech_signals(hist)
 
     # --- Contribution de chaque signal au score --------
-    # On définit les poids dans un dict {nom: (+/- points)}
+    # Les poids {nom: +/- points} vivent au niveau module (TECH_WEIGHTS)
     # Pandas permet de vectoriser la somme finale proprement.
-    weights = pd.Series({
-        "rsi_survente":    20,   # RSI < 30 → signal haussier fort
-        "rsi_bas":          10,   # RSI 30-45 → légèrement haussier
-        "rsi_haut":        -10,   # RSI 55-70 → légèrement baissier
-        "rsi_surachat":    -20,   # RSI > 70 → signal baissier fort
-        "ma_cross_up":      15,   # MA20 > MA50 → tendance haussière
-        "ma_cross_down":   -15,   # MA20 < MA50 → tendance baissière
-        "macd_bull":        10,   # MACD > Signal line → momentum +
-        "macd_bear":       -10,   # MACD < Signal line → momentum -
-        "vol_anormal":       8,   # Volume > 2x moyenne → signal fort
-        "prix_bb_haut":     -8,   # Prix > bande Bollinger haute
-        "prix_bb_bas":       8,   # Prix < bande Bollinger basse
-        "trend_5j_fort":     8,   # Variation 5j > +5%
-        "trend_5j_mod":      4,   # Variation 5j > +2%
-        "trend_5j_neg":     -8,   # Variation 5j < -5%
-        "trend_5j_neg_mod": -4,   # Variation 5j < -2%
-    })
+    weights = TECH_WEIGHTS
 
     # Intersection : ne prend que les signaux activés
     # signals_series est un pd.Series booléen {nom: True/False}
@@ -65,28 +90,14 @@ def score_technique(data: dict) -> dict:
     score_raw = 50.0 + contribution.sum()
     score     = float(np.clip(score_raw, 0, 100))
 
-    # Liste lisible des signaux pour l'affichage UI
-    signal_labels = {
-        "rsi_survente":    "RSI en zone de survente (< 30)",
-        "rsi_bas":         "RSI dans zone basse (30-45)",
-        "rsi_haut":        "RSI dans zone haute (55-70)",
-        "rsi_surachat":    "RSI en zone de surachat (> 70)",
-        "ma_cross_up":     "Croisement haussier MA20 > MA50",
-        "ma_cross_down":   "Croisement baissier MA20 < MA50",
-        "macd_bull":       "MACD au-dessus de sa ligne de signal",
-        "macd_bear":       "MACD sous sa ligne de signal",
-        "vol_anormal":     "Volume > 2x la moyenne 20j",
-        "prix_bb_haut":    "Prix au-dessus de Bollinger haute",
-        "prix_bb_bas":     "Prix en dessous de Bollinger basse",
-        "trend_5j_fort":   "Tendance 5j forte (> +5%)",
-        "trend_5j_mod":    "Tendance 5j modérée (> +2%)",
-        "trend_5j_neg":    "Tendance 5j négative (< -5%)",
-        "trend_5j_neg_mod":"Tendance 5j mod. négative (< -2%)",
-    }
-
+    # Liste lisible des signaux pour l'affichage UI.
+    # "code" = clé machine stable (ex. "rsi_surachat") — indispensable pour
+    # stocker les signaux en base et les relier plus tard aux évaluations,
+    # là où "nom" (label français) peut changer de formulation.
     signals_out = [
         {
-            "nom":    signal_labels.get(k, k),
+            "code":   k,
+            "nom":    TECH_LABELS.get(k, k),
             "points": weights.get(k, 0),
             "sens":   "haussier" if weights.get(k, 0) > 0 else "baissier",
         }

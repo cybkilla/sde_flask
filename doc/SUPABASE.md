@@ -84,6 +84,7 @@ CREATE TABLE daily_advice (
   variation_j1      FLOAT,               -- variation % entre prix_jour et prix_j1
   bon_conseil       BOOLEAN,             -- TRUE si le conseil était pertinent (sens correct)
   evaluated_at      TIMESTAMPTZ,
+  signaux_actifs    JSONB,               -- {code_signal: points} actifs au moment du conseil
   UNIQUE(username, ticker, date_conseil)
 );
 ```
@@ -111,6 +112,14 @@ Aucune policy supplémentaire n'est nécessaire : l'app accède toujours via `se
 ---
 
 ## Migrations sur une installation existante
+
+**Colonne `signaux_actifs`** (2026-07-08 — vecteur de signaux techniques stocké
+avec chaque conseil ; matière première de la future calibration adaptative des
+poids ; sans elle les conseils sont sauvés mais sans le détail des signaux) :
+
+```sql
+ALTER TABLE daily_advice ADD COLUMN IF NOT EXISTS signaux_actifs JSONB;
+```
 
 **Table `weekly_reports`** (anti-doublon rapport hebdo — à créer si absente) :
 

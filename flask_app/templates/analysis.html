@@ -1370,6 +1370,52 @@ const sdeBacktest = (function () {
     return `<span style="color:${v >= 0 ? "#1D9E75" : "#D85A30"}">${s}${v.toFixed(2)}%</span>`;
   }
 
+  function _attributionHtml(attrib) {
+    if (!attrib || !attrib.length) return "";
+    const rows = attrib.map(a => {
+      // Moins de 10 épisodes = échantillon trop mince pour conclure
+      const petitN = a.n_episodes < 10;
+      const senscol = a.points > 0 ? "#1D9E75" : "#D85A30";
+      return `
+        <tr style="${petitN ? "opacity:.5" : ""}">
+          <td>${a.label}</td>
+          <td class="text-center" style="color:${senscol};font-weight:600">
+            ${a.points > 0 ? "↑" : "↓"} ${a.points > 0 ? "+" : ""}${a.points}
+          </td>
+          <td class="text-center">${a.n_episodes}${petitN ? " ⚠️" : ""}</td>
+          <td class="text-center">${_hitBadge(a.hit_pct)}</td>
+          <td class="text-center">${_ret(a.ret_moyen)}</td>
+        </tr>`;
+    }).join("");
+    return `
+      <details class="mt-3">
+        <summary style="font-size:.8rem;font-weight:600;color:var(--sde-muted);cursor:pointer">
+          <i class="bi bi-search me-1"></i>Fiabilité par signal sur ce titre
+          (${attrib.length} signaux, classés du moins fiable au plus fiable)
+        </summary>
+        <div class="table-responsive mt-2">
+          <table class="table table-sm mb-1" style="font-size:.75rem">
+            <thead class="table-light">
+              <tr>
+                <th>Signal</th>
+                <th class="text-center">Poids</th>
+                <th class="text-center">Épisodes</th>
+                <th class="text-center">Réussite à 20&nbsp;j</th>
+                <th class="text-center">Var. moy. 20&nbsp;j</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        <p class="text-muted mb-0" style="font-size:.7rem">
+          Un épisode = une période continue d'activation du signal, mesurée à son premier jour
+          (un signal actif 30 jours d'affilée compte pour 1 observation, pas 30).
+          ⚠️ = moins de 10 épisodes, statistique indicative seulement.
+          Réussite = le cours a évolué dans le sens annoncé par le signal 20 jours plus tard.
+        </p>
+      </details>`;
+  }
+
   function run() {
     if (done) {
       document.getElementById("sde-backtest-wrap").scrollIntoView({behavior: "smooth"});
@@ -1432,6 +1478,7 @@ const sdeBacktest = (function () {
             </table>
           </div>
           <div id="sde-backtest-chart" style="height:260px"></div>
+          ${_attributionHtml(data.attribution)}
           <p class="text-muted mt-2 mb-0" style="font-size:.72rem">
             ${verdict}<br>
             Période ${data.date_debut} → ${data.date_fin} (${data.n_jours} jours de bourse) ·

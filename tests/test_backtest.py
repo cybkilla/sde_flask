@@ -13,8 +13,8 @@ import pandas as pd
 
 from analysis import backtest as bt_mod
 from analysis.backtest import (
-    _enrich, _replay_scores, _stats_par_action, _equity_curve, run_backtest,
-    WARMUP_DAYS,
+    _enrich, _replay_scores, _stats_par_action, _equity_curve,
+    _attribution_par_signal, run_backtest, WARMUP_DAYS,
 )
 
 
@@ -86,6 +86,50 @@ assert abs(curve["bh_pct"] - attendu) < 0.1, "buy & hold ≠ variation réelle d
 print("✓ _equity_curve : base 100 et buy & hold exacts")
 
 
+# ── _attribution_par_signal : logique d'épisodes et de sens ──
+# On construit un mini-DataFrame à la main pour contrôler exactement
+# les épisodes : "ma_cross_up" (+15, haussier) actif jours 2-4 puis jour 8
+# → 2 épisodes, mesurés aux jours 2 et 8.
+n = 40
+dates  = pd.bdate_range("2025-01-02", periods=n)
+close  = pd.Series(np.linspace(100, 140, n), index=dates)  # hausse régulière
+sig    = [set() for _ in range(n)]
+for j in [2, 3, 4, 8]:
+    sig[j].add("ma_cross_up")       # 2 épisodes haussiers (marché qui monte)
+for j in [10, 11, 12]:
+    sig[j].add("rsi_surachat")      # 1 épisode baissier (marché qui monte quand même)
+bt_manuel = pd.DataFrame({"close": close, "signaux": sig})
+
+attrib = _attribution_par_signal(bt_manuel, horizon=5)
+par_code = {a["code"]: a for a in attrib}
+
+# ma_cross_up : 2 épisodes distincts (les jours 3-4 consécutifs ne comptent pas)
+assert par_code["ma_cross_up"]["n_episodes"] == 2
+assert par_code["ma_cross_up"]["n_jours"]    == 4
+# Signal haussier + cours qui monte → 100% de réussite
+assert par_code["ma_cross_up"]["hit_pct"] == 100.0
+
+# rsi_surachat : signal BAISSIER mais le cours monte → 0% de réussite
+assert par_code["rsi_surachat"]["n_episodes"] == 1
+assert par_code["rsi_surachat"]["hit_pct"] == 0.0
+
+# Tri : les moins fiables d'abord
+assert attrib[0]["hit_pct"] <= attrib[-1]["hit_pct"]
+print("✓ _attribution_par_signal : épisodes, sens et tri corrects")
+
+
+# ── signaux_compacts (advisor) : extraction du vecteur de signaux ──
+from portfolio.advisor import signaux_compacts
+snap = {"signals_tech": [
+    {"code": "ma_cross_up", "nom": "Croisement haussier MA20 > MA50", "points": 15},
+    {"nom": "Ancien snapshot sans code", "points": -8},   # rétro-compatibilité
+]}
+sc = signaux_compacts(snap)
+assert sc == {"ma_cross_up": 15, "Ancien snapshot sans code": -8}
+assert signaux_compacts({}) == {}          # snapshot vide → dict vide, pas de crash
+print("✓ signaux_compacts : codes extraits, rétro-compatible, robuste au vide")
+
+
 # ── run_backtest de bout en bout (yfinance remplacé par le synthétique) ──
 # Monkey-patching : on substitue la fonction réseau par notre générateur.
 # C'est la technique standard pour tester sans dépendance externe.
@@ -95,6 +139,8 @@ assert res["ok"] is True
 assert res["n_jours"] == 300 - WARMUP_DAYS
 assert "5" in res["stats"] and "20" in res["stats"]
 assert "note" in res            # la limite méthodologique doit être exposée
+assert "attribution" in res and len(res["attribution"]) > 0
+assert all("hit_pct" in a and "n_episodes" in a for a in res["attribution"])
 print("✓ run_backtest bout en bout OK (hors réseau)")
 
 # Historique trop court → ValueError explicite, pas de crash silencieux

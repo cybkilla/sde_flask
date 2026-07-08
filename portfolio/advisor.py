@@ -275,6 +275,28 @@ def get_today_advice(username: str, ticker: str) -> dict | None:
         return None
 
 
+def signaux_compacts(snapshot: dict) -> dict:
+    """
+    Extrait le vecteur des signaux techniques actifs sous forme compacte
+    {code: points} — ex. {"ma_cross_up": 15, "rsi_surachat": -20}.
+
+    Pourquoi stocker ça : l'évaluateur note déjà chaque conseil (bon/mauvais),
+    mais sans les signaux du jour en format structuré, impossible de relier
+    une erreur à son critère d'origine. Cette colonne est la matière première
+    de la future calibration adaptative des poids.
+
+    .get("code", s.get("nom")) : les snapshots antérieurs au champ "code"
+    n'ont que le label français — on le prend en secours plutôt que de
+    perdre la donnée.
+    """
+    out = {}
+    for s in snapshot.get("signals_tech", []) or []:
+        cle = s.get("code") or s.get("nom")
+        if cle:
+            out[cle] = s.get("points", 0)
+    return out
+
+
 def save_advice(username: str, ticker: str, advice: dict,
                 market: dict, snapshot: dict) -> dict:
     """Upsert le conseil du jour dans Supabase. Retourne la ligne."""
@@ -290,14 +312,22 @@ def save_advice(username: str, ticker: str, advice: dict,
             "score_sde":          snapshot.get("score_global"),
             "recommandation":     snapshot.get("recommandation"),
             "raisonnement":       advice.get("raisonnement"),
+            "signaux_actifs":     signaux_compacts(snapshot),
         }
-        update_one(
-            _TABLE,
-            {"username": username, "ticker": ticker.upper(), "date_conseil": str(date.today())},
-            {"$set": row},
-            upsert=True,
-        )
-        return {**row, "username": username, "ticker": ticker, "date_conseil": str(date.today())}
+        cle_conseil = {"username": username, "ticker": ticker.upper(),
+                       "date_conseil": str(date.today())}
+        try:
+            update_one(_TABLE, cle_conseil, {"$set": row}, upsert=True)
+        except Exception:
+            # Filet de sécurité : si la colonne signaux_actifs n'existe pas
+            # encore dans Supabase (migration SQL non appliquée), on sauve
+            # le conseil SANS elle plutôt que de tout perdre.
+            row.pop("signaux_actifs", None)
+            update_one(_TABLE, cle_conseil, {"$set": row}, upsert=True)
+            print("[Advisor] colonne signaux_actifs absente — lancer la "
+                  "migration : ALTER TABLE daily_advice ADD COLUMN "
+                  "signaux_actifs JSONB;", flush=True)
+        return {**row, **cle_conseil}
     except Exception as e:
         print(f"[Advisor] save_advice erreur : {e}", flush=True)
         return advice

@@ -20,7 +20,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from analysis.scoring   import score_technique
+from analysis.scoring   import score_technique, TECH_WEIGHTS, TECH_LABELS
 from utils.indicators   import add_indicators
 from config             import SCORE_BUY, SCORE_SELL
 
@@ -100,12 +100,16 @@ def _replay_scores(hist: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for i in range(WARMUP_DAYS, len(hist)):
         vue_du_jour = hist.iloc[: i + 1]          # tout ce qu'on savait à T
-        score = score_technique({"history": vue_du_jour})["score"]
+        res = score_technique({"history": vue_du_jour})
         rows.append({
             "date":  hist.index[i],
             "close": float(hist["Close"].iloc[i]),
-            "score": score,
-            "reco":  _reco_technique(score),
+            "score": res["score"],
+            "reco":  _reco_technique(res["score"]),
+            # Codes des signaux actifs ce jour-là (ex. {"ma_cross_up", ...})
+            # → matière première de l'attribution par signal.
+            # Un set : les tests d'appartenance ("code in ...") sont O(1).
+            "signaux": {s["code"] for s in res["signals"]},
         })
     # DataFrame indexé par date → facilite les .shift() qui suivent
     return pd.DataFrame(rows).set_index("date")
@@ -148,6 +152,55 @@ def _stats_par_action(bt: pd.DataFrame, horizons: tuple) -> dict:
             }
         out[str(h)] = stats_h
     return out
+
+
+def _attribution_par_signal(bt: pd.DataFrame, horizon: int = 20) -> list:
+    """
+    Fiabilité historique de CHAQUE signal technique sur ce ticker.
+
+    Piège statistique évité ici : un signal comme "MA20 > MA50" reste vrai
+    des semaines d'affilée. Compter chaque jour comme une observation
+    gonflerait artificiellement l'échantillon (450 jours ≈ parfois 20
+    vrais événements). On raisonne donc en ÉPISODES : une période continue
+    d'activation = 1 observation, mesurée à son PREMIER jour (le moment où
+    un investisseur aurait réagi au signal).
+
+    Un signal est "réussi" si le cours a bougé dans SON sens à l'horizon :
+    hausse pour un signal à poids positif, baisse pour un poids négatif.
+    """
+    fwd = (bt["close"].shift(-horizon) / bt["close"] - 1) * 100
+
+    out = []
+    for code in TECH_WEIGHTS.index:
+        # pd.Series booléenne : le signal était-il actif ce jour-là ?
+        actif = bt["signaux"].apply(lambda s: code in s)
+
+        # Début d'épisode = actif aujourd'hui MAIS PAS hier.
+        # .shift(1) décale d'un jour ; fill_value=False traite le 1er jour.
+        debuts = actif & ~actif.shift(1, fill_value=False)
+
+        # On ne mesure que les débuts dont l'horizon est observable
+        rets = fwd[debuts & fwd.notna()]
+        if rets.empty:
+            continue
+
+        points = int(TECH_WEIGHTS[code])
+        # Réussite = le marché a suivi le sens annoncé par le signal
+        hits = (rets > 0) if points > 0 else (rets < 0)
+
+        out.append({
+            "code":       code,
+            "label":      TECH_LABELS.get(code, code),
+            "points":     points,
+            "sens":       "haussier" if points > 0 else "baissier",
+            "n_jours":    int(actif.sum()),      # jours d'activation (info)
+            "n_episodes": int(len(rets)),        # vraies observations
+            "hit_pct":    round(float(hits.mean() * 100), 1),
+            "ret_moyen":  round(float(rets.mean()), 2),
+        })
+
+    # Les moins fiables d'abord — c'est eux qu'on cherche à identifier
+    return sorted(out, key=lambda s: s["hit_pct"])
 
 
 def _equity_curve(bt: pd.DataFrame) -> dict:
@@ -197,6 +250,7 @@ def run_backtest(ticker: str, period: str = "2y",
     bt     = _replay_scores(hist)
     stats  = _stats_par_action(bt, horizons)
     curve  = _equity_curve(bt)
+    attrib = _attribution_par_signal(bt, horizon=20)
 
     # Répartition des signaux (pour l'affichage "X j ACHETER / Y j NEUTRE…")
     repartition = bt["reco"].value_counts().to_dict()
@@ -210,6 +264,7 @@ def run_backtest(ticker: str, period: str = "2y",
         "repartition": {k: int(v) for k, v in repartition.items()},
         "stats":       stats,
         "curve":       curve,
+        "attribution": attrib,
         # Rappel de la limite méthodologique, affiché tel quel dans l'UI
         "note": ("Backtest du score technique uniquement — les scores "
                  "fondamental et médiatique ne sont pas reconstituables "
