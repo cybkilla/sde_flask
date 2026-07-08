@@ -82,9 +82,16 @@ CREATE TABLE daily_advice (
   raisonnement      TEXT,
   prix_j1           FLOAT,               -- prix de clôture le lendemain (évaluation J+1)
   variation_j1      FLOAT,               -- variation % entre prix_jour et prix_j1
-  bon_conseil       BOOLEAN,             -- TRUE si le conseil était pertinent (sens correct)
+  bon_conseil       BOOLEAN,             -- TRUE si le conseil était pertinent à J+1 (sens correct)
   evaluated_at      TIMESTAMPTZ,
   signaux_actifs    JSONB,               -- {code_signal: points} actifs au moment du conseil
+  prix_j5           FLOAT,               -- évaluation multi-horizons : clôture 5 séances après
+  variation_j5      FLOAT,
+  bon_conseil_j5    BOOLEAN,
+  prix_j20          FLOAT,               -- J+20 = l'horizon qui fait foi (signaux 14-50j)
+  variation_j20     FLOAT,
+  bon_conseil_j20   BOOLEAN,
+  gain_j20_pct      FLOAT,               -- gain/coût réel signé du conseil directionnel à J+20
   UNIQUE(username, ticker, date_conseil)
 );
 ```
