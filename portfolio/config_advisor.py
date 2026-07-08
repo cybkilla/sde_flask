@@ -44,7 +44,8 @@ def get_config(username: str) -> dict:
                 if row.get(key) is not None:
                     cfg[key] = float(row[key])
     except Exception as e:
-        print(f"[Config] get_config erreur : {e}", flush=True)
+        from db import log_db_error
+        log_db_error("[Config] get_config", _TABLE, e)
     return cfg
 
 
@@ -82,7 +83,8 @@ def save_config(username: str, values: dict) -> dict:
         print(f"[Config] Seuils sauvegardés pour {username}", flush=True)
         return saved
     except Exception as e:
-        print(f"[Config] save_config erreur : {e}", flush=True)
+        from db import log_db_error
+        log_db_error("[Config] save_config", _TABLE, e)
         return row
 
 

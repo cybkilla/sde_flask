@@ -40,7 +40,12 @@ def should_send(username: str) -> bool:
         )
         return not bool(rows)
     except Exception as e:
-        print(f"[Weekly] should_send erreur : {e}", flush=True)
+        # Fail-safe : sans anti-doublon fiable on n'envoie PAS (sinon un
+        # email par passage cron dans la fenêtre 22h-24h). Mais le log doit
+        # être actionnable — c'est ici que l'absence de la table
+        # weekly_reports a bloqué tous les rapports en silence.
+        from db import log_db_error
+        log_db_error("[Weekly] should_send", _TABLE, e)
         return False
 
 
@@ -57,7 +62,8 @@ def mark_sent(username: str):
             "sent_at":    datetime.now(timezone.utc).isoformat(),
         }, on_conflict="username,week_start").execute()
     except Exception as e:
-        print(f"[Weekly] mark_sent erreur : {e}", flush=True)
+        from db import log_db_error
+        log_db_error("[Weekly] mark_sent", _TABLE, e)
 
 
 def _current_week_start() -> date:

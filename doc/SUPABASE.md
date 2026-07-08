@@ -118,6 +118,22 @@ Aucune policy supplémentaire n'est nécessaire : l'app accède toujours via `se
 
 ---
 
+## Vérifier que le schéma est à jour
+
+Les migrations ci-dessous doivent être exécutées **à la main** dans l'éditeur SQL
+Supabase — une migration oubliée ne casse rien visiblement (le code retombe en
+mode dégradé) mais des fonctionnalités meurent en silence. Pour vérifier :
+
+```bash
+python check_supabase_schema.py
+```
+
+Le script sonde toutes les tables et colonnes critiques et affiche ✓/✗.
+À lancer après chaque migration, et à compléter (`SCHEMA_ATTENDU`) à chaque
+nouvelle colonne ajoutée ici.
+
+---
+
 ## Migrations sur une installation existante
 
 **Colonne `signaux_actifs`** (2026-07-08 — vecteur de signaux techniques stocké

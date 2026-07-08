@@ -35,6 +35,29 @@ def is_available() -> bool:
     return _enabled
 
 
+def log_db_error(prefix: str, table: str, exc: Exception):
+    """
+    Log une erreur Supabase de façon ACTIONNABLE : si la table (ou une
+    colonne) n'existe pas — code PostgREST PGRST205, ou PGRST204 pour une
+    colonne — c'est une migration SQL oubliée, et le message le dit
+    explicitement au lieu d'un générique noyé dans les logs.
+
+    Pourquoi : les erreurs de schéma sont avalées par des try/except
+    fail-safe partout (l'app doit survivre sans la table) — mais un
+    message générique a déjà masqué pendant des semaines l'absence de
+    weekly_reports, donc aucun rapport hebdo envoyé sans que rien
+    ne le signale clairement.
+    """
+    msg = str(exc)
+    if "PGRST205" in msg or "PGRST204" in msg \
+            or "Could not find" in msg:
+        print(f"{prefix} ⚠️ TABLE/COLONNE MANQUANTE dans Supabase ('{table}') — "
+              f"exécuter la migration SQL correspondante (voir doc/SUPABASE.md). "
+              f"Détail : {msg}", flush=True)
+    else:
+        print(f"{prefix} erreur Supabase ({table}) : {msg}", flush=True)
+
+
 def _apply_filter(query, filter: dict):
     for k, v in filter.items():
         query = query.eq(k, v)
