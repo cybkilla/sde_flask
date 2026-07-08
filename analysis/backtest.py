@@ -36,14 +36,36 @@ _CACHE_TTL_S = 3600
 
 
 def _fetch_history(ticker: str, period: str = "2y") -> pd.DataFrame:
-    """Télécharge l'OHLCV quotidien via yfinance (2 ans par défaut)."""
-    import yfinance as yf
-    hist = yf.Ticker(ticker).history(period=period)
+    """
+    Télécharge l'OHLCV quotidien (2 ans par défaut).
+    Même stratégie que data/market.py : yfinance d'abord (gratuit, illimité
+    en local), puis Twelve Data en secours — yfinance est rate-limité
+    sur Render et échoue systématiquement en production.
+    """
+    hist = pd.DataFrame()
+    try:
+        import yfinance as yf
+        hist = yf.Ticker(ticker).history(period=period)
+    except Exception as e:
+        print(f"[Backtest] yfinance erreur ({ticker}) : {e}", flush=True)
+
+    if hist is None or hist.empty:
+        # Fallback cloud : on réutilise la fonction de market.py telle quelle.
+        # Attention : outputsize de Twelve Data compte des jours de BOURSE
+        # (pas calendaires) — 2 ans ≈ 504 séances (252/an).
+        from data.market import _get_candles_td
+        print(f"[Backtest] fallback Twelve Data pour {ticker}", flush=True)
+        hist = _get_candles_td(ticker, 504)
+
     if hist is None or hist.empty:
         raise ValueError(f"Aucune donnée historique pour {ticker}")
-    # On normalise l'index en dates simples (yfinance renvoie des Timestamps
-    # avec fuseau horaire — inutile ici et source de bugs de comparaison).
-    hist.index = hist.index.tz_localize(None).normalize()
+
+    # Normalise l'index en dates simples : yfinance renvoie des Timestamps
+    # avec fuseau horaire (source de bugs de comparaison), Twelve Data non —
+    # d'où le test avant le tz_localize (qui planterait sur un index naïf).
+    if getattr(hist.index, "tz", None) is not None:
+        hist.index = hist.index.tz_localize(None)
+    hist.index = hist.index.normalize()
     return hist
 
 

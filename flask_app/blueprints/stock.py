@@ -260,6 +260,10 @@ def backtest(ticker: str):
         # Historique trop court ou ticker inconnu → erreur "métier" propre
         return jsonify({"ok": False, "error": str(exc)}), 200
     except Exception:
+        # Message générique côté client, mais trace complète dans les logs
+        # Render — sinon impossible de diagnostiquer à distance.
+        import traceback
+        print(f"[Backtest] échec {ticker} :\n{traceback.format_exc()}", flush=True)
         return jsonify({"ok": False,
                         "error": "Backtest indisponible pour ce titre."}), 200
 
