@@ -246,6 +246,14 @@
             ${newlyEval > 0 ? `<span style="color:var(--sde-teal);font-size:.78rem"><i class="bi bi-check2-circle"></i> ${newlyEval} nouveaux</span>` : ""}
           </div>
           ${gauge(taux, color)}
+          ${stats.taux_j20_pct != null ? `
+          <div style="margin-top:8px">
+            <div style="font-size:.75rem;color:var(--sde-muted);margin-bottom:4px">
+              Fiabilité à J+20 — l'horizon aligné sur les signaux (${stats.evalues_j20} évalués)
+              ${stats.gain_j20_moyen != null ? `· gain moyen <strong style="color:${stats.gain_j20_moyen >= 0 ? "#1D9E75" : "#D85A30"}">${stats.gain_j20_moyen >= 0 ? "+" : ""}${stats.gain_j20_moyen}%</strong>` : ""}
+            </div>
+            ${gauge(stats.taux_j20_pct)}
+          </div>` : ""}
           ${stats.taux_suivi_pct !== null ? `
           <div style="margin-top:8px">
             <div style="font-size:.75rem;color:var(--sde-muted);margin-bottom:4px">Taux sur conseils suivis</div>

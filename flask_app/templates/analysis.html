@@ -1071,20 +1071,31 @@ window.sdePortfolio = (function () {
 
     const statsHtml = stats && stats.total > 0 ? `
       <span style="font-size:.75rem;color:var(--sde-muted)">
-        Fiabilité sur ${stats.total} conseils évalués :
-        <strong style="color:${stats.taux_pct >= 60 ? "#1D9E75" : "#D85A30"}">${stats.taux_pct}%</strong>
-        (${stats.bons} bons · ${stats.mauvais} mauvais)
+        Fiabilité J+1 : <strong style="color:${stats.taux_pct >= 60 ? "#1D9E75" : "#D85A30"}">${stats.taux_pct}%</strong>
+        (${stats.total} évalués)${stats.taux_j20_pct != null ? `
+        · <strong>J+20 : <span style="color:${stats.taux_j20_pct >= 60 ? "#1D9E75" : "#D85A30"}">${stats.taux_j20_pct}%</span></strong>
+        (${stats.total_j20} évalués — l'horizon qui fait foi)` : ""}
       </span>` : "";
+
+    // Une pastille ✓/✗ par horizon évalué — le J+20 est l'horizon aligné
+    // sur les signaux (14-50j), le J+1 ne mesure que la réactivité
+    const _pastille = (bon, label, variation) => {
+      if (bon === null || bon === undefined) return "";
+      const v = variation != null
+        ? ` ${variation >= 0 ? "+" : ""}${parseFloat(variation).toFixed(1)}%` : "";
+      return `<span style="color:${bon ? "#1D9E75" : "#D85A30"};font-size:.72rem;
+                     white-space:nowrap;margin-right:6px">
+        ${bon ? "✓" : "✗"} ${label}${v}</span>`;
+    };
 
     const rows = history.slice(1).map(h => {
       const color = ACTION_COLOR[h.action] || "#5a6a7a";
       const icon  = ACTION_ICON[h.action]  || "◆";
-      let eval_html = "";
-      if (h.bon_conseil !== null && h.bon_conseil !== undefined) {
-        const ok = h.bon_conseil;
-        eval_html = `<span style="color:${ok ? "#1D9E75" : "#D85A30"};font-size:.75rem">
-          ${ok ? "✓ Bon" : "✗ Mauvais"} · ${h.variation_j1 >= 0 ? "+" : ""}${parseFloat(h.variation_j1).toFixed(2)}%</span>`;
-      } else if (h.prix_j1 == null) {
+      let eval_html =
+          _pastille(h.bon_conseil,     "J+1",  h.variation_j1)
+        + _pastille(h.bon_conseil_j5,  "J+5",  h.variation_j5)
+        + _pastille(h.bon_conseil_j20, "J+20", h.variation_j20);
+      if (!eval_html) {
         eval_html = `<span style="color:var(--sde-muted);font-size:.75rem">En attente…</span>`;
       }
       return `<tr>
@@ -1106,7 +1117,7 @@ window.sdePortfolio = (function () {
               <th style="color:var(--sde-muted);font-weight:500">Date</th>
               <th style="color:var(--sde-muted);font-weight:500">Conseil</th>
               <th style="color:var(--sde-muted);font-weight:500">Prix</th>
-              <th style="color:var(--sde-muted);font-weight:500">Résultat J+1</th>
+              <th style="color:var(--sde-muted);font-weight:500">Résultat (J+1 · J+5 · J+20)</th>
             </tr></thead>
             <tbody>${rows}</tbody>
           </table>

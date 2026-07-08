@@ -1,8 +1,59 @@
 # portfolio/evaluator.py — Évaluation automatique des conseils passés
-# Compare le prix J+1 avec le prix du conseil pour juger la pertinence.
+#
+# Multi-horizons : un conseil s'appuie sur des signaux moyen terme (14-50j),
+# le juger sur la seule bougie du lendemain (±1.5% de bruit quotidien)
+# revient à mesurer du hasard. On évalue donc à TROIS horizons :
+#   J+1  : réactivité immédiate (conservé pour l'existant)
+#   J+5  : la semaine qui suit
+#   J+20 : l'horizon aligné sur les signaux — c'est LUI qui fait foi
+# Chaque ligne daily_advice se remplit progressivement au fil des passages
+# du scheduler (J+5 n'est observable que 5 séances après le conseil).
 
 from datetime import date, datetime, timezone, timedelta
 from collections import defaultdict
+
+# Les horizons évalués (en jours de BOURSE, pas calendaires)
+HORIZONS = (1, 5, 20)
+
+
+def _seuil_tenir(h: int) -> float:
+    """
+    Tolérance du "bon TENIR" selon l'horizon. Un cours diffuse comme √temps
+    (marche aléatoire) : la bande de ±3% acceptable à J+1 doit s'élargir en
+    √h — sinon quasi aucun TENIR ne serait "bon" à J+20.
+    J+1 → ±3%, J+5 → ±6.7%, J+20 → ±13.4%.
+    """
+    return round(3.0 * h ** 0.5, 1)
+
+
+def _juger(action: str, variation: float, horizon: int):
+    """
+    Le conseil était-il bon, vu la variation constatée à cet horizon ?
+    Fonction PURE (testable hors réseau). None = action non jugeable.
+    """
+    if action in ("ACHETER", "RENFORCER"):
+        return variation > 0
+    if action in ("VENDRE", "ALLÉGER"):
+        return variation < 0
+    if action in ("TENIR", "SURVEILLER"):
+        return abs(variation) < _seuil_tenir(horizon)
+    return None
+
+
+def _gain(action: str, variation: float):
+    """
+    Gain (ou coût) RÉEL du conseil en % signé — bien plus informatif que
+    le binaire bon/mauvais : un VENDRE qui a raté +15% et un VENDRE qui a
+    raté +0.3% ne se valent pas.
+      ACHETER/RENFORCER : on profite de la hausse  → gain = +variation
+      VENDRE/ALLÉGER    : on évite la baisse       → gain = -variation
+      TENIR/SURVEILLER  : pas de pari directionnel → None
+    """
+    if action in ("ACHETER", "RENFORCER"):
+        return round(variation, 2)
+    if action in ("VENDRE", "ALLÉGER"):
+        return round(-variation, 2)
+    return None
 
 
 def _market_open_now() -> bool:
@@ -19,11 +70,12 @@ def _market_open_now() -> bool:
 
 def evaluate_pending(days_back: int = 60) -> dict:
     """
-    Évalue tous les conseils non évalués des `days_back` derniers jours.
-    Requiert Supabase. Utilise yfinance pour les prix de clôture J+1.
-    Skip les conseils dont le J+1 est aujourd'hui si le marché est encore ouvert
-    (prix intraday non représentatif — le scheduler s'en chargera via evaluate_yesterday_advice).
-    Retourne {"evaluated": int, "skipped": int, "errors": int}.
+    Complète les évaluations manquantes (J+1, J+5, J+20) des conseils des
+    `days_back` derniers jours. Chaque ligne se remplit progressivement :
+    à J+3 seul le J+1 est observable, à J+25 les trois horizons le sont.
+    Requiert Supabase, prix de clôture via yfinance.
+    Retourne {"evaluated": int, "skipped": int, "errors": int} —
+    evaluated compte les LIGNES ayant reçu au moins un nouvel horizon.
     """
     from db import _init, _client, is_available
     if not is_available():
@@ -33,11 +85,13 @@ def evaluate_pending(days_back: int = 60) -> dict:
     today   = date.today()
     cutoff  = str(today - timedelta(days=days_back))
 
-    # Toutes les lignes non évaluées antérieures à aujourd'hui
+    # Lignes où AU MOINS un horizon manque encore.
+    # .or_ : syntaxe PostgREST "colonne.is.null" séparée par des virgules.
     rows = (
         _client.table("daily_advice")
-        .select("id,username,ticker,date_conseil,action,prix_jour,bon_conseil")
-        .is_("bon_conseil", "null")
+        .select("id,username,ticker,date_conseil,action,prix_jour,"
+                "bon_conseil,bon_conseil_j5,bon_conseil_j20")
+        .or_("bon_conseil.is.null,bon_conseil_j5.is.null,bon_conseil_j20.is.null")
         .gte("date_conseil", cutoff)
         .lt("date_conseil", str(today))
         .execute()
@@ -54,13 +108,13 @@ def evaluate_pending(days_back: int = 60) -> dict:
             by_ticker[row["ticker"]].append(row)
 
     evaluated = skipped = errors = 0
+    marche_ouvert = _market_open_now()
 
     import yfinance as yf
 
     for ticker, ticker_rows in by_ticker.items():
         try:
             min_date = min(r["date_conseil"] for r in ticker_rows)
-            # Récupère l'historique depuis min_date jusqu'à aujourd'hui
             hist = yf.Ticker(ticker).history(
                 start=min_date,
                 end=str(today + timedelta(days=1)),
@@ -78,49 +132,71 @@ def evaluate_pending(days_back: int = 60) -> dict:
             for row in ticker_rows:
                 try:
                     d_conseil = datetime.strptime(row["date_conseil"], "%Y-%m-%d")
-                    # Prochain jour de cotation après la date du conseil
-                    suivants = hist[hist.index > d_conseil]
-                    if suivants.empty:
-                        skipped += 1
-                        continue
-
-                    j1_date = suivants.index[0].date()
-                    # Si J+1 est aujourd'hui et le marché est encore ouvert :
-                    # on skip — le prix intraday n'est pas la clôture finale.
-                    if j1_date == today and _market_open_now():
-                        skipped += 1
-                        continue
-
-                    prix_j1 = float(suivants.iloc[0]["Close"])
-                    prix_j0 = float(row["prix_jour"])
-                    if prix_j0 == 0:
-                        skipped += 1
-                        continue
-
-                    variation = round((prix_j1 - prix_j0) / prix_j0 * 100, 2)
+                    suivants  = hist[hist.index > d_conseil]
+                    prix_j0   = float(row["prix_jour"])
                     action    = row.get("action", "")
-
-                    if action in ("ACHETER", "RENFORCER"):
-                        bon = variation > 0
-                    elif action in ("VENDRE", "ALLÉGER"):
-                        bon = variation < 0
-                    elif action in ("TENIR", "SURVEILLER"):
-                        bon = abs(variation) < 3
-                    else:
+                    if suivants.empty or prix_j0 == 0:
                         skipped += 1
                         continue
 
-                    _client.table("daily_advice").update({
-                        "prix_j1":      round(prix_j1, 4),
-                        "variation_j1": variation,
-                        "bon_conseil":  bon,
-                        "evaluated_at": datetime.now(timezone.utc).isoformat(),
-                    }).eq("id", row["id"]).execute()
+                    # Colonne déjà remplie ? (clé Supabase par horizon)
+                    deja = {1: row.get("bon_conseil")     is not None,
+                            5: row.get("bon_conseil_j5")  is not None,
+                            20: row.get("bon_conseil_j20") is not None}
+                    suffixe = {1: "j1", 5: "j5", 20: "j20"}
+
+                    update = {}
+                    for h in HORIZONS:
+                        if deja[h] or len(suivants) < h:
+                            continue          # déjà fait, ou pas assez de séances
+                        h_date = suivants.index[h - 1].date()
+                        # Clôture du jour même pas encore finale si marché ouvert
+                        if h_date == today and marche_ouvert:
+                            continue
+                        prix_h    = float(suivants.iloc[h - 1]["Close"])
+                        variation = round((prix_h - prix_j0) / prix_j0 * 100, 2)
+                        bon       = _juger(action, variation, h)
+                        if bon is None:
+                            continue          # action inconnue → pas jugeable
+                        s = suffixe[h]
+                        update[f"prix_{s}"]      = round(prix_h, 4)
+                        update[f"variation_{s}"] = variation
+                        # Historique : la colonne J+1 s'appelle bon_conseil
+                        update["bon_conseil" if h == 1 else f"bon_conseil_{s}"] = bon
+                        if h == 20:
+                            g = _gain(action, variation)
+                            if g is not None:
+                                update["gain_j20_pct"] = g
+
+                    if not update:
+                        skipped += 1
+                        continue
+
+                    update["evaluated_at"] = datetime.now(timezone.utc).isoformat()
+                    try:
+                        _client.table("daily_advice").update(update) \
+                               .eq("id", row["id"]).execute()
+                    except Exception:
+                        # Migration SQL pas encore appliquée → on sauve au
+                        # moins le J+1 (colonnes historiques) plutôt que rien
+                        j1_only = {k: v for k, v in update.items()
+                                   if k in ("prix_j1", "variation_j1",
+                                            "bon_conseil", "evaluated_at")}
+                        if j1_only.get("bon_conseil") is None:
+                            raise
+                        _client.table("daily_advice").update(j1_only) \
+                               .eq("id", row["id"]).execute()
+                        print("[Evaluator] colonnes J+5/J+20 absentes — lancer "
+                              "la migration SQL (voir doc/SUPABASE.md)", flush=True)
 
                     evaluated += 1
-                    emoji = "✓" if bon else "✗"
-                    print(f"[Evaluator] {ticker} {row['date_conseil']} {action} {emoji}"
-                          f" var={variation:+.1f}%", flush=True)
+                    detail = " ".join(
+                        f"J+{h}:{'✓' if update.get('bon_conseil' if h == 1 else f'bon_conseil_j{h}') else '✗'}"
+                        for h in HORIZONS
+                        if ("bon_conseil" if h == 1 else f"bon_conseil_j{h}") in update
+                    )
+                    print(f"[Evaluator] {ticker} {row['date_conseil']} {action} {detail}",
+                          flush=True)
 
                 except Exception as re:
                     print(f"[Evaluator] {ticker} row erreur : {re}", flush=True)
@@ -197,13 +273,24 @@ def get_global_stats() -> dict:
         return {}
 
     _init()
-    rows = (
-        _client.table("daily_advice")
-        .select("ticker,action,bon_conseil,variation_j1,date_conseil,username")
-        .not_.is_("bon_conseil", "null")
-        .execute()
-        .data or []
-    )
+    try:
+        rows = (
+            _client.table("daily_advice")
+            .select("ticker,action,bon_conseil,variation_j1,date_conseil,username,"
+                    "bon_conseil_j5,bon_conseil_j20,gain_j20_pct")
+            .not_.is_("bon_conseil", "null")
+            .execute()
+            .data or []
+        )
+    except Exception:
+        # Colonnes J+5/J+20 absentes (migration non appliquée) → mode J+1 seul
+        rows = (
+            _client.table("daily_advice")
+            .select("ticker,action,bon_conseil,variation_j1,date_conseil,username")
+            .not_.is_("bon_conseil", "null")
+            .execute()
+            .data or []
+        )
 
     # Conseils explicitement suivis (position liée via conseil_date)
     followed_rows = (
@@ -224,6 +311,17 @@ def get_global_stats() -> dict:
     bons    = sum(1 for r in rows if r["bon_conseil"])
     mauvais = total - bons
     taux    = round(bons / total * 100, 1) if total else None
+
+    # ── Horizons J+5 / J+20 : le taux qui fait foi est le J+20 ──
+    # (les conseils s'appuient sur des signaux 14-50j — le J+1 mesure
+    # surtout le bruit quotidien)
+    ev_j5     = [r for r in rows if r.get("bon_conseil_j5")  is not None]
+    ev_j20    = [r for r in rows if r.get("bon_conseil_j20") is not None]
+    taux_j5   = round(sum(1 for r in ev_j5  if r["bon_conseil_j5"])  / len(ev_j5)  * 100, 1) if ev_j5  else None
+    taux_j20  = round(sum(1 for r in ev_j20 if r["bon_conseil_j20"]) / len(ev_j20) * 100, 1) if ev_j20 else None
+    # Gain moyen réel des conseils directionnels à J+20 (% signé)
+    gains     = [r["gain_j20_pct"] for r in rows if r.get("gain_j20_pct") is not None]
+    gain_j20  = round(sum(gains) / len(gains), 2) if gains else None
 
     # Conseils évalués ET suivis (intersection)
     suivis_evalues = [r for r in rows if (r["ticker"], r["date_conseil"]) in followed_keys]
@@ -273,5 +371,11 @@ def get_global_stats() -> dict:
         "bons_suivis":     nb_bons_suivis,
         "taux_suivi_pct":  taux_suivi,
         "by_action":       action_stats,
-        "by_ticker": ticker_list,
+        "by_ticker":       ticker_list,
+        # Multi-horizons
+        "evalues_j5":      len(ev_j5),
+        "taux_j5_pct":     taux_j5,
+        "evalues_j20":     len(ev_j20),
+        "taux_j20_pct":    taux_j20,
+        "gain_j20_moyen":  gain_j20,
     }

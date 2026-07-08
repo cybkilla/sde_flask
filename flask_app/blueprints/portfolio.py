@@ -341,14 +341,19 @@ def get_advice(ticker: str):
         # Historique des 14 derniers conseils
         history = get_advice_history(current_user.id, ticker, limit=14)
 
-        # Statistiques sur l'historique évalué
+        # Statistiques sur l'historique évalué — J+1 (réactivité) et J+20
+        # (l'horizon aligné sur les signaux 14-50j, celui qui fait foi)
         evaluated = [h for h in history if h.get("bon_conseil") is not None]
+        ev_j20    = [h for h in history if h.get("bon_conseil_j20") is not None]
         stats = {
             "total":    len(evaluated),
             "bons":     sum(1 for h in evaluated if h["bon_conseil"]),
             "mauvais":  sum(1 for h in evaluated if not h["bon_conseil"]),
             "taux_pct": round(sum(1 for h in evaluated if h["bon_conseil"]) / len(evaluated) * 100)
                         if evaluated else None,
+            "total_j20":    len(ev_j20),
+            "taux_j20_pct": round(sum(1 for h in ev_j20 if h["bon_conseil_j20"]) / len(ev_j20) * 100)
+                            if ev_j20 else None,
         }
 
         return jsonify({

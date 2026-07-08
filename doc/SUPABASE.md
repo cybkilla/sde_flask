@@ -121,6 +121,22 @@ poids ; sans elle les conseils sont sauvés mais sans le détail des signaux) :
 ALTER TABLE daily_advice ADD COLUMN IF NOT EXISTS signaux_actifs JSONB;
 ```
 
+**Colonnes évaluation multi-horizons** (2026-07-08 — le conseil s'appuie sur des
+signaux 14-50j : le juger à J+1 seul mesure surtout le bruit quotidien. J+20 est
+l'horizon qui fait foi ; `gain_j20_pct` = gain/coût réel signé du conseil.
+Sans ces colonnes, l'évaluateur retombe en mode J+1 seul) :
+
+```sql
+ALTER TABLE daily_advice
+  ADD COLUMN IF NOT EXISTS prix_j5         FLOAT,
+  ADD COLUMN IF NOT EXISTS variation_j5    FLOAT,
+  ADD COLUMN IF NOT EXISTS bon_conseil_j5  BOOLEAN,
+  ADD COLUMN IF NOT EXISTS prix_j20        FLOAT,
+  ADD COLUMN IF NOT EXISTS variation_j20   FLOAT,
+  ADD COLUMN IF NOT EXISTS bon_conseil_j20 BOOLEAN,
+  ADD COLUMN IF NOT EXISTS gain_j20_pct    FLOAT;
+```
+
 **Table `weekly_reports`** (anti-doublon rapport hebdo — à créer si absente) :
 
 ```sql
