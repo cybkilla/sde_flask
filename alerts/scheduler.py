@@ -131,6 +131,59 @@ def _check_ticker(ticker: str, company: str, username: str, email: str) -> None:
             print(f"  [Targets] TP/SL check erreur ({ticker}) : {e}", flush=True)
 
 
+def _check_position_advice(username: str, email: str) -> None:
+    """
+    Pour chaque ticker où l'utilisateur a une position OUVERTE :
+    génère le conseil du jour s'il n'existe pas encore, et envoie un
+    email si l'action a changé par rapport au dernier conseil connu.
+    """
+    from db import find, is_available
+    if not is_available():
+        return
+
+    # Tickers distincts ayant au moins un lot pour cet utilisateur
+    lots = find("positions", {"username": username}) or []
+    tickers = {}
+    for l in lots:
+        t = l.get("ticker")
+        if t:
+            tickers.setdefault(t, l.get("company") or t)
+
+    for ticker, company in tickers.items():
+        try:
+            from data.market       import get_live_price
+            from portfolio.advisor import ensure_today_advice, get_previous_advice
+
+            prix_live = (get_live_price(ticker) or {}).get("price") or 0
+            if not prix_live:
+                continue
+
+            advice, created = ensure_today_advice(username, ticker, prix_live)
+            if not created or not advice:
+                continue          # déjà généré (page visitée) ou données manquantes
+
+            prev = get_previous_advice(username, ticker)
+            if prev and email and prev.get("action") != advice.get("action"):
+                print(f"  [Advice] {ticker} : {prev['action']} → {advice['action']} "
+                      f"— email à {username}", flush=True)
+                from alerts.mailer import send_advice_change_alert
+                send_advice_change_alert(
+                    to_email   = email,
+                    username   = username,
+                    ticker     = ticker,
+                    company    = company,
+                    old_action = prev["action"],
+                    new_action = advice["action"],
+                    advice     = advice,
+                    prix       = prix_live,
+                )
+            else:
+                print(f"  [Advice] {ticker} : conseil du jour généré "
+                      f"({advice.get('action')}, inchangé)", flush=True)
+        except Exception as e:
+            print(f"  [Advice] {ticker} erreur : {e}", flush=True)
+
+
 def check_all():
     """Parcourt toutes les watchlists et vérifie chaque ticker."""
     from watchlist.watchlist import get_watchlist
@@ -155,6 +208,18 @@ def check_all():
                 seen_tickers.add(ticker)
             except Exception as e:
                 print(f"  ✗ Erreur {ticker} : {e}", flush=True)
+
+        # ── Conseil quotidien sur les POSITIONS ouvertes ─────────
+        # Le conseil n'était généré qu'à l'ouverture de la page : le
+        # scheduler le génère désormais chaque jour ouvré pour chaque
+        # position, et alerte par email si l'ACTION change (TENIR →
+        # ALLÉGER…). Anti-doublon par construction : l'email ne part
+        # qu'à la CRÉATION du conseil du jour (1×/jour/ticker max).
+        if datetime.now().weekday() < 5:      # jours de bourse uniquement
+            try:
+                _check_position_advice(username, email)
+            except Exception as e:
+                print(f"  [Advice] Erreur conseils positions {username} : {e}", flush=True)
 
         # ── Rapport hebdomadaire (dimanche ≥ 22h Paris) ──────────
         # Déclenché même si la watchlist est vide (le rapport inclut le portefeuille)

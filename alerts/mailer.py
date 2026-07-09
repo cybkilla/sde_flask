@@ -237,3 +237,111 @@ def send_tp_sl_alert(to_email: str, username: str,
     })
     print(f"[Mailer] TP/SL email envoyé à {to_email} ({ticker} {label})", flush=True)
     print(f"[Mailer] Email envoyé à {to_email} ({ticker})", flush=True)
+
+
+def send_advice_change_alert(to_email: str, username: str,
+                             ticker: str, company: str,
+                             old_action: str, new_action: str,
+                             advice: dict, prix: float):
+    """
+    Email envoyé quand le CONSEIL POSITION du jour change d'action par
+    rapport au précédent (ex. TENIR → ALLÉGER). Distinct de send_alert()
+    (recommandation globale ACHETER/VENDRE/NEUTRE) : ici c'est le conseil
+    personnalisé, calculé sur la position réelle de l'utilisateur.
+    Anti-doublon par construction : appelé uniquement à la CRÉATION du
+    conseil du jour (une fois par jour et par ticker maximum).
+    """
+    # Couleurs alignées sur ACTION_LABELS de l'advisor
+    colors = {"ACHETER": "#1D9E75", "RENFORCER": "#15803d", "TENIR": "#BA7517",
+              "SURVEILLER": "#5a6a7a", "ALLÉGER": "#D85A30", "VENDRE": "#991b1b"}
+    icons  = {"ACHETER": "↑", "RENFORCER": "↗", "TENIR": "◆",
+              "SURVEILLER": "◎", "ALLÉGER": "↘", "VENDRE": "↓"}
+    color  = colors.get(new_action, "#374151")
+    icon   = icons.get(new_action, "•")
+
+    subject = (f"[StockDecisionEngine] {icon} {ticker} — "
+               f"Conseil position : {old_action} → {new_action}")
+
+    qte = advice.get("quantite_suggeree")
+    qte_html = (f'<tr><td style="padding:8px;color:#6b7280;font-size:13px">'
+                f'Quantité suggérée</td>'
+                f'<td style="padding:8px;font-weight:600;font-size:15px">'
+                f'{qte:g} action(s)</td></tr>') if qte else ""
+
+    raisonnement = advice.get("raisonnement", "")
+
+    body = f"""
+    <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;
+                max-width:560px;margin:0 auto;padding:24px;color:#111827">
+      <p style="font-size:13px;color:#6b7280;margin-bottom:14px">
+        Bonjour {username},
+      </p>
+
+      <div style="background:#EEF2FF;border-left:4px solid #6366F1;
+                  padding:10px 14px;border-radius:4px;margin-bottom:16px">
+        <span style="font-size:13px;font-weight:600;color:#3730A3">
+          🔔 Votre conseil sur {ticker} a changé
+        </span>
+        <span style="font-size:15px;color:#6b7280;
+                     text-decoration:line-through;margin-left:12px">
+          {old_action}
+        </span>
+        <span style="font-size:15px;color:#374151;margin:0 6px">→</span>
+        <span style="font-size:17px;font-weight:700;color:{color}">
+          {icon} {new_action}
+        </span>
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
+        <tr>
+          <td style="padding:8px;color:#6b7280;font-size:13px">Société</td>
+          <td style="padding:8px;font-weight:500;font-size:15px">
+            {company or ticker} ({ticker})
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px;color:#6b7280;font-size:13px">Prix actuel</td>
+          <td style="padding:8px;font-weight:500;font-size:15px">${prix:.2f}</td>
+        </tr>
+        {qte_html}
+      </table>
+
+      <div style="background:#f8fafc;border:1px solid #e5e7eb;
+                  border-radius:6px;padding:12px 14px;margin-bottom:16px;
+                  font-size:13px;color:#374151;line-height:1.6">
+        <span style="font-size:11px;font-weight:600;color:#6b7280;
+                     text-transform:uppercase;letter-spacing:0.05em">
+          Raisonnement SDE
+        </span><br><br>
+        {raisonnement}
+      </div>
+
+      <div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:4px">
+        <a href="{SDE_BASE_URL}/analyze/{ticker}"
+           style="display:inline-block;background:#1D9E75;color:#fff;
+                  font-size:13px;font-weight:600;text-decoration:none;
+                  padding:8px 18px;border-radius:6px;margin-bottom:10px">
+          Voir ma position sur {ticker} →
+        </a>
+        <p style="color:#9ca3af;font-size:11px;margin:0">
+          Cet email a été envoyé automatiquement par StockDecisionEngine.
+          Outil éducatif — pas un conseil financier.
+        </p>
+      </div>
+    </div>
+    """
+
+    api_key   = os.getenv("RESEND_API_KEY", "")
+    from_addr = os.getenv("RESEND_FROM", "SDE StockDecisionEngine <onboarding@resend.dev>")
+    if not api_key:
+        print(f"[Mailer] RESEND_API_KEY manquante — email non envoyé à {to_email}", flush=True)
+        return
+    resend.api_key = api_key
+    resend.Emails.send({
+        "from":    from_addr,
+        "to":      [to_email],
+        "subject": subject,
+        "html":    body,
+    })
+    print(f"[Mailer] Conseil position email envoyé à {to_email} "
+          f"({ticker} {old_action}→{new_action})", flush=True)

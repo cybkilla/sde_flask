@@ -325,6 +325,108 @@ def get_today_advice(username: str, ticker: str) -> dict | None:
         return None
 
 
+def get_previous_advice(username: str, ticker: str) -> dict | None:
+    """
+    Dernier conseil AVANT aujourd'hui — la référence pour détecter un
+    changement d'action (TENIR → ALLÉGER…) qui mérite une notification.
+    """
+    try:
+        import db
+        from db import _init, is_available
+        if not is_available():
+            return None
+        _init()
+        rows = (
+            db._client.table(_TABLE)
+            .select("date_conseil,action,score_sde")
+            .eq("username", username)
+            .eq("ticker", ticker.upper())
+            .lt("date_conseil", str(date.today()))
+            .order("date_conseil", desc=True)
+            .limit(1)
+            .execute()
+            .data or []
+        )
+        return rows[0] if rows else None
+    except Exception as e:
+        print(f"[Advisor] get_previous_advice erreur : {e}", flush=True)
+        return None
+
+
+def ensure_today_advice(username: str, ticker: str, prix_live: float):
+    """
+    Garantit qu'un conseil existe pour aujourd'hui — appelé par le
+    scheduler pour les tickers en POSITION, afin que le conseil quotidien
+    existe même si l'utilisateur n'ouvre pas la page (et que l'évaluateur
+    ait un conseil par jour à noter, pas seulement les jours de visite).
+
+    Reprend la même chaîne que la route /portfolio/advice : snapshot +
+    prix live + position + chandeliers + config utilisateur.
+
+    Retourne (advice_row, created) :
+      created=False si le conseil existait déjà (page visitée avant) ou
+      si les données manquent (pas de snapshot, pas de position ouverte).
+    """
+    existing = get_today_advice(username, ticker)
+    if existing:
+        return existing, False
+
+    try:
+        from snapshot import get_snapshot, MAX_AGE_HOURS
+        from portfolio.positions import get_portfolio_summary
+
+        snap = get_snapshot(ticker, max_age_hours=MAX_AGE_HOURS)
+        if not snap:
+            # Pas de snapshot frais (ticker hors watchlist ?) — on ne lance
+            # PAS le pipeline complet ici : le scheduler le fait déjà pour
+            # les tickers de la watchlist, et un conseil sur données
+            # périmées serait pire que pas de conseil.
+            print(f"[Advisor] {ticker} : pas de snapshot — conseil non généré "
+                  f"(ajouter le ticker à la watchlist pour le suivi complet)",
+                  flush=True)
+            return None, False
+
+        summary = get_portfolio_summary(username, ticker, prix_live)
+        if not summary or summary.get("position_fermee"):
+            return None, False       # conseil "position" seulement
+
+        market = {**snap.get("market", {}), "price": prix_live or snap["market"].get("price")}
+
+        # Pattern chandelier — même construction que la route portfolio
+        candle_info = None
+        try:
+            from analysis.candle_patterns import detect_patterns
+            hist = snap.get("market", {}).get("history")
+            if hist is not None and len(hist) > 0:
+                pat_df = detect_patterns(hist.tail(60))
+                if not pat_df.empty:
+                    last = pat_df.iloc[-1]
+                    raw_date = last.get("date") if hasattr(last, "get") else last["date"]
+                    try:
+                        candle_date = raw_date.strftime("%d.%m.%Y")
+                    except Exception:
+                        p = str(raw_date)[:10].split("-")
+                        candle_date = f"{p[2]}.{p[1]}.{p[0]}" if len(p) == 3 else ""
+                    candle_info = {
+                        "signal":      last["signal"],
+                        "pattern":     last["pattern"],
+                        "description": last.get("description", ""),
+                        "date":        candle_date,
+                    }
+        except Exception:
+            pass
+
+        from portfolio.config_advisor import get_config
+        advice = generate_advice(summary, market, snap,
+                                 candle_info=candle_info,
+                                 cfg=get_config(username))
+        row = save_advice(username, ticker, advice, market, snap)
+        return row, True
+    except Exception as e:
+        print(f"[Advisor] ensure_today_advice erreur ({ticker}) : {e}", flush=True)
+        return None, False
+
+
 def signaux_compacts(snapshot: dict) -> dict:
     """
     Extrait le vecteur des signaux techniques actifs sous forme compacte
