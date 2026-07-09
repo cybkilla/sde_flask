@@ -167,6 +167,20 @@ def check_all():
             except Exception as e:
                 print(f"  [Weekly] Erreur rapport {username} : {e}", flush=True)
 
+    # ── Évaluation multi-horizons (J+1 / J+5 / J+20) des conseils passés ──
+    # Complète les colonnes manquantes de daily_advice. Peu coûteux : la
+    # requête ne retourne que les lignes incomplètes, et l'historique est
+    # téléchargé une seule fois par ticker concerné. Avant, seul le
+    # dashboard admin déclenchait ce rattrapage — les J+5/J+20 ne se
+    # remplissaient donc que si quelqu'un ouvrait la page.
+    try:
+        from portfolio.evaluator import evaluate_pending
+        r = evaluate_pending(days_back=60)
+        if r.get("evaluated"):
+            print(f"[Scheduler] Évaluations complétées : {r}", flush=True)
+    except Exception as e:
+        print(f"[Scheduler] evaluate_pending erreur : {e}", flush=True)
+
     print(f"[Scheduler] Terminé — {len(seen_tickers)} ticker(s) vérifiés", flush=True)
 
 

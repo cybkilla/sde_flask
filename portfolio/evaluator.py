@@ -56,6 +56,46 @@ def _gain(action: str, variation: float):
     return None
 
 
+def _fetch_eval_history(ticker: str, start_date: str, today: date):
+    """
+    Historique de clôtures pour l'évaluation : yfinance d'abord, puis
+    Twelve Data — même stratégie que market.py et backtest.py, car
+    yfinance est rate-limité sur Render et le scheduler y appelle
+    désormais l'évaluateur à chaque passage.
+    Retourne un DataFrame (possiblement vide) avec index dates naïves.
+    """
+    import pandas as pd
+    hist = pd.DataFrame()
+    try:
+        import yfinance as yf
+        hist = yf.Ticker(ticker).history(
+            start=start_date,
+            end=str(today + timedelta(days=1)),
+            auto_adjust=True,
+        )
+    except Exception as e:
+        print(f"[Evaluator] yfinance erreur ({ticker}) : {e}", flush=True)
+
+    if hist is None or hist.empty:
+        # outputsize Twelve Data = jours de BOURSE ; on convertit les jours
+        # calendaires écoulés (~5/7) avec une marge, borné à 5000
+        try:
+            from data.market import _get_candles_td
+            jours_cal = (today - datetime.strptime(start_date, "%Y-%m-%d").date()).days
+            outputsize = min(max(30, int(jours_cal * 0.75) + 10), 5000)
+            print(f"[Evaluator] fallback Twelve Data pour {ticker}", flush=True)
+            hist = _get_candles_td(ticker, outputsize)
+        except Exception as e:
+            print(f"[Evaluator] fallback TD erreur ({ticker}) : {e}", flush=True)
+            hist = pd.DataFrame()
+
+    if hist is not None and not hist.empty:
+        if hist.index.tz is not None:
+            hist.index = hist.index.tz_convert(None)
+        hist.index = hist.index.normalize()
+    return hist
+
+
 def _market_open_now() -> bool:
     """Retourne True si le NASDAQ est actuellement ouvert (heure Paris)."""
     try:
@@ -77,7 +117,8 @@ def evaluate_pending(days_back: int = 60) -> dict:
     Retourne {"evaluated": int, "skipped": int, "errors": int} —
     evaluated compte les LIGNES ayant reçu au moins un nouvel horizon.
     """
-    from db import _init, _client, is_available
+    import db
+    from db import _init, is_available
     if not is_available():
         return {"evaluated": 0, "skipped": 0, "errors": 0}
 
@@ -88,7 +129,7 @@ def evaluate_pending(days_back: int = 60) -> dict:
     # Lignes où AU MOINS un horizon manque encore.
     # .or_ : syntaxe PostgREST "colonne.is.null" séparée par des virgules.
     rows = (
-        _client.table("daily_advice")
+        db._client.table("daily_advice")
         .select("id,username,ticker,date_conseil,action,prix_jour,"
                 "bon_conseil,bon_conseil_j5,bon_conseil_j20")
         .or_("bon_conseil.is.null,bon_conseil_j5.is.null,bon_conseil_j20.is.null")
@@ -110,24 +151,14 @@ def evaluate_pending(days_back: int = 60) -> dict:
     evaluated = skipped = errors = 0
     marche_ouvert = _market_open_now()
 
-    import yfinance as yf
-
     for ticker, ticker_rows in by_ticker.items():
         try:
             min_date = min(r["date_conseil"] for r in ticker_rows)
-            hist = yf.Ticker(ticker).history(
-                start=min_date,
-                end=str(today + timedelta(days=1)),
-                auto_adjust=True,
-            )
+            # yfinance → fallback Twelve Data (index déjà normalisé)
+            hist = _fetch_eval_history(ticker, min_date, today)
             if hist.empty:
                 skipped += len(ticker_rows)
                 continue
-
-            # Normalise l'index en dates sans timezone
-            if hist.index.tz is not None:
-                hist.index = hist.index.tz_convert(None)
-            hist.index = hist.index.normalize()
 
             for row in ticker_rows:
                 try:
@@ -174,7 +205,7 @@ def evaluate_pending(days_back: int = 60) -> dict:
 
                     update["evaluated_at"] = datetime.now(timezone.utc).isoformat()
                     try:
-                        _client.table("daily_advice").update(update) \
+                        db._client.table("daily_advice").update(update) \
                                .eq("id", row["id"]).execute()
                     except Exception:
                         # Migration SQL pas encore appliquée → on sauve au
@@ -184,7 +215,7 @@ def evaluate_pending(days_back: int = 60) -> dict:
                                             "bon_conseil", "evaluated_at")}
                         if j1_only.get("bon_conseil") is None:
                             raise
-                        _client.table("daily_advice").update(j1_only) \
+                        db._client.table("daily_advice").update(j1_only) \
                                .eq("id", row["id"]).execute()
                         print("[Evaluator] colonnes J+5/J+20 absentes — lancer "
                               "la migration SQL (voir doc/SUPABASE.md)", flush=True)
@@ -218,14 +249,15 @@ def reset_intraday_evals() -> int:
     """
     try:
         import zoneinfo
-        from db import _init, _client, is_available
+        import db
+        from db import _init, is_available
         if not is_available():
             return 0
         _init()
 
         # Récupérer les évaluations récentes (7 derniers jours) ayant un evaluated_at
         rows = (
-            _client.table("daily_advice")
+            db._client.table("daily_advice")
             .select("id,evaluated_at")
             .not_.is_("bon_conseil", "null")
             .not_.is_("evaluated_at", "null")
@@ -244,7 +276,7 @@ def reset_intraday_evals() -> int:
                 tot = ts_paris.hour * 60 + ts_paris.minute
                 in_eval_window = wd < 5 and 20 * 60 <= tot < 22 * 60
                 if not in_eval_window:
-                    _client.table("daily_advice").update({
+                    db._client.table("daily_advice").update({
                         "bon_conseil":  None,
                         "prix_j1":      None,
                         "variation_j1": None,
@@ -268,14 +300,15 @@ def get_global_stats() -> dict:
     Agrège les stats de pertinence sur tous les utilisateurs et tickers.
     Retourne global %, breakdown par action, par ticker.
     """
-    from db import _init, _client, is_available
+    import db
+    from db import _init, is_available
     if not is_available():
         return {}
 
     _init()
     try:
         rows = (
-            _client.table("daily_advice")
+            db._client.table("daily_advice")
             .select("ticker,action,bon_conseil,variation_j1,date_conseil,username,"
                     "bon_conseil_j5,bon_conseil_j20,gain_j20_pct")
             .not_.is_("bon_conseil", "null")
@@ -285,7 +318,7 @@ def get_global_stats() -> dict:
     except Exception:
         # Colonnes J+5/J+20 absentes (migration non appliquée) → mode J+1 seul
         rows = (
-            _client.table("daily_advice")
+            db._client.table("daily_advice")
             .select("ticker,action,bon_conseil,variation_j1,date_conseil,username")
             .not_.is_("bon_conseil", "null")
             .execute()
@@ -294,7 +327,7 @@ def get_global_stats() -> dict:
 
     # Conseils explicitement suivis (position liée via conseil_date)
     followed_rows = (
-        _client.table("positions")
+        db._client.table("positions")
         .select("ticker,conseil_date,type")
         .not_.is_("conseil_date", "null")
         .execute()
