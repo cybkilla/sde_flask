@@ -9,7 +9,7 @@ import pandas    as pd
 import feedparser
 import urllib.parse
 import numpy     as np
-from config import EXEC_KEYWORDS, KEYWORD_SEVERITY_MAP, SEVERITY_PENALTY_POINTS
+from config import KEYWORD_SEVERITY_MAP, SEVERITY_PENALTY_POINTS
 
 
 # ── Mapping défensif des colonnes yfinance ────────────────
@@ -194,20 +194,53 @@ def get_insider_score(df_tx: pd.DataFrame) -> dict:
 
 
 # ── Événements personnels dirigeants (RSS) ────────────────
+def _fetch_rss(url: str, timeout: int = 6):
+    """
+    Télécharge le flux via requests AVEC timeout, puis parse le contenu.
+    Pourquoi : feedparser.parse(url) fait l'appel réseau lui-même SANS
+    timeout — une réponse lente de Google News gelait l'analyse entière
+    (jusqu'à 2 minutes mesurées). Ici : 6 s maximum par flux.
+    """
+    import requests
+    try:
+        r = requests.get(url, timeout=timeout,
+                         headers={"User-Agent": "Mozilla/5.0"})
+        return feedparser.parse(r.content)
+    except Exception as e:
+        print(f"[Insider] RSS timeout/erreur : {e}", flush=True)
+        return feedparser.parse(b"")     # flux vide → 0 entrée, pas de crash
+
+
 def get_executive_events(ceo_name: str, ticker: str) -> pd.DataFrame:
     """
     Alertes RSS sur le CEO — uniquement si le mot-clé apparaît
     dans le titre ET le dirigeant est mentionné (limite les faux positifs).
+
+    Optimisation : 3 requêtes OR groupées (une par niveau de sévérité)
+    au lieu d'une requête PAR mot-clé (32 appels séquentiels avant —
+    principal poste du temps d'analyse). Google News accepte la syntaxe
+    `"CEO" (kw1 OR kw2 OR ...)`, et le filtre par titre ci-dessous
+    garantit la même qualité : un article n'est retenu que si un
+    mot-clé exact figure dans son titre.
     """
+    from config import (KEYWORDS_SCANDAL_CRITICAL, KEYWORDS_SCANDAL_HIGH,
+                        KEYWORDS_NEGATIVE_MED)
+    groupes = [KEYWORDS_SCANDAL_CRITICAL, KEYWORDS_SCANDAL_HIGH,
+               KEYWORDS_NEGATIVE_MED]
+
     seen_urls: set[str] = set()
     alerts = []
 
-    for kw in EXEC_KEYWORDS:
-        query = urllib.parse.quote(f'"{ceo_name}" {kw}')
+    for kws in groupes:
+        # Les mots-clés composés doivent rester entre guillemets dans le OR
+        ors   = " OR ".join(f'"{k}"' if " " in k else k for k in kws)
+        query = urllib.parse.quote(f'"{ceo_name}" ({ors})')
         url   = f"https://news.google.com/rss/search?q={query}&hl=en"
-        feed  = feedparser.parse(url)
+        feed  = _fetch_rss(url)
 
-        for entry in feed.entries[:2]:
+        # Une requête couvre ~10 mots-clés → on lit plus d'entrées
+        # (avant : 2 entrées × 32 requêtes)
+        for entry in feed.entries[:15]:
             titre = entry.get("title", "")
             link  = entry.get("link", "")
 
@@ -215,7 +248,9 @@ def get_executive_events(ceo_name: str, ticker: str) -> pd.DataFrame:
                 continue
             if not _ceo_relevant(ceo_name, titre):
                 continue
-            if not _keyword_in_title(kw, titre):
+            # Quel mot-clé du groupe a réellement matché le titre ?
+            kw = next((k for k in kws if _keyword_in_title(k, titre)), None)
+            if kw is None:
                 continue
 
             seen_urls.add(link)

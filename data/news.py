@@ -139,7 +139,15 @@ def _fetch_rss(query: str, max_results: int = MAX_NEWS,
     locale = "fr&gl=FR&ceid=FR:fr" if lang == "fr" else "en&gl=US&ceid=US:en"
     url    = f"https://news.google.com/rss/search?q={q_enc}&hl={locale}"
 
-    feed     = feedparser.parse(url)
+    # requests avec timeout PUIS parse du contenu : feedparser.parse(url)
+    # fait l'appel réseau sans timeout — un flux lent gèle l'analyse.
+    import requests
+    try:
+        r    = requests.get(url, timeout=6, headers={"User-Agent": "Mozilla/5.0"})
+        feed = feedparser.parse(r.content)
+    except Exception as e:
+        print(f"[News] RSS timeout/erreur : {e}", flush=True)
+        feed = feedparser.parse(b"")
     articles = []
 
     for entry in feed.entries[:max_results]:

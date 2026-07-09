@@ -57,58 +57,74 @@ def run(ticker: str, use_cache: bool = True) -> dict:
         except Exception as e:
             print(f"[Pipeline] get_snapshot erreur : {e}", flush=True)
 
-    # ── Étape 1 : données marché (critique) ──────────────
-    market = get_market_data(ticker)
+    # ── Étapes 1-3 : collectes PARALLÉLISÉES ──────────────
+    # Les sources sont réseau-dépendantes et indépendantes entre elles :
+    # les exécuter en séquence additionne les latences (~18s), en
+    # parallèle on ne paie que la plus lente de chaque vague (~10s).
+    # ThreadPoolExecutor convient ici : le travail est I/O (attente
+    # réseau), pas CPU — le GIL n'est pas un obstacle.
+    #
+    # Deux vagues, car news et événements dirigeants ont besoin du
+    # nom de société / CEO que seul get_market_data() fournit :
+    #   Vague A : marché ‖ insiders ‖ calibration (ne dépendent que du ticker)
+    #   Vague B : news entreprise ‖ news secteur ‖ événements CEO
+    from concurrent.futures import ThreadPoolExecutor
 
-    # ── Étape 2 : actualités + sentiment (non-critique) ──
-    try:
-        df_company = get_all_news(market["company_name"], ticker)
-        if not df_company.empty:
-            df_company["type"] = "ticker"
-    except Exception as e:
-        print(f"[Pipeline] News entreprise indisponibles : {e}")
-        df_company = pd.DataFrame()
+    def _sans_crash(label, fn, *args, defaut=None):
+        """Isole chaque source : une panne ne coûte que SA donnée."""
+        try:
+            return fn(*args)
+        except Exception as e:
+            print(f"[Pipeline] {label} indisponible : {e}", flush=True)
+            return defaut if defaut is not None else pd.DataFrame()
 
-    try:
-        df_sector = get_sector_news(market.get("sector", ""), market.get("industry", ""))
-        if not df_sector.empty and not df_company.empty:
-            company_titles = set(df_company["titre"].str.lower())
-            df_sector = df_sector[
-                ~df_sector["titre"].str.lower().isin(company_titles)
-            ]
-    except Exception as e:
-        print(f"[Pipeline] News sectorielles indisponibles : {e}")
-        df_sector = pd.DataFrame()
+    def _calibration_safe(t):
+        from analysis.calibration import poids_calibres
+        return poids_calibres(t)
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        # ── Vague A ──
+        f_market = ex.submit(get_market_data, ticker)
+        f_tx     = ex.submit(_sans_crash, "Transactions insiders",
+                             get_insider_transactions, ticker)
+        f_calib  = ex.submit(_sans_crash, "Calibration",
+                             _calibration_safe, ticker, defaut=False)
+
+        # market est CRITIQUE : son exception doit remonter (comportement
+        # historique — pas d'analyse sans données marché)
+        market = f_market.result()
+
+        # ── Vague B (dépend de market) ──
+        f_news   = ex.submit(_sans_crash, "News entreprise",
+                             get_all_news, market["company_name"], ticker)
+        f_sector = ex.submit(_sans_crash, "News sectorielles",
+                             get_sector_news, market.get("sector", ""),
+                             market.get("industry", ""))
+        f_events = ex.submit(_sans_crash, "Événements dirigeants",
+                             get_executive_events, market["ceo_name"], ticker)
+
+        df_company  = f_news.result()
+        df_sector   = f_sector.result()
+        df_tx       = f_tx.result()
+        df_events   = f_events.result()
+        calibration = f_calib.result() or None   # False (échec) → None
+
+    if not df_company.empty:
+        df_company["type"] = "ticker"
+    # Exclure les articles sectoriels déjà présents côté entreprise
+    if not df_sector.empty and not df_company.empty:
+        company_titles = set(df_company["titre"].str.lower())
+        df_sector = df_sector[
+            ~df_sector["titre"].str.lower().isin(company_titles)
+        ]
 
     df_news   = pd.concat([df_company, df_sector], ignore_index=True)
     sentiment = analyze_sentiment(df_news)
-
-    # ── Étape 3 : insider + événements dirigeants (non-critique) ──
-    try:
-        df_tx = get_insider_transactions(ticker)
-    except Exception as e:
-        print(f"[Pipeline] Transactions insiders indisponibles : {e}")
-        df_tx = pd.DataFrame()
-
-    try:
-        df_events = get_executive_events(market["ceo_name"], ticker)
-    except Exception as e:
-        print(f"[Pipeline] Événements dirigeants indisponibles : {e}")
-        df_events = pd.DataFrame()
-
     ins_score = get_insider_score(df_tx)
 
     # ── Étape 4 : calcul des 3 scores ─────────────────────
-    # Calibration adaptative : les poids techniques sont modulés par la
-    # fiabilité mesurée de chaque signal SUR CE TICKER (attribution du
-    # backtest 2 ans, shrinkage + bornes). Défensif : sans backtest
-    # disponible, poids manuels — l'analyse ne casse jamais pour ça.
-    calibration = None
-    try:
-        from analysis.calibration import poids_calibres
-        calibration = poids_calibres(ticker)
-    except Exception as e:
-        print(f"[Pipeline] calibration ignorée : {e}", flush=True)
+    # Calibration adaptative (calculée en vague A) : poids techniques
+    # modulés par la fiabilité mesurée de chaque signal sur CE ticker.
 
     tech = score_technique(
         market,
