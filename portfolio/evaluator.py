@@ -16,27 +16,33 @@ from collections import defaultdict
 HORIZONS = (1, 5, 20)
 
 
-def _seuil_tenir(h: int) -> float:
+def _seuil_tenir(h: int, atr: float = None) -> float:
     """
-    Tolérance du "bon TENIR" selon l'horizon. Un cours diffuse comme √temps
-    (marche aléatoire) : la bande de ±3% acceptable à J+1 doit s'élargir en
-    √h — sinon quasi aucun TENIR ne serait "bon" à J+20.
-    J+1 → ±3%, J+5 → ±6.7%, J+20 → ±13.4%.
+    Tolérance du "bon TENIR" selon l'horizon ET la volatilité du titre.
+    Un cours diffuse comme √temps (marche aléatoire) : la bande acceptable
+    à J+1 doit s'élargir en √h — sinon quasi aucun TENIR ne serait "bon"
+    à J+20. Et la base de la bande est l'ATR du titre : ±3% est une grosse
+    journée pour un titre calme, du bruit ordinaire pour une small cap.
+    Sans ATR (None) : base 3% historique. ATR borné [2 ; 8] pour éviter
+    les extrêmes. Ex. titre à ATR 5% : J+1 → ±5%, J+20 → ±22.4%.
     """
-    return round(3.0 * h ** 0.5, 1)
+    import numpy as np
+    base = float(np.clip(atr, 2.0, 8.0)) if atr else 3.0
+    return round(base * h ** 0.5, 1)
 
 
-def _juger(action: str, variation: float, horizon: int):
+def _juger(action: str, variation: float, horizon: int, atr: float = None):
     """
     Le conseil était-il bon, vu la variation constatée à cet horizon ?
     Fonction PURE (testable hors réseau). None = action non jugeable.
+    `atr` (optionnel) adapte la bande TENIR à la volatilité du titre.
     """
     if action in ("ACHETER", "RENFORCER"):
         return variation > 0
     if action in ("VENDRE", "ALLÉGER"):
         return variation < 0
     if action in ("TENIR", "SURVEILLER"):
-        return abs(variation) < _seuil_tenir(horizon)
+        return abs(variation) < _seuil_tenir(horizon, atr)
     return None
 
 
@@ -160,6 +166,10 @@ def evaluate_pending(days_back: int = 60) -> dict:
                 skipped += len(ticker_rows)
                 continue
 
+            # ATR du titre : adapte la bande du "bon TENIR" à sa volatilité
+            from portfolio.risk import atr_pct
+            atr = atr_pct(hist)
+
             for row in ticker_rows:
                 try:
                     d_conseil = datetime.strptime(row["date_conseil"], "%Y-%m-%d")
@@ -186,7 +196,7 @@ def evaluate_pending(days_back: int = 60) -> dict:
                             continue
                         prix_h    = float(suivants.iloc[h - 1]["Close"])
                         variation = round((prix_h - prix_j0) / prix_j0 * 100, 2)
-                        bon       = _juger(action, variation, h)
+                        bon       = _juger(action, variation, h, atr)
                         if bon is None:
                             continue          # action inconnue → pas jugeable
                         s = suffixe[h]

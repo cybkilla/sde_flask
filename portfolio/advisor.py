@@ -91,6 +91,21 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
     rsi    = float(market.get("rsi") or 50)
     prix   = float(market.get("price") or 0)
 
+    # ── Seuils normalisés par la volatilité du titre (ATR) ────────────
+    # -20% est du bruit sur une small cap volatile et une catastrophe
+    # sur un titre calme : les seuils % fixes de la config deviennent
+    # des multiples d'ATR, bornés autour des valeurs configurées.
+    # Sans historique (vieux snapshot) → seuils config inchangés.
+    from portfolio.risk import atr_pct, seuils_adaptes, TRAIL_ATR_MULT
+    hist_px = market.get("history")
+    atr     = atr_pct(hist_px)
+    seuils  = seuils_adaptes(c, atr)
+    note_atr = (
+        f" Seuils adaptés à la volatilité du titre (ATR {atr:.1f}%/j) : "
+        f"stop {seuils['stop_loss_pct']:+.1f}%, objectif {seuils['take_profit_pct']:+.1f}%."
+        if seuils["adapte"] else ""
+    )
+
     # Dates pour préfixer chaque ligne du raisonnement
     conseil_date_str = date.today().strftime("%d.%m.%Y")
     data_date_str    = _get_data_date(snapshot)
@@ -140,19 +155,36 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
     total_shares = float(summary["total_shares"])
     cout_moyen   = float(summary["cout_moyen"])
 
-    # Stop loss automatique
-    if pnl_pct <= c["stop_loss_pct"]:
+    # Stop loss automatique — seuil ATR (borné par la config utilisateur)
+    if pnl_pct <= seuils["stop_loss_pct"]:
         base = _conseil("VENDRE", total_shares, prix,
-            f"{cd}Stop loss atteint : position à {pnl_pct:+.1f}% (coût moyen {cout_moyen:.2f} $). "
-            f"Limitation des pertes recommandée.")
+            f"{cd}Stop loss atteint : position à {pnl_pct:+.1f}% "
+            f"(seuil {seuils['stop_loss_pct']:+.1f}%, coût moyen {cout_moyen:.2f} $). "
+            f"Limitation des pertes recommandée.{note_atr}")
         return _finalize(base, pnl=pnl_pct)
 
-    # Prise de bénéfices sur signal vendeur fort
-    if pnl_pct >= c["take_profit_pct"] and reco == "VENDRE":
+    # Stop suiveur : la position est en gain mais rend ses acquis.
+    # Le P&L vs prix d'entrée ne le voit pas — on compare au PLUS HAUT
+    # atteint depuis l'achat (high-water mark) : repli > 2×ATR → sécuriser.
+    if seuils["adapte"] and pnl_pct > 0:
+        from portfolio.risk import drawdown_depuis_plus_haut
+        hwm, dd = drawdown_depuis_plus_haut(hist_px, summary.get("lots"), prix)
+        if dd is not None and dd <= -(TRAIL_ATR_MULT * atr):
+            alleger = max(1, round(total_shares * 0.5))
+            base = _conseil("ALLÉGER", alleger, prix,
+                f"{cd}Position toujours en gain ({pnl_pct:+.1f}%) mais repli de "
+                f"{dd:+.1f}% depuis le plus haut ({hwm:.2f} $) — soit plus de "
+                f"{TRAIL_ATR_MULT:.0f}× le bruit quotidien du titre (ATR {atr:.1f}%). "
+                f"Sécuriser la moitié des gains recommandé.")
+            return _finalize(base, pnl=pnl_pct)
+
+    # Prise de bénéfices sur signal vendeur fort — objectif ATR
+    if pnl_pct >= seuils["take_profit_pct"] and reco == "VENDRE":
         alleger = max(1, round(total_shares * 0.5))
         base = _conseil("ALLÉGER", alleger, prix,
-            f"{cd}Plus-value de {pnl_pct:+.1f}% + signal SDE baissier ({score:.0f}/100). "
-            f"Sécurisation de la moitié de la position recommandée.")
+            f"{cd}Plus-value de {pnl_pct:+.1f}% (objectif {seuils['take_profit_pct']:+.1f}%) "
+            f"+ signal SDE baissier ({score:.0f}/100). "
+            f"Sécurisation de la moitié de la position recommandée.{note_atr}")
         return _finalize(base, pnl=pnl_pct)
 
     # Signal vendeur fort sans plus-value importante
@@ -162,12 +194,14 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
             f"Sortie de position recommandée (P&L actuelle : {pnl_pct:+.1f}%).")
         return _finalize(base, pnl=pnl_pct)
 
-    # Renforcement sur faiblesse
-    if pnl_pct <= c["pnl_renforcer"] and reco == "ACHETER" and rsi <= c["rsi_renforcer"]:
+    # Renforcement sur faiblesse — la "faiblesse" est mesurée en ATR :
+    # -5% n'est une opportunité que si c'est inhabituel pour ce titre
+    if pnl_pct <= seuils["pnl_renforcer"] and reco == "ACHETER" and rsi <= c["rsi_renforcer"]:
         renforcer = max(1, round(total_shares * 0.25))
         base = _conseil("RENFORCER", renforcer, prix,
             f"{cd}RSI bas ({rsi:.0f}) + signal SDE haussier ({score:.0f}/100). "
-            f"Opportunité de renforcement sur faiblesse ({pnl_pct:+.1f}% de latence).")
+            f"Opportunité de renforcement sur faiblesse ({pnl_pct:+.1f}% de latence, "
+            f"seuil {seuils['pnl_renforcer']:+.1f}%).")
         return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
 
     # Signal haussier confirmé en territoire positif
