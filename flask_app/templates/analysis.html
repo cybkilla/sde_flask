@@ -524,6 +524,64 @@
 
 <!-- ══ ACCORDÉONS ════════════════════════════════════════════════════════════ -->
 
+{# ── Poids calibrés par ticker — absent des vieux snapshots ── #}
+{% if res.get('calibration') %}
+<div class="accordion mb-2" id="accordionCalib">
+  <div class="accordion-item" style="border:1px solid var(--sde-border);border-radius:var(--sde-radius)">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed py-2" type="button"
+              data-bs-toggle="collapse" data-bs-target="#collapseCalib"
+              style="font-size:.82rem;background:var(--sde-card);border-radius:var(--sde-radius)">
+        <span class="sde-section-title mb-0 me-2">
+          <i class="bi bi-sliders me-1"></i>Poids calibrés pour ce titre
+        </span>
+        <span class="badge rounded-pill" style="font-size:.7rem;background:#6366F1">
+          {{ res.calibration|length }} ajustés
+        </span>
+      </button>
+    </h2>
+    <div id="collapseCalib" class="accordion-collapse collapse">
+      <div class="accordion-body p-0">
+        <p class="text-muted small px-3 pt-2 mb-1">
+          Le score technique de ce titre n'utilise pas les poids standards :
+          chaque critère est modulé par sa fiabilité mesurée sur 2 ans
+          ({{ res.get('calibration_periode', '') }}) — atténué s'il s'est trompé,
+          renforcé s'il a fait ses preuves, jamais inversé.
+        </p>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0" style="font-size:.76rem">
+            <thead class="table-light">
+              <tr><th>Signal</th><th class="text-center">Poids standard</th>
+                  <th class="text-center">Poids calibré</th>
+                  <th class="text-center">Fiabilité mesurée</th></tr>
+            </thead>
+            <tbody>
+              {% for c in res.calibration %}
+              <tr>
+                <td>{{ c.label }}</td>
+                <td class="text-center" style="color:{{ '#1D9E75' if c.poids_base > 0 else '#D85A30' }}">
+                  {{ '%+.0f'|format(c.poids_base) }}</td>
+                <td class="text-center" style="font-weight:600;color:{{ '#1D9E75' if c.poids_ajuste > 0 else '#D85A30' }}">
+                  {{ '%+.1f'|format(c.poids_ajuste) }}
+                  <span style="color:var(--sde-muted);font-weight:400;font-size:.7rem">(×{{ c.facteur }})</span></td>
+                <td class="text-center" style="color:var(--sde-muted)">
+                  {{ c.hit_pct }}&thinsp;% sur {{ c.n_episodes }} épisodes</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <p class="text-muted px-3 py-2 mb-0" style="font-size:.7rem">
+          Garde-fous : fiabilité tirée vers 50&thinsp;% selon le nombre d'épisodes (shrinkage),
+          multiplicateur borné [0&thinsp;; 1.5], aucun changement sous 8 épisodes.
+          Le backtest, lui, mesure toujours les poids standards (sinon la mesure serait circulaire).
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% if signals_list %}
 <div class="accordion mb-2" id="accordionSignals">
   <div class="accordion-item" style="border:1px solid var(--sde-border);border-radius:var(--sde-radius)">

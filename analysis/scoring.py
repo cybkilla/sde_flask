@@ -53,14 +53,18 @@ TECH_LABELS = {
 
 
 # ── Score technique (Jours 4-5) ───────────────────────────
-def score_technique(data: dict) -> dict:
+def score_technique(data: dict, weights: pd.Series = None) -> dict:
     """
     Calcule le score technique depuis le DataFrame Pandas enrichi.
 
     Paramètres
     ----------
-    data : dict retourné par get_market_data()
-           data['history'] est le DataFrame OHLCV + indicateurs.
+    data    : dict retourné par get_market_data()
+              data['history'] est le DataFrame OHLCV + indicateurs.
+    weights : poids alternatifs (ex. calibrés par ticker via
+              analysis/calibration.py). None → TECH_WEIGHTS manuels.
+              Le backtest n'utilise JAMAIS ce paramètre : l'attribution
+              doit être mesurée sur les poids de base (sinon circularité).
 
     Retour
     ------
@@ -79,7 +83,8 @@ def score_technique(data: dict) -> dict:
     # --- Contribution de chaque signal au score --------
     # Les poids {nom: +/- points} vivent au niveau module (TECH_WEIGHTS)
     # Pandas permet de vectoriser la somme finale proprement.
-    weights = TECH_WEIGHTS
+    if weights is None:
+        weights = TECH_WEIGHTS
 
     # Intersection : ne prend que les signaux activés
     # signals_series est un pd.Series booléen {nom: True/False}

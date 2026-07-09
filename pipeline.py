@@ -99,7 +99,21 @@ def run(ticker: str, use_cache: bool = True) -> dict:
     ins_score = get_insider_score(df_tx)
 
     # ── Étape 4 : calcul des 3 scores ─────────────────────
-    tech  = score_technique(market)
+    # Calibration adaptative : les poids techniques sont modulés par la
+    # fiabilité mesurée de chaque signal SUR CE TICKER (attribution du
+    # backtest 2 ans, shrinkage + bornes). Défensif : sans backtest
+    # disponible, poids manuels — l'analyse ne casse jamais pour ça.
+    calibration = None
+    try:
+        from analysis.calibration import poids_calibres
+        calibration = poids_calibres(ticker)
+    except Exception as e:
+        print(f"[Pipeline] calibration ignorée : {e}", flush=True)
+
+    tech = score_technique(
+        market,
+        weights=calibration["weights"] if calibration else None,
+    )
     fund  = score_fondamental(market)
     media_block  = compute_media_score(sentiment, ins_score, df_events)
     media        = media_block["score"]
@@ -164,6 +178,10 @@ def run(ticker: str, use_cache: bool = True) -> dict:
         "score_brut":     g_score_brut,     # score avant contexte marché
         "market_regime":  regime_ctx,       # dict régime QQQ (ou None)
         "regime_effet":   regime_effet,     # {score_brut, score_ajuste, delta}
+        # Détail des poids calibrés par ticker (liste sérialisable, ou None).
+        # On ne stocke PAS la Series weights (inutile en aval, non-JSON).
+        "calibration":    calibration["detail"] if calibration else None,
+        "calibration_periode": calibration["periode"] if calibration else None,
         # Scores détaillés
         "score_tech":     tech["score"],
         "score_fund":     fund["score"],
