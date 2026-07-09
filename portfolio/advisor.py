@@ -100,11 +100,6 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
     hist_px = market.get("history")
     atr     = atr_pct(hist_px)
     seuils  = seuils_adaptes(c, atr)
-    note_atr = (
-        f" Seuils adaptés à la volatilité du titre (ATR {atr:.1f}%/j) : "
-        f"stop {seuils['stop_loss_pct']:+.1f}%, objectif {seuils['take_profit_pct']:+.1f}%."
-        if seuils["adapte"] else ""
-    )
 
     # Dates pour préfixer chaque ligne du raisonnement
     conseil_date_str = date.today().strftime("%d.%m.%Y")
@@ -136,6 +131,16 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
                 f"(QQQ {mr.get('var_5j', 0):+.1f}% sur 5j) — "
                 f"le score SDE intègre déjà cette prudence."
             )
+        # Seuils ATR : affichés sur TOUT conseil avec position (pnl fourni),
+        # pas seulement quand un seuil se déclenche — l'utilisateur doit voir
+        # en permanence à quels niveaux SDE réagira pour CE titre.
+        if seuils["adapte"] and pnl is not None:
+            r["raisonnement"] += (
+                f"<br>{cd}Seuils adaptés à la volatilité du titre "
+                f"(ATR {atr:.1f}%/j) : stop {seuils['stop_loss_pct']:+.1f}%, "
+                f"objectif {seuils['take_profit_pct']:+.1f}%, "
+                f"renforcement sous {seuils['pnl_renforcer']:+.1f}%."
+            )
         return r
 
     # ── Cas 1 : pas de position ───────────────────────────────────────────────
@@ -160,7 +165,7 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
         base = _conseil("VENDRE", total_shares, prix,
             f"{cd}Stop loss atteint : position à {pnl_pct:+.1f}% "
             f"(seuil {seuils['stop_loss_pct']:+.1f}%, coût moyen {cout_moyen:.2f} $). "
-            f"Limitation des pertes recommandée.{note_atr}")
+            f"Limitation des pertes recommandée.")
         return _finalize(base, pnl=pnl_pct)
 
     # Stop suiveur : la position est en gain mais rend ses acquis.
@@ -184,7 +189,7 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
         base = _conseil("ALLÉGER", alleger, prix,
             f"{cd}Plus-value de {pnl_pct:+.1f}% (objectif {seuils['take_profit_pct']:+.1f}%) "
             f"+ signal SDE baissier ({score:.0f}/100). "
-            f"Sécurisation de la moitié de la position recommandée.{note_atr}")
+            f"Sécurisation de la moitié de la position recommandée.")
         return _finalize(base, pnl=pnl_pct)
 
     # Signal vendeur fort sans plus-value importante
