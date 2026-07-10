@@ -254,6 +254,57 @@ def save_targets(ticker: str):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@bp.route("/targets/suggest/<ticker>")
+@login_required
+def suggest_targets(ticker: str):
+    """
+    Niveaux TP/SL suggérés depuis les seuils ATR du conseil — les MÊMES
+    calculs que l'advisor (atr_pct + seuils_adaptes bornés par la config
+    utilisateur), convertis en prix absolus depuis le coût moyen de la
+    position. L'utilisateur garde la main : la route ne fait que suggérer,
+    c'est lui qui enregistre.
+    """
+    ticker = ticker.upper()
+    try:
+        from snapshot                 import get_snapshot, MAX_AGE_HOURS
+        from portfolio.positions      import get_portfolio_summary
+        from portfolio.risk           import atr_pct, seuils_adaptes
+        from portfolio.config_advisor import get_config
+        from data.market              import get_live_price
+
+        snap = get_snapshot(ticker, max_age_hours=MAX_AGE_HOURS)
+        if not snap:
+            return jsonify({"ok": False,
+                            "error": "Analyse SDE non disponible — lance d'abord une analyse"})
+
+        prix = (get_live_price(ticker) or {}).get("price") \
+               or snap.get("market", {}).get("price") or 0
+        summary = get_portfolio_summary(current_user.id, ticker, prix)
+        if not summary or summary.get("position_fermee"):
+            return jsonify({"ok": False, "error": "Aucune position ouverte"})
+
+        atr    = atr_pct(snap.get("market", {}).get("history"))
+        seuils = seuils_adaptes(get_config(current_user.id), atr)
+        if not seuils["adapte"]:
+            return jsonify({"ok": False,
+                            "error": "ATR indisponible (historique insuffisant)"})
+
+        # Les seuils sont des % de P&L vs COÛT MOYEN (mêmes bases que
+        # l'advisor) → conversion en prix absolus pour les champs TP/SL
+        cout = float(summary["cout_moyen"])
+        return jsonify({
+            "ok":        True,
+            "atr_pct":   atr,
+            "cout_moyen": round(cout, 4),
+            "stop_loss":   round(cout * (1 + seuils["stop_loss_pct"]   / 100), 4),
+            "take_profit": round(cout * (1 + seuils["take_profit_pct"] / 100), 4),
+            "sl_pct":    seuils["stop_loss_pct"],
+            "tp_pct":    seuils["take_profit_pct"],
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 # ── Conseil du jour ───────────────────────────────────────────────────────────
 
 @bp.route("/advice/<ticker>/reset", methods=["POST"])

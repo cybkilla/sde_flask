@@ -792,12 +792,23 @@
                      text-transform:uppercase;letter-spacing:.05em">
           <i class="bi bi-bullseye me-1"></i>Objectifs de prix
         </span>
-        <button onclick="sdePortfolio.saveTargets()"
-                style="font-size:.72rem;background:#6366F1;color:#fff;
-                       border:none;border-radius:6px;padding:3px 10px;cursor:pointer;font-weight:600">
-          Enregistrer
-        </button>
+        <span>
+          <button onclick="sdePortfolio.suggestTargets()" id="sde-suggest-btn"
+                  title="Pré-remplir avec les seuils ATR du conseil SDE (à valider par Enregistrer)"
+                  style="font-size:.72rem;background:#fff;color:#6366F1;
+                         border:1px solid #6366F1;border-radius:6px;
+                         padding:3px 10px;cursor:pointer;font-weight:600;margin-right:6px">
+            ⚡ Seuils SDE
+          </button>
+          <button onclick="sdePortfolio.saveTargets()"
+                  style="font-size:.72rem;background:#6366F1;color:#fff;
+                         border:none;border-radius:6px;padding:3px 10px;cursor:pointer;font-weight:600">
+            Enregistrer
+          </button>
+        </span>
       </div>
+      <div id="sde-suggest-note" style="font-size:.7rem;color:var(--sde-muted);
+                                        margin-bottom:6px;display:none"></div>
 
       <!-- Barre visuelle SL → Prix actuel → TP -->
       <div id="sde-targets-bar" class="mb-3" style="display:none"></div>
@@ -1415,6 +1426,41 @@ window.sdePortfolio = (function () {
       </div>`;
   }
 
+  function suggestTargets() {
+    // Pré-remplit TP/SL avec les seuils ATR calculés par l'advisor —
+    // suggestion seulement : rien n'est sauvé tant que l'utilisateur
+    // ne clique pas Enregistrer (il garde la décision finale).
+    const btn  = document.getElementById("sde-suggest-btn");
+    const note = document.getElementById("sde-suggest-note");
+    btn.disabled = true;
+    fetch(`/portfolio/targets/suggest/${TICKER}`)
+      .then(r => r.json()).then(d => {
+        btn.disabled = false;
+        if (!d.ok) {
+          note.style.display = "";
+          note.innerHTML = `<span style="color:#D85A30">${d.error}</span>`;
+          return;
+        }
+        document.getElementById("sde-sl-input").value = d.stop_loss;
+        document.getElementById("sde-tp-input").value = d.take_profit;
+        // Déclenche les listeners 'input' → barre visuelle + distances
+        document.getElementById("sde-sl-input").dispatchEvent(new Event("input"));
+        document.getElementById("sde-tp-input").dispatchEvent(new Event("input"));
+        note.style.display = "";
+        note.innerHTML =
+          `Suggestion SDE depuis le coût moyen ${SYM}${d.cout_moyen} et la volatilité ` +
+          `du titre (ATR ${d.atr_pct}%/j) : stop ${d.sl_pct}% → <strong style="color:#D85A30">` +
+          `${SYM}${d.stop_loss}</strong> · objectif +${d.tp_pct}% → ` +
+          `<strong style="color:#1D9E75">${SYM}${d.take_profit}</strong>. ` +
+          `Cliquer <strong>Enregistrer</strong> pour activer les alertes.`;
+      })
+      .catch(() => {
+        btn.disabled = false;
+        note.style.display = "";
+        note.innerHTML = `<span style="color:#D85A30">Erreur de suggestion.</span>`;
+      });
+  }
+
   function saveTargets() {
     const tp = parseFloat(document.getElementById("sde-tp-input").value) || null;
     const sl = parseFloat(document.getElementById("sde-sl-input").value) || null;
@@ -1457,7 +1503,7 @@ window.sdePortfolio = (function () {
     loadAdvice();   // appelle loadPositions() en fin de chaîne, qui appelle loadTargets() si position active
   });
 
-  return { openAddModal, submitAdd, deletePos, refreshAdvice, setPosType, saveTargets };
+  return { openAddModal, submitAdd, deletePos, refreshAdvice, setPosType, saveTargets, suggestTargets };
 })();
 {% endif %}
 
