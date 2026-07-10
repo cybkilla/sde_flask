@@ -13,4 +13,10 @@ from flask_app import create_app
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000, host="0.0.0.0")
+    # debug opt-in (FLASK_DEBUG=1 dans .env) : la console Werkzeug du mode
+    # debug permet d'EXÉCUTER du code arbitraire — combinée à host=0.0.0.0
+    # (nécessaire pour accéder à l'app depuis l'hôte du conteneur), elle
+    # serait exposée à tout le réseau local si activée par défaut.
+    import os
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    app.run(debug=debug, port=5000, host="0.0.0.0")

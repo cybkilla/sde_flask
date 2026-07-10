@@ -13,7 +13,14 @@ _ADMIN_EMAILS = [e.strip() for e in os.getenv("ADMIN_EMAILS", "").split(",") if 
 def _require_admin():
     if not current_user.is_authenticated:
         abort(403)
-    if _ADMIN_EMAILS and current_user.email not in _ADMIN_EMAILS:
+    # Fail-closed : sans ADMIN_EMAILS configurée, PERSONNE n'est admin.
+    # (L'ancien `if _ADMIN_EMAILS and ...` faisait l'inverse : liste vide
+    # → tout utilisateur connecté devenait admin, silencieusement.)
+    if not _ADMIN_EMAILS:
+        print("[Admin] ADMIN_EMAILS non configurée — accès admin refusé "
+              "à tous (fail-closed)", flush=True)
+        abort(403)
+    if current_user.email not in _ADMIN_EMAILS:
         abort(403)
 
 
@@ -300,4 +307,5 @@ def stats():
         return jsonify({"ok": True, "eval": eval_result, "stats": global_stats})
     except Exception as e:
         import traceback
-        return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
+        print(traceback.format_exc(), flush=True)   # trace dans les logs, PAS au client
+        return jsonify({"ok": False, "error": "Erreur interne — voir les logs serveur."}), 500

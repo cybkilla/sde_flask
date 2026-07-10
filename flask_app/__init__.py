@@ -19,13 +19,46 @@ csrf          = CSRFProtect()
 def create_app() -> Flask:
     app = Flask(__name__)
 
-    app.config["SECRET_KEY"]                 = os.getenv("FLASK_SECRET_KEY", "changez_moi_en_production")
+    # ── Secret de session : JAMAIS de valeur par défaut fixe ─────────
+    # Un fallback codé en dur rend les sessions FORGEABLES (n'importe qui
+    # peut signer un cookie admin) si la variable d'env manque un jour —
+    # et l'app démarrerait sans rien signaler. En production (Render) :
+    # refus de démarrer. En dev : clé aléatoire (sessions perdues au
+    # restart, mais jamais forgeables).
+    _secret = os.getenv("FLASK_SECRET_KEY")
+    if not _secret:
+        if os.getenv("RENDER"):
+            raise RuntimeError(
+                "FLASK_SECRET_KEY manquante — refus de démarrer en production"
+            )
+        import secrets as _secrets
+        _secret = _secrets.token_hex(32)
+        print("[Config] FLASK_SECRET_KEY absente — clé aléatoire de dev "
+              "générée (les sessions ne survivront pas au restart)", flush=True)
+    app.config["SECRET_KEY"]                 = _secret
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
     app.config["SESSION_COOKIE_HTTPONLY"]    = True
     app.config["SESSION_COOKIE_SAMESITE"]    = "Lax"
+    # Cookie transmis uniquement en HTTPS — activé en prod (Render force
+    # TLS) ; pas en dev local (http://localhost casserait la session)
+    app.config["SESSION_COOKIE_SECURE"]      = bool(os.getenv("RENDER"))
     app.config["WTF_CSRF_TIME_LIMIT"]       = None
 
     csrf.init_app(app)
+
+    # ── En-têtes de sécurité HTTP sur toutes les réponses ────────────
+    # setdefault : n'écrase jamais un en-tête posé par une route.
+    @app.after_request
+    def _security_headers(resp):
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")   # anti MIME-sniffing
+        resp.headers.setdefault("X-Frame-Options", "DENY")             # anti clickjacking
+        resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        if os.getenv("RENDER"):
+            # HSTS : le navigateur refuse tout HTTP clair pendant 1 an.
+            # Prod uniquement — en local ça « collerait » localhost en HTTPS.
+            resp.headers.setdefault("Strict-Transport-Security",
+                                    "max-age=31536000; includeSubDomains")
+        return resp
 
     login_manager.init_app(app)
     login_manager.login_view             = "auth.login"

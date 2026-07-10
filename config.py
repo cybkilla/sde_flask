@@ -128,10 +128,7 @@ ALERT_VAR_THRESHOLD = 5
 # Intervalle entre deux vérifications du scheduler (en minutes)
 CHECK_INTERVAL_MIN  = 60
  
-# ── Auth — cookie Streamlit ───────────────────────────────
-# Clé secrète pour signer les cookies de session
-# Changer cette valeur en production
-AUTH_COOKIE_KEY  = "stockengine_secret_key_changez_moi"
-AUTH_COOKIE_NAME = "stockengine_auth"
-AUTH_COOKIE_DAYS = 30
+# (Les anciennes constantes AUTH_COOKIE_* de l'ère Streamlit ont été
+#  supprimées : plus utilisées depuis la migration Flask, et la fausse
+#  "clé secrète" en dur déclenchait les scanners de sécurité pour rien.)
  

@@ -417,4 +417,5 @@ def get_advice(ticker: str):
 
     except Exception as e:
         import traceback
-        return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
+        print(traceback.format_exc(), flush=True)   # trace dans les logs, PAS au client
+        return jsonify({"ok": False, "error": "Erreur interne — voir les logs serveur."}), 500

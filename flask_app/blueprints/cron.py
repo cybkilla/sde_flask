@@ -11,7 +11,11 @@ _lock = threading.Lock()
 
 def _check_secret() -> bool:
     token = request.headers.get("X-Cron-Secret") or request.args.get("secret", "")
-    return bool(CRON_SECRET) and token == CRON_SECRET
+    # hmac.compare_digest : comparaison en temps constant — un == classique
+    # s'arrête au premier caractère faux et laisse fuiter, octet par octet,
+    # le préfixe correct via le temps de réponse (attaque temporelle)
+    import hmac
+    return bool(CRON_SECRET) and hmac.compare_digest(token, CRON_SECRET)
 
 
 @bp.route("/run", methods=["GET", "POST"])
@@ -90,7 +94,8 @@ def test_email():
         return jsonify({"ok": True, "message": f"Email de test envoyé à {to_email}"}), 200
     except Exception as e:
         import traceback
-        return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
+        print(traceback.format_exc(), flush=True)   # trace dans les logs, PAS au client
+        return jsonify({"ok": False, "error": "Erreur interne — voir les logs serveur."}), 500
 
 
 @bp.route("/test-weekly", methods=["GET", "POST"])
@@ -125,4 +130,5 @@ def test_weekly():
         return jsonify({"ok": True, "message": f"Rapport hebdo envoyé à {to_email} (user={username})"}), 200
     except Exception as e:
         import traceback
-        return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
+        print(traceback.format_exc(), flush=True)   # trace dans les logs, PAS au client
+        return jsonify({"ok": False, "error": "Erreur interne — voir les logs serveur."}), 500
