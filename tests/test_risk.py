@@ -101,6 +101,40 @@ assert drawdown_depuis_plus_haut(hist_dd, [{"type": "vente", "date_achat": "2026
 print("✓ drawdown : sommet depuis l'achat, prix live inclus, cas limites propres")
 
 
+# ── gap_significatif : seuil adapté à la volatilité du titre ──
+from portfolio.risk import gap_significatif
+# TMC (ATR 6.4) : -5% est du bruit pré-marché, -7% est significatif
+assert gap_significatif(-5.0, 6.4) is False
+assert gap_significatif(-7.0, 6.4) is True
+# Titre calme (ATR 1.2) : le plancher de 2% s'applique
+assert gap_significatif(-2.5, 1.2) is True
+assert gap_significatif(-1.5, 1.2) is False
+# Sans ATR : seuil prudent 3%
+assert gap_significatif(2.9, None) is False and gap_significatif(3.1, None) is True
+# Gap inconnu → jamais significatif (pas de faux déclenchement)
+assert gap_significatif(None, 5.0) is False
+print("✓ gap_significatif : seuil max(2%, 1×ATR), prudent sans données")
+
+
+# ── Ligne Pré-marché dans le raisonnement du conseil ──
+from portfolio.advisor import generate_advice
+_hist_gap = make_ohlc(0.05)
+_market   = {"price": float(_hist_gap["Close"].iloc[-1]), "rsi": 50.0,
+             "history": _hist_gap, "gap_overnight": -7.2}
+_summary  = {"pnl_pct": 5.0, "total_shares": 100, "cout_moyen": 100.0,
+             "lots": [{"type": "achat", "date_achat": "2026-04-01"}]}
+_snap     = {"score_global": 50.0, "recommandation": "NEUTRE",
+             "signals_tech": [], "signals_fund": []}
+adv = generate_advice(_summary, _market, _snap)
+assert "Pré-marché : -7.2%" in adv["raisonnement"], "la ligne gap doit apparaître"
+assert "baissier" in adv["raisonnement"]
+# Sans gap : pas de ligne (la clé absente ne doit rien afficher)
+_market.pop("gap_overnight")
+adv2 = generate_advice(_summary, _market, _snap)
+assert "Pré-marché" not in adv2["raisonnement"]
+print("✓ conseil : ligne Pré-marché présente avec gap, absente sans")
+
+
 # ── Cohérence avec l'évaluateur : bande TENIR vol-normalisée ──
 from portfolio.evaluator import _seuil_tenir
 assert _seuil_tenir(20) == 13.4                       # sans ATR : base 3% historique

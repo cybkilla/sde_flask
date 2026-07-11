@@ -131,11 +131,33 @@ def _check_ticker(ticker: str, company: str, username: str, email: str) -> None:
             print(f"  [Targets] TP/SL check erreur ({ticker}) : {e}", flush=True)
 
 
+def _fenetre_premarche() -> bool:
+    """
+    True pendant le pré-marché US en heure de Paris (10h00-15h25, jours
+    ouvrés) — la fenêtre où un gap overnight est mesurable ET où il reste
+    du temps pour réagir avant l'ouverture (15h30).
+    """
+    try:
+        import zoneinfo
+        now = datetime.now(zoneinfo.ZoneInfo("Europe/Paris"))
+        tot = now.hour * 60 + now.minute
+        return now.weekday() < 5 and 10 * 60 <= tot < 15 * 60 + 25
+    except Exception:
+        return False
+
+
 def _check_position_advice(username: str, email: str) -> None:
     """
     Pour chaque ticker où l'utilisateur a une position OUVERTE :
     génère le conseil du jour s'il n'existe pas encore, et envoie un
     email si l'action a changé par rapport au dernier conseil connu.
+
+    Pré-marché : si un gap overnight significatif (≥ max(2%, 1×ATR))
+    rend obsolète un conseil déjà généré, il est invalidé et régénéré
+    avec le prix pré-marché — les règles ATR (stop, trailing…) réagissent
+    au gap via le P&L, et l'email de changement part AVANT l'ouverture.
+    Anti flip-flop : une seule réévaluation par jour (marqueur
+    'Pré-marché' dans le raisonnement).
     """
     from db import find, is_available
     if not is_available():
@@ -149,20 +171,53 @@ def _check_position_advice(username: str, email: str) -> None:
         if t:
             tickers.setdefault(t, l.get("company") or t)
 
+    premarche = _fenetre_premarche()
+
     for ticker, company in tickers.items():
         try:
             from data.market       import get_live_price
-            from portfolio.advisor import ensure_today_advice, get_previous_advice
+            from portfolio.advisor import (ensure_today_advice, get_previous_advice,
+                                           get_today_advice, delete_today_advice)
 
-            prix_live = (get_live_price(ticker) or {}).get("price") or 0
+            live      = get_live_price(ticker) or {}
+            prix_live = live.get("price") or 0
             if not prix_live:
                 continue
 
-            advice, created = ensure_today_advice(username, ticker, prix_live)
+            # ── Gap overnight (pré-marché uniquement) ─────────────────
+            gap_pct = None
+            if premarche and live.get("prev_close"):
+                gap = live.get("var_1d")     # prix pré-marché vs clôture veille
+                from portfolio.risk import gap_significatif
+                from snapshot import get_snapshot, MAX_AGE_HOURS
+                snap_gap = get_snapshot(ticker, max_age_hours=MAX_AGE_HOURS)
+                atr = None
+                if snap_gap:
+                    from portfolio.risk import atr_pct
+                    atr = atr_pct(snap_gap.get("market", {}).get("history"))
+                if gap_significatif(gap, atr):
+                    gap_pct = gap
+
+            # Conseil du jour déjà généré + gap significatif + pas encore
+            # réévalué aujourd'hui → invalider et régénérer avec le gap
+            ancienne_action = None
+            if gap_pct is not None:
+                existant = get_today_advice(username, ticker)
+                if existant and "Pré-marché" not in (existant.get("raisonnement") or ""):
+                    ancienne_action = existant.get("action")
+                    delete_today_advice(username, ticker)
+                    print(f"  [Advice] {ticker} : gap pré-marché {gap_pct:+.1f}% "
+                          f"— conseil réévalué", flush=True)
+
+            advice, created = ensure_today_advice(username, ticker, prix_live,
+                                                  gap_pct=gap_pct)
             if not created or not advice:
                 continue          # déjà généré (page visitée) ou données manquantes
 
-            prev = get_previous_advice(username, ticker)
+            # Référence de comparaison : le conseil invalidé du jour si
+            # réévaluation sur gap, sinon le dernier conseil d'avant
+            prev = ({"action": ancienne_action} if ancienne_action
+                    else get_previous_advice(username, ticker))
             if prev and email and prev.get("action") != advice.get("action"):
                 print(f"  [Advice] {ticker} : {prev['action']} → {advice['action']} "
                       f"— email à {username}", flush=True)

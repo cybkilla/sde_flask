@@ -87,6 +87,23 @@ def seuils_adaptes(cfg: dict, atr: float | None) -> dict:
     return out
 
 
+def gap_significatif(gap_pct, atr) -> bool:
+    """
+    Le gap overnight (prix pré-marché vs clôture de la veille) mérite-t-il
+    une réévaluation du conseil ? Fonction PURE.
+
+    Seuil = max(2%, 1×ATR) : le pré-marché des small caps est illiquide —
+    un print à -5% sur 200 actions échangées est du bruit si le titre
+    bouge de 6%/jour en temps normal. Sur TMC (ATR 6.4%) il faut ±6.4%
+    pour déclencher ; sur un titre calme, ±2% suffit.
+    Sans ATR (None) : seuil fixe 3%, prudent.
+    """
+    if gap_pct is None:
+        return False
+    seuil = max(2.0, float(atr)) if atr else 3.0
+    return abs(float(gap_pct)) >= seuil
+
+
 def drawdown_depuis_plus_haut(hist: pd.DataFrame, lots: list, prix: float):
     """
     Repli du cours actuel par rapport au PLUS HAUT atteint depuis

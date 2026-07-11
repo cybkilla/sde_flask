@@ -131,6 +131,18 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
                 f"(QQQ {mr.get('var_5j', 0):+.1f}% sur 5j) — "
                 f"le score SDE intègre déjà cette prudence."
             )
+        # Gap overnight : quand le conseil est (re)généré en pré-marché sur
+        # un écart significatif vs la clôture de la veille, on l'explique —
+        # le gap a déjà traversé les règles via le prix live (P&L, stop…),
+        # cette ligne dit POURQUOI le conseil a pu changer avant l'ouverture.
+        gap = market.get("gap_overnight")
+        if gap is not None:
+            sens_gap = "haussier" if gap > 0 else "baissier"
+            r["raisonnement"] += (
+                f"<br>{cd}Pré-marché : {gap:+.1f}% vs clôture de la veille "
+                f"— gap {sens_gap} attendu à l'ouverture, conseil réévalué "
+                f"avant la séance."
+            )
         # Seuils ATR : affichés sur TOUT conseil avec position (pnl fourni),
         # pas seulement quand un seuil se déclenche — l'utilisateur doit voir
         # en permanence à quels niveaux SDE réagira pour CE titre.
@@ -353,7 +365,28 @@ def get_previous_advice(username: str, ticker: str) -> dict | None:
         return None
 
 
-def ensure_today_advice(username: str, ticker: str, prix_live: float):
+def delete_today_advice(username: str, ticker: str) -> bool:
+    """
+    Invalide le conseil du jour — utilisé par le scheduler quand un gap
+    pré-marché significatif rend obsolète un conseil généré plus tôt.
+    """
+    try:
+        import db
+        from db import _init, is_available
+        if not is_available():
+            return False
+        _init()
+        db._client.table(_TABLE).delete() \
+            .eq("username", username).eq("ticker", ticker.upper()) \
+            .eq("date_conseil", str(date.today())).execute()
+        return True
+    except Exception as e:
+        print(f"[Advisor] delete_today_advice erreur : {e}", flush=True)
+        return False
+
+
+def ensure_today_advice(username: str, ticker: str, prix_live: float,
+                        gap_pct: float = None):
     """
     Garantit qu'un conseil existe pour aujourd'hui — appelé par le
     scheduler pour les tickers en POSITION, afin que le conseil quotidien
@@ -391,6 +424,11 @@ def ensure_today_advice(username: str, ticker: str, prix_live: float):
             return None, False       # conseil "position" seulement
 
         market = {**snap.get("market", {}), "price": prix_live or snap["market"].get("price")}
+        # Gap pré-marché (fourni par le scheduler pendant la fenêtre
+        # 10h-15h25 Paris) : le prix live gappé traverse déjà les règles
+        # via le P&L — cette clé ne sert qu'à l'EXPLIQUER dans le texte.
+        if gap_pct is not None:
+            market["gap_overnight"] = gap_pct
 
         # Pattern chandelier — même construction que la route portfolio
         candle_info = None
