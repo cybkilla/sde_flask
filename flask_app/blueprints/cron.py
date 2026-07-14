@@ -126,7 +126,10 @@ def test_weekly():
 
         watchlist = get_watchlist(username) or []
         from alerts.weekly_report import send_weekly_report
-        send_weekly_report(username, to_email, watchlist)
+        # mark=False : un TEST ne doit pas consommer le créneau
+        # anti-doublon de la semaine (sinon l'envoi réel du dimanche
+        # est sauté en silence)
+        send_weekly_report(username, to_email, watchlist, mark=False)
         return jsonify({"ok": True, "message": f"Rapport hebdo envoyé à {to_email} (user={username})"}), 200
     except Exception as e:
         import traceback

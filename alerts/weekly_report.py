@@ -135,8 +135,15 @@ def _get_week_advice_stats(username: str) -> dict:
 
 # ── Email ─────────────────────────────────────────────────────────────────────
 
-def send_weekly_report(username: str, email: str, watchlist: list):
-    """Construit et envoie le rapport hebdomadaire."""
+def send_weekly_report(username: str, email: str, watchlist: list,
+                       mark: bool = True):
+    """
+    Construit et envoie le rapport hebdomadaire.
+    mark=False pour les envois de TEST : sinon le test consomme le
+    créneau anti-doublon de la semaine et l'envoi réel du dimanche
+    est silencieusement sauté (vécu : test jeudi 09.07 → pas de
+    rapport pour admin le dimanche 12.07).
+    """
     from data.market         import get_live_price
     from portfolio.positions import get_positions, get_portfolio_summary
 
@@ -425,5 +432,7 @@ def send_weekly_report(username: str, email: str, watchlist: list):
         "subject": f"[SDE] Rapport hebdomadaire · semaine du {week_label}",
         "html":    body,
     })
-    mark_sent(username)
-    print(f"[Weekly] Rapport envoyé à {email} (semaine {week_label})", flush=True)
+    if mark:
+        mark_sent(username)
+    print(f"[Weekly] Rapport envoyé à {email} (semaine {week_label}, "
+          f"anti-doublon {'posé' if mark else 'NON posé — test'})", flush=True)
