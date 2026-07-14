@@ -154,6 +154,30 @@ assert "maintien de la position" not in adv_tmc["raisonnement"], \
 assert "allégement préventif de 25%" in adv_tmc["raisonnement"]
 print("✓ surclassement chandelier : texte cohérent avec l'action (cas TMC 14.07)")
 
+# INVALIDATION par le rebond du jour : même pattern baissier, mais le
+# titre rebondit de +5.5% sur la séance en cours → le pattern de la
+# veille est contredit, PAS d'allégement (cas du recalcul TMC 14.07).
+# prix = plus haut de l'historique : neutralise la règle trailing
+# (drawdown 0) pour isoler la règle chandelier testée ici.
+_prix_hwm = float(_m_tmc["history"]["Close"].max()) * 1.01
+_m_rebond = {**_m_tmc, "price": _prix_hwm, "var_1d": 5.5}
+_s_rebond = {**_s_tmc, "pnl_pct": 5.0}
+adv_rebond = generate_advice(_s_rebond, _m_rebond, _snap_tmc, candle_info=_candle_bear)
+assert adv_rebond["action"] == "TENIR", \
+    f"rebond +5.5% doit invalider le pattern baissier, obtenu {adv_rebond['action']}"
+assert "signal probablement invalidé" in adv_rebond["raisonnement"]
+
+# Petit rebond (+1%) : sous le seuil de 2% → l'allégement reste conseillé
+_m_petit = {**_m_tmc, "var_1d": 1.0}
+adv_petit = generate_advice(_s_tmc, _m_petit, _snap_tmc, candle_info=_candle_bear)
+assert adv_petit["action"] == "ALLÉGER"
+
+# var_1d absent (vieux snapshot) → comportement historique conservé
+_m_sans = {k: v for k, v in _m_tmc.items() if k != "var_1d"}
+adv_sans = generate_advice(_s_tmc, _m_sans, _snap_tmc, candle_info=_candle_bear)
+assert adv_sans["action"] == "ALLÉGER"
+print("✓ invalidation : rebond ≥2% → TENIR, petit rebond ou var inconnu → ALLÉGER")
+
 
 # ── Cohérence avec l'évaluateur : bande TENIR vol-normalisée ──
 from portfolio.evaluator import _seuil_tenir

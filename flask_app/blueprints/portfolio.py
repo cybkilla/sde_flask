@@ -356,7 +356,13 @@ def get_advice(ticker: str):
             if not snap:
                 return jsonify({"ok": False, "error": "Analyse SDE non disponible — lance d'abord une analyse"}), 404
 
-            market  = {**snap.get("market", {}), "price": price or snap["market"].get("price")}
+            # Prix ET variation du jour LIVE — le var_1d du snapshot date
+            # de sa génération (souvent la veille) : un pattern baissier
+            # d'hier doit pouvoir être invalidé par le rebond d'aujourd'hui
+            market  = {**snap.get("market", {}),
+                       "price": price or snap["market"].get("price")}
+            if live.get("var_1d") is not None:
+                market["var_1d"] = live["var_1d"]
             summary = get_portfolio_summary(current_user.id, ticker, price)
 
             # Pattern chandelier depuis l'historique du snapshot

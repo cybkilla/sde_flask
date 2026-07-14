@@ -210,7 +210,8 @@ def _check_position_advice(username: str, email: str) -> None:
                           f"— conseil réévalué", flush=True)
 
             advice, created = ensure_today_advice(username, ticker, prix_live,
-                                                  gap_pct=gap_pct)
+                                                  gap_pct=gap_pct,
+                                                  var_1d=live.get("var_1d"))
             if not created or not advice:
                 continue          # déjà généré (page visitée) ou données manquantes
 

@@ -107,8 +107,12 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
     cd = f"{conseil_date_str} : "
 
     def _finalize(conseil, pnl=None, shares=0, px=0):
+        # var_1d LIVE (fourni par la route / le scheduler) : permet à
+        # _with_candle d'invalider un pattern baissier de la veille
+        # contredit par le rebond de la séance en cours
         r = _with_candle(conseil, candle_info, pnl, score, reco, shares, px,
-                         data_date=data_date_str)
+                         data_date=data_date_str,
+                         var_1d=market.get("var_1d"))
         # Filtrer les signaux dans le sens du conseil final
         action = r["action"]
         if action in ("VENDRE", "ALLÉGER"):
@@ -248,7 +252,7 @@ def _with_candle(conseil: dict, candle_info: dict | None,
                  pnl_pct: float | None,
                  score: float = 50, reco: str = "NEUTRE",
                  total_shares: float = 0, prix: float = 0,
-                 data_date: str = "") -> dict:
+                 data_date: str = "", var_1d: float = None) -> dict:
     """
     Enrichit un conseil de base avec le signal du dernier pattern chandelier.
     Peut modifier l'action (ex. TENIR → ALLÉGER sur signal baissier fort)
@@ -279,6 +283,19 @@ def _with_candle(conseil: dict, candle_info: dict | None,
     if signal == "bearish":
         # TENIR + baissier + P&L pas catastrophique → alléger prudemment
         if action == "TENIR" and pnl_pct is not None and pnl_pct > -10:
+            # INVALIDATION : un pattern de retournement baissier (détecté
+            # sur la clôture de la VEILLE) est contredit par un fort rebond
+            # du jour — vendre 25% pendant que le titre monte de +5% était
+            # l'incohérence TMC du 14.07. Seuil : +2% sur la séance en cours.
+            if var_1d is not None and var_1d >= 2.0:
+                raison = (f"{raison}<br>"
+                          f"{d}Pattern chandelier {label} ({name}) détecté sur la "
+                          f"clôture précédente, mais rebond de {var_1d:+.1f}% sur la "
+                          f"séance en cours — signal probablement invalidé, "
+                          f"pas d'allégement.")
+                return _conseil(action, conseil.get("quantite_suggeree"),
+                                conseil.get("prix_cible"), raison)
+
             alleger = max(1, round(total_shares * 0.25)) if total_shares > 0 else None
             # Le texte de base disait « maintien de la position » : on le
             # retire, sinon la première phrase contredit le badge ALLÉGER
@@ -392,7 +409,7 @@ def delete_today_advice(username: str, ticker: str) -> bool:
 
 
 def ensure_today_advice(username: str, ticker: str, prix_live: float,
-                        gap_pct: float = None):
+                        gap_pct: float = None, var_1d: float = None):
     """
     Garantit qu'un conseil existe pour aujourd'hui — appelé par le
     scheduler pour les tickers en POSITION, afin que le conseil quotidien
@@ -435,6 +452,11 @@ def ensure_today_advice(username: str, ticker: str, prix_live: float,
         # via le P&L — cette clé ne sert qu'à l'EXPLIQUER dans le texte.
         if gap_pct is not None:
             market["gap_overnight"] = gap_pct
+        # var_1d LIVE (pas celui du snapshot, daté de la veille) : sert à
+        # invalider un pattern chandelier baissier contredit par le rebond
+        # de la séance en cours
+        if var_1d is not None:
+            market["var_1d"] = var_1d
 
         # Pattern chandelier — même construction que la route portfolio
         candle_info = None
