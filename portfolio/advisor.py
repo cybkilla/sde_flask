@@ -280,9 +280,15 @@ def _with_candle(conseil: dict, candle_info: dict | None,
         # TENIR + baissier + P&L pas catastrophique → alléger prudemment
         if action == "TENIR" and pnl_pct is not None and pnl_pct > -10:
             alleger = max(1, round(total_shares * 0.25)) if total_shares > 0 else None
+            # Le texte de base disait « maintien de la position » : on le
+            # retire, sinon la première phrase contredit le badge ALLÉGER
+            # (incohérence constatée en prod sur TMC le 14.07.2026)
+            raison = (raison
+                      .replace(" — maintien de la position.", ".")
+                      .replace(" Maintien recommandé, la tendance reste favorable.", ""))
             raison = (f"{raison}<br>"
-                      f"{d}Pattern chandelier {label} ({name}) — allégement partiel conseillé "
-                      f"à court terme.")
+                      f"{d}Pattern chandelier {label} ({name}) — allégement préventif "
+                      f"de 25% de la position conseillé à court terme.")
             return _conseil("ALLÉGER", alleger, prix or None, raison)
 
         # RENFORCER + baissier → revenir à TENIR

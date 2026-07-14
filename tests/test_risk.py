@@ -135,6 +135,26 @@ assert "Pré-marché" not in adv2["raisonnement"]
 print("✓ conseil : ligne Pré-marché présente avec gap, absente sans")
 
 
+# ── Surclassement chandelier : plus de texte contradictoire ──
+# Reproduction du cas TMC 14.07.2026 : base TENIR ('maintien de la
+# position') surclassée en ALLÉGER par un pattern baissier — la première
+# phrase contredisait le badge. Le texte doit maintenant être cohérent.
+_candle_bear = {"signal": "bearish", "pattern": "Étoile du soir",
+                "description": "", "date": "13.07.2026"}
+_m_tmc = {"price": 3.99, "rsi": 45.0, "history": make_ohlc(0.06)}
+_s_tmc = {"pnl_pct": -0.5, "total_shares": 10768, "cout_moyen": 4.01,
+          "lots": [{"type": "achat", "date_achat": "2026-06-01"}]}
+_snap_tmc = {"score_global": 41.4, "recommandation": "VENDRE",
+             "signals_tech": [], "signals_fund": []}
+adv_tmc = generate_advice(_s_tmc, _m_tmc, _snap_tmc, candle_info=_candle_bear)
+assert adv_tmc["action"] == "ALLÉGER"
+assert adv_tmc["quantite_suggeree"] == round(10768 * 0.25)   # 2692
+assert "maintien de la position" not in adv_tmc["raisonnement"], \
+    "le texte TENIR ne doit plus contredire le badge ALLÉGER"
+assert "allégement préventif de 25%" in adv_tmc["raisonnement"]
+print("✓ surclassement chandelier : texte cohérent avec l'action (cas TMC 14.07)")
+
+
 # ── Cohérence avec l'évaluateur : bande TENIR vol-normalisée ──
 from portfolio.evaluator import _seuil_tenir
 assert _seuil_tenir(20) == 13.4                       # sans ATR : base 3% historique

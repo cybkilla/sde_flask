@@ -1110,6 +1110,26 @@ window.sdePortfolio = (function () {
              </span>`
           : `<span id="sde-advice-badge" style="${badgeStyle}">${badgeContent}</span>`;
 
+        // Obsolescence : le conseil du jour est figé au prix de sa
+        // génération — si le cours a bougé depuis (> 2%), on le signale
+        // et on propose de recalculer plutôt que de laisser croire que
+        // le conseil reflète le cours actuel (incohérence TMC du 14.07)
+        let staleHtml = "";
+        if (a.prix_jour && LIVE_PRICE) {
+          const drift = (LIVE_PRICE - parseFloat(a.prix_jour)) / parseFloat(a.prix_jour) * 100;
+          if (Math.abs(drift) >= 2) {
+            staleHtml = `
+            <p style="margin:0 0 8px;font-size:.72rem;color:#92400E;background:#FEF3C7;
+                      border:1px solid #F59E0B;border-radius:6px;padding:6px 10px">
+              ⚠️ Conseil calculé à ${SYM}${parseFloat(a.prix_jour).toFixed(2)} — le cours a
+              bougé de <strong>${drift >= 0 ? "+" : ""}${drift.toFixed(1)}%</strong> depuis
+              (${SYM}${LIVE_PRICE.toFixed(2)}).
+              <a href="#" onclick="sdePortfolio.refreshAdvice();return false"
+                 style="color:#92400E;font-weight:700">Recalculer maintenant</a>
+            </p>`;
+          }
+        }
+
         wrap.innerHTML = `
           <div style="background:${color}13;border-radius:10px;padding:14px 16px;margin-bottom:14px">
             <div style="display:flex;justify-content:space-between;align-items:center;
@@ -1119,6 +1139,7 @@ window.sdePortfolio = (function () {
                 ${dateFr}${prixMeta}
               </span>
             </div>
+            ${staleHtml}
             <p style="margin:0 0 8px;font-size:.72rem;color:var(--sde-muted)">
               Conseil personnalisé · basé sur votre position, coût moyen et signaux court terme
             </p>
