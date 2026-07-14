@@ -160,8 +160,15 @@ def evaluate_pending(days_back: int = 60) -> dict:
     for ticker, ticker_rows in by_ticker.items():
         try:
             min_date = min(r["date_conseil"] for r in ticker_rows)
+            # On recule le départ de 45 jours calendaires (~30 séances) :
+            # l'ATR(14) exige au moins 15 bougies AVANT le premier conseil,
+            # sinon il vaut None et la bande TENIR retombe sur ±3% fixe —
+            # exactement le biais qu'on veut éviter. Les lignes en trop ne
+            # gênent pas : chaque conseil filtre hist.index > sa date.
+            depart = str(datetime.strptime(min_date, "%Y-%m-%d").date()
+                         - timedelta(days=45))
             # yfinance → fallback Twelve Data (index déjà normalisé)
-            hist = _fetch_eval_history(ticker, min_date, today)
+            hist = _fetch_eval_history(ticker, depart, today)
             if hist.empty:
                 skipped += len(ticker_rows)
                 continue

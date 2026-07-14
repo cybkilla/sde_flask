@@ -673,18 +673,23 @@ def evaluate_yesterday_advice(username: str, ticker: str, current_price: float):
         action       = row.get("action", "")
         variation_j1 = round((current_price - prix_hier) / prix_hier * 100, 2) if prix_hier else 0
 
-        # Seuil TENIR depuis la config utilisateur
-        from portfolio.config_advisor import get_config as _get_cfg
-        var_tenir = _get_cfg(username).get("var_tenir_eval", 3.0)
+        # Bande TENIR normalisée par la volatilité du titre — MÊME règle
+        # que l'évaluateur batch (_juger), sinon les deux chemins jugent
+        # différemment : ±3% fixe marquait KO des TENIR sur TMC (ATR 6.3%)
+        # pour des variations qui sont son bruit quotidien normal.
+        atr = None
+        try:
+            from snapshot import get_snapshot, MAX_AGE_HOURS
+            from portfolio.risk import atr_pct
+            snap = get_snapshot(ticker, max_age_hours=MAX_AGE_HOURS)
+            if snap:
+                atr = atr_pct(snap.get("market", {}).get("history"))
+        except Exception:
+            pass
 
-        # Le conseil était-il bon ?
-        bon = None
-        if action in ("ACHETER", "RENFORCER"):
-            bon = variation_j1 > 0
-        elif action in ("VENDRE", "ALLÉGER"):
-            bon = variation_j1 < 0
-        elif action in ("TENIR", "SURVEILLER"):
-            bon = abs(variation_j1) < var_tenir
+        # Le conseil était-il bon ? (règle unique partagée avec le batch)
+        from portfolio.evaluator import _juger
+        bon = _juger(action, variation_j1, 1, atr)
 
         update_one(
             _TABLE,
