@@ -73,7 +73,8 @@ def _dominant_signals_note(snapshot: dict, data_date: str = "",
 
 def generate_advice(summary: dict | None, market: dict, snapshot: dict,
                     candle_info: dict | None = None,
-                    cfg: dict | None = None) -> dict:
+                    cfg: dict | None = None,
+                    cash_dispo: float = None) -> dict:
     """
     Génère un conseil structuré à partir de la position et de l'analyse SDE.
 
@@ -82,6 +83,8 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
     snapshot    : dict pipeline avec score_global, recommandation, etc.
     candle_info : dict optionnel {signal, pattern, description} depuis detect_patterns()
     cfg         : seuils configurables (get_config(username)) — valeurs par défaut si None
+    cash_dispo  : trésorerie suivie (ventes − achats, tous tickers) — None si
+                  inconnue : les conseils d'achat ne sont alors PAS contraints
     """
     from portfolio.config_advisor import DEFAULTS
     c = {**DEFAULTS, **(cfg or {})}
@@ -212,9 +215,20 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
                 f"{cd}{intro_sans_position} Clôture réalisée aujourd'hui — "
                 f"pas de ré-entrée le même jour, laisser le titre se stabiliser.")
         elif reco == "ACHETER" and score >= c["score_acheter"]:
-            base = _conseil("ACHETER", None, prix,
-                f"{cd}{intro_sans_position} Signal SDE haussier ({score:.0f}/100, RSI {rsi:.0f}). "
-                f"Opportunité d'entrée autour de {prix:.2f} $.")
+            # Trésorerie suivie insuffisante pour UNE action → pas de
+            # conseil d'achat inapplicable, on surveille en l'expliquant
+            if cash_dispo is not None and prix > 0 and cash_dispo < prix:
+                base = _conseil("SURVEILLER", None, None,
+                    f"{cd}{intro_sans_position} Signal d'achat ({score:.0f}/100) "
+                    f"mais trésorerie suivie insuffisante ({cash_dispo:.2f} $ "
+                    f"pour un cours à {prix:.2f} $) — entrée non proposée.")
+            else:
+                cash_txt = (f" Trésorerie suivie disponible : {cash_dispo:,.2f} $ "
+                            f"(≈ {int(cash_dispo // prix)} actions)."
+                            if cash_dispo is not None and prix > 0 else "")
+                base = _conseil("ACHETER", None, prix,
+                    f"{cd}{intro_sans_position} Signal SDE haussier ({score:.0f}/100, RSI {rsi:.0f}). "
+                    f"Opportunité d'entrée autour de {prix:.2f} $.{cash_txt}")
         else:
             base = _conseil("SURVEILLER", None, None,
                 f"{cd}{intro_sans_position} Signal SDE {reco} ({score:.0f}/100) — "
@@ -270,10 +284,25 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
     if pnl_pct <= seuils["pnl_renforcer"] and reco == "ACHETER" \
             and rsi <= c["rsi_renforcer"] and achete_auj == 0:
         renforcer = max(1, round(total_shares * 0.25))
+        note_cash = ""
+        if cash_dispo is not None and prix > 0:
+            max_achetable = int(cash_dispo // prix)
+            if max_achetable < 1:
+                # Renforcement indiqué mais rien pour le financer :
+                # un conseil inapplicable est pire que pas de conseil
+                base = _conseil("TENIR", None, None,
+                    f"{cd}Renforcement indiqué (RSI {rsi:.0f}, signal haussier "
+                    f"{score:.0f}/100, position à {pnl_pct:+.1f}%) mais trésorerie "
+                    f"suivie insuffisante ({cash_dispo:.2f} $) — maintien.")
+                return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
+            if renforcer > max_achetable:
+                renforcer  = max_achetable
+                note_cash = (f" Quantité limitée par la trésorerie disponible "
+                             f"({cash_dispo:,.2f} $).")
         base = _conseil("RENFORCER", renforcer, prix,
             f"{cd}RSI bas ({rsi:.0f}) + signal SDE haussier ({score:.0f}/100). "
             f"Opportunité de renforcement sur faiblesse ({pnl_pct:+.1f}% de latence, "
-            f"seuil {seuils['pnl_renforcer']:+.1f}%).")
+            f"seuil {seuils['pnl_renforcer']:+.1f}%).{note_cash}")
         return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
 
     # Signal haussier confirmé en territoire positif
@@ -549,9 +578,11 @@ def ensure_today_advice(username: str, ticker: str, prix_live: float,
             pass
 
         from portfolio.config_advisor import get_config
+        from portfolio.positions import get_cash_disponible
         advice = generate_advice(summary, market, snap,
                                  candle_info=candle_info,
-                                 cfg=get_config(username))
+                                 cfg=get_config(username),
+                                 cash_dispo=get_cash_disponible(username))
         row = save_advice(username, ticker, advice, market, snap)
         return row, True
     except Exception as e:

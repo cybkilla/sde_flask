@@ -238,6 +238,44 @@ assert "Position clôturée" in adv_faible["raisonnement"]
 print("✓ ré-entrée : clôturée+signal fort → ACHETER, le même jour → SURVEILLER, faible → SURVEILLER")
 
 
+# ── Trésorerie : ACHETER/RENFORCER contraints par le cash suivi ──
+# Ré-entrée avec signal fort mais 2 $ de cash pour un cours à ~100 $
+# → SURVEILLER (un conseil inapplicable est pire que pas de conseil)
+adv_sans_cash = generate_advice(_s_clos, _m_calme, _snap_fort, cash_dispo=2.0)
+assert adv_sans_cash["action"] == "SURVEILLER"
+assert "trésorerie suivie insuffisante" in adv_sans_cash["raisonnement"]
+
+# Ré-entrée avec cash → ACHETER, trésorerie et nb d'actions affichés
+adv_cash = generate_advice(_s_clos, _m_calme, _snap_fort, cash_dispo=10820.0)
+assert adv_cash["action"] == "ACHETER"
+assert "Trésorerie suivie disponible" in adv_cash["raisonnement"]
+
+# RENFORCER plafonné : 25% de 10768 = 2692, mais cash pour ~50 actions
+# (le plafond se calcule sur market['price'] — le cours actuel du titre)
+_s_creux  = {"pnl_pct": -8.0, "total_shares": 10768, "cout_moyen": 4.01,
+             "lots": [{"type": "achat", "date_achat": "2026-06-01", "quantite": 10768}]}
+_m_creux  = {**_m_tmc, "rsi": 35.0}
+_snap_ach = {"score_global": 62.0, "recommandation": "ACHETER",
+             "signals_tech": [], "signals_fund": []}
+adv_plaf = generate_advice(_s_creux, _m_creux, _snap_ach,
+                           cash_dispo=_m_creux["price"] * 50.5)
+assert adv_plaf["action"] == "RENFORCER"
+assert adv_plaf["quantite_suggeree"] == 50, \
+    f"quantité plafonnée à 50 par le cash, obtenu {adv_plaf['quantite_suggeree']}"
+assert "limitée par la trésorerie" in adv_plaf["raisonnement"]
+
+# RENFORCER sans cash du tout → TENIR avec explication
+adv_zero = generate_advice(_s_creux, _m_creux, _snap_ach, cash_dispo=0.0)
+assert adv_zero["action"] == "TENIR"
+assert "trésorerie suivie insuffisante" in adv_zero["raisonnement"]
+
+# cash_dispo=None (inconnu) → aucun bridage (comportement historique)
+adv_libre = generate_advice(_s_creux, _m_creux, _snap_ach, cash_dispo=None)
+assert adv_libre["action"] == "RENFORCER"
+assert adv_libre["quantite_suggeree"] == 2692
+print("✓ trésorerie : ACHETER bloqué sans cash, RENFORCER plafonné/bloqué, None → libre")
+
+
 # ── Cohérence avec l'évaluateur : bande TENIR vol-normalisée ──
 from portfolio.evaluator import _seuil_tenir
 assert _seuil_tenir(20) == 13.4                       # sans ATR : base 3% historique

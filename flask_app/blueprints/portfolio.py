@@ -390,9 +390,11 @@ def get_advice(ticker: str):
                 print(f"[Advice] detect_patterns erreur : {_ce}", flush=True)
 
             from portfolio.config_advisor import get_config as _get_cfg
+            from portfolio.positions import get_cash_disponible
             advice  = generate_advice(summary, market, snap,
                                       candle_info=candle_info,
-                                      cfg=_get_cfg(current_user.id))
+                                      cfg=_get_cfg(current_user.id),
+                                      cash_dispo=get_cash_disponible(current_user.id))
             advice_row = save_advice(current_user.id, ticker, advice, market, snap)
 
         # Historique des 14 derniers conseils

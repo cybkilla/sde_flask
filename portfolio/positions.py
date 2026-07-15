@@ -154,3 +154,29 @@ def delete_position(position_id: int, username: str) -> bool:
     data  = [r for r in data if not (r.get("id") == position_id and r["username"] == username)]
     _jsave(data)
     return len(data) < avant
+
+
+def get_cash_disponible(username: str):
+    """
+    Trésorerie SUIVIE de l'utilisateur, tous tickers confondus :
+    somme des ventes enregistrées − somme des achats enregistrés.
+
+    Les lots 'import' sont exclus : ils représentent des titres acquis
+    AVANT le suivi SDE, payés avec de l'argent que l'app n'a jamais vu.
+
+    Retourne None si le solde est négatif : cela signifie que des achats
+    ont été financés par du cash externe non tracké — on ne peut alors
+    RIEN affirmer sur la trésorerie réelle, et l'appelant ne doit pas
+    contraindre les conseils (mieux vaut pas d'info qu'une info fausse).
+    """
+    try:
+        lots = get_positions(username)
+        achats = sum(float(l["quantite"]) * float(l["prix_achat"])
+                     for l in lots if l.get("type", "achat") == "achat")
+        ventes = sum(float(l["quantite"]) * float(l["prix_achat"])
+                     for l in lots if l.get("type") == "vente")
+        solde = round(ventes - achats, 2)
+        return solde if solde >= 0 else None
+    except Exception as e:
+        print(f"[Portfolio] get_cash_disponible erreur : {e}", flush=True)
+        return None
