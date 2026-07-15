@@ -1031,8 +1031,8 @@ window.sdePortfolio = (function () {
                 <span style="color:var(--sde-muted);font-size:.78rem"> actions</span>
               </span>
               ${cashRecu > 0 ? `
-              <span>
-                <span style="color:var(--sde-muted)">Cash dispo.</span>
+              <span title="Produit cumulé des ventes de ce ticker — le cash global du compte (ventes − achats, tous tickers) est celui utilisé par les conseils">
+                <span style="color:var(--sde-muted)">Produit des ventes</span>
                 <strong style="color:#2563EB"> ${SYM}${cashRecu.toFixed(2)}</strong>
               </span>` : ""}
             </div>

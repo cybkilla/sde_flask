@@ -493,10 +493,19 @@
               g.pnl_jour += parseFloat(pos.summary.valeur_actuelle || 0) * parseFloat(pos.var_1d) / 100;
             }
           }
-          const sells = (pos.summary.lots || []).filter(l => l.type === 'vente');
-          g.cash += sells.reduce((s, l) => s + parseFloat(l.quantite) * parseFloat(l.prix_achat), 0);
+          // Cash suivi = ventes − achats (convention : 'achat' est financé
+          // par le cash suivi, 'import' = cash externe exclu). Ventes
+          // seules = compte doublé après réinvestissement.
+          (pos.summary.lots || []).forEach(l => {
+            const montant = parseFloat(l.quantite) * parseFloat(l.prix_achat);
+            if (l.type === 'vente')                     g.cash += montant;
+            else if ((l.type || 'achat') === 'achat')   g.cash -= montant;
+          });
           g.pnl_cumul += parseFloat(pos.summary.pnl_euros || 0);
         });
+        // Plancher à 0 par devise (convention non respectée → mieux vaut
+        // un cash sous-estimé qu'un total compte faussé)
+        Object.values(byCur).forEach(g => { if (g.cash < 0) g.cash = 0; });
 
         const _fmtV = (sym, v, plus=false) => {
           const sign = plus ? (v > 0.005 ? "+" : v < -0.005 ? "−" : "") : (v < -0.005 ? "−" : "");

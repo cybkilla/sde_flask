@@ -27,7 +27,7 @@ SCHEMA_ATTENDU = {
                             "gain_j20_pct"],
     "weekly_reports":      [],
     "advisor_config":      [],
-    "portfolio_snapshots": [],
+    "portfolio_snapshots": ["cash_dispo", "total_compte"],   # métrique compte total
     "position_targets":    [],
     "auth_tokens":         [],
 }

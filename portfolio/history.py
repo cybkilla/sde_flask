@@ -72,14 +72,29 @@ def save_daily_snapshot(username: str, positions: list) -> bool:
             s = pos.get("summary", {})
             if not s.get("position_fermee"):
                 g["portfolio_val"] += float(s.get("valeur_actuelle") or 0)
-            sells = [l for l in (s.get("lots") or []) if l.get("type") == "vente"]
-            g["cash_dispo"] += sum(
-                float(l["quantite"]) * float(l["prix_achat"]) for l in sells
-            )
+            # Cash suivi = ventes − achats (convention utilisateur : un lot
+            # 'achat' est financé par le cash suivi ; 'import' = cash
+            # externe, exclu). L'ancienne formule (ventes seules) comptait
+            # le compte en DOUBLE après un réinvestissement : cash non
+            # décrémenté + valeur de la nouvelle position.
+            for l in (s.get("lots") or []):
+                montant = float(l.get("quantite") or 0) * float(l.get("prix_achat") or 0)
+                if l.get("type") == "vente":
+                    g["cash_dispo"] += montant
+                elif l.get("type", "achat") == "achat":
+                    g["cash_dispo"] -= montant
             g["pnl_cumul"] += float(s.get("pnl_euros") or 0)
 
         rows = []
         for cur, g in by_cur.items():
+            # Convention respectée → jamais négatif ; si ça arrive quand
+            # même (achat externe saisi en 'achat'), on plancher à 0 pour
+            # ne pas fausser le total_compte vers le bas
+            if g["cash_dispo"] < 0:
+                print(f"[History] cash suivi négatif ({g['cash_dispo']:.2f} {cur}) "
+                      f"pour {username} — plancher à 0 (achat externe saisi en "
+                      f"'achat' ? utiliser 'import')", flush=True)
+                g["cash_dispo"] = 0.0
             rows.append({
                 "username":     username,
                 "snapshot_date": today,
