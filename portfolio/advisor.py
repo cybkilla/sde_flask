@@ -106,13 +106,31 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
     data_date_str    = _get_data_date(snapshot)
     cd = f"{conseil_date_str} : "
 
+    # ── Mémoire des exécutions du jour ────────────────────────────────
+    # Suivre un ALLÉGER invalide le conseil (recalcul avec la position à
+    # jour) — mais sans mémoire, le même signal re-déclenchait un nouvel
+    # ALLÉGER sur le restant : en suivant chaque conseil, on liquiderait
+    # toute la position 25% par 25% dans la journée (vécu TMC 15.07).
+    # Règle : une vente exécutée aujourd'hui suspend les NOUVELLES
+    # suggestions de réduction pour la journée (le stop loss et le signal
+    # VENDRE fort restent actifs — ce sont des contrôles de risque).
+    _auj = str(date.today())
+    _lots = (summary or {}).get("lots") or []
+    vendu_auj  = sum(float(l.get("quantite") or 0) for l in _lots
+                     if l.get("type") == "vente"
+                     and str(l.get("date_achat", ""))[:10] == _auj)
+    achete_auj = sum(float(l.get("quantite") or 0) for l in _lots
+                     if l.get("type", "achat") == "achat"
+                     and str(l.get("date_achat", ""))[:10] == _auj)
+
     def _finalize(conseil, pnl=None, shares=0, px=0):
         # var_1d LIVE (fourni par la route / le scheduler) : permet à
         # _with_candle d'invalider un pattern baissier de la veille
         # contredit par le rebond de la séance en cours
         r = _with_candle(conseil, candle_info, pnl, score, reco, shares, px,
                          data_date=data_date_str,
-                         var_1d=market.get("var_1d"))
+                         var_1d=market.get("var_1d"),
+                         deja_vendu=vendu_auj)
         # Filtrer les signaux dans le sens du conseil final
         action = r["action"]
         if action in ("VENDRE", "ALLÉGER"):
@@ -146,6 +164,13 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
                 f"<br>{cd}Pré-marché : {gap:+.1f}% vs clôture de la veille "
                 f"— gap {sens_gap} attendu à l'ouverture, conseil réévalué "
                 f"avant la séance."
+            )
+        # Mémoire du jour : rappeler ce qui a déjà été exécuté
+        if pnl is not None and vendu_auj > 0:
+            r["raisonnement"] += (
+                f"<br>{cd}Allégement de {vendu_auj:g} action(s) déjà réalisé "
+                f"aujourd'hui — pas de nouvelle réduction suggérée le même "
+                f"jour (le stop loss reste actif)."
             )
         # Seuils ATR : affichés sur TOUT conseil avec position (pnl fourni),
         # pas seulement quand un seuil se déclenche — l'utilisateur doit voir
@@ -187,7 +212,7 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
     # Stop suiveur : la position est en gain mais rend ses acquis.
     # Le P&L vs prix d'entrée ne le voit pas — on compare au PLUS HAUT
     # atteint depuis l'achat (high-water mark) : repli > 2×ATR → sécuriser.
-    if seuils["adapte"] and pnl_pct > 0:
+    if seuils["adapte"] and pnl_pct > 0 and vendu_auj == 0:
         from portfolio.risk import drawdown_depuis_plus_haut
         hwm, dd = drawdown_depuis_plus_haut(hist_px, summary.get("lots"), prix)
         if dd is not None and dd <= -(TRAIL_ATR_MULT * atr):
@@ -200,7 +225,7 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
             return _finalize(base, pnl=pnl_pct)
 
     # Prise de bénéfices sur signal vendeur fort — objectif ATR
-    if pnl_pct >= seuils["take_profit_pct"] and reco == "VENDRE":
+    if pnl_pct >= seuils["take_profit_pct"] and reco == "VENDRE" and vendu_auj == 0:
         alleger = max(1, round(total_shares * 0.5))
         base = _conseil("ALLÉGER", alleger, prix,
             f"{cd}Plus-value de {pnl_pct:+.1f}% (objectif {seuils['take_profit_pct']:+.1f}%) "
@@ -217,7 +242,8 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
 
     # Renforcement sur faiblesse — la "faiblesse" est mesurée en ATR :
     # -5% n'est une opportunité que si c'est inhabituel pour ce titre
-    if pnl_pct <= seuils["pnl_renforcer"] and reco == "ACHETER" and rsi <= c["rsi_renforcer"]:
+    if pnl_pct <= seuils["pnl_renforcer"] and reco == "ACHETER" \
+            and rsi <= c["rsi_renforcer"] and achete_auj == 0:
         renforcer = max(1, round(total_shares * 0.25))
         base = _conseil("RENFORCER", renforcer, prix,
             f"{cd}RSI bas ({rsi:.0f}) + signal SDE haussier ({score:.0f}/100). "
@@ -252,7 +278,8 @@ def _with_candle(conseil: dict, candle_info: dict | None,
                  pnl_pct: float | None,
                  score: float = 50, reco: str = "NEUTRE",
                  total_shares: float = 0, prix: float = 0,
-                 data_date: str = "", var_1d: float = None) -> dict:
+                 data_date: str = "", var_1d: float = None,
+                 deja_vendu: float = 0) -> dict:
     """
     Enrichit un conseil de base avec le signal du dernier pattern chandelier.
     Peut modifier l'action (ex. TENIR → ALLÉGER sur signal baissier fort)
@@ -283,6 +310,17 @@ def _with_candle(conseil: dict, candle_info: dict | None,
     if signal == "bearish":
         # TENIR + baissier + P&L pas catastrophique → alléger prudemment
         if action == "TENIR" and pnl_pct is not None and pnl_pct > -10:
+            # MÉMOIRE DU JOUR : l'utilisateur a déjà allégé aujourd'hui —
+            # re-suggérer une réduction sur le MÊME signal ferait liquider
+            # la position 25% par 25% dans la journée (vécu TMC 15.07)
+            if deja_vendu and deja_vendu > 0:
+                raison = (f"{raison}<br>"
+                          f"{d}Pattern chandelier {label} ({name}) toujours actif, "
+                          f"mais allégement déjà réalisé aujourd'hui "
+                          f"({deja_vendu:g} actions) — pas de nouvelle réduction "
+                          f"sur le même signal.")
+                return _conseil(action, conseil.get("quantite_suggeree"),
+                                conseil.get("prix_cible"), raison)
             # INVALIDATION : un pattern de retournement baissier (détecté
             # sur la clôture de la VEILLE) est contredit par un fort rebond
             # du jour — vendre 25% pendant que le titre monte de +5% était

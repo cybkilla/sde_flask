@@ -179,6 +179,31 @@ assert adv_sans["action"] == "ALLÉGER"
 print("✓ invalidation : rebond ≥2% → TENIR, petit rebond ou var inconnu → ALLÉGER")
 
 
+# MÉMOIRE DU JOUR : l'utilisateur a suivi l'ALLÉGER (vente enregistrée
+# aujourd'hui) → le même pattern ne doit PAS re-suggérer une réduction
+# (vécu TMC 15.07 : ALLÉGER 2692 suivi → nouvel ALLÉGER 2019 sur le restant)
+from datetime import date as _date
+_s_vendu = {"pnl_pct": 2.3, "total_shares": 8076, "cout_moyen": 4.01,
+            "lots": [
+                {"type": "achat", "date_achat": "2026-06-01", "quantite": 10768},
+                {"type": "vente", "date_achat": str(_date.today()), "quantite": 2692},
+            ]}
+_m_calme = {**_m_tmc, "var_1d": -1.4}     # pas de rebond → invalidation inactive
+adv_vendu = generate_advice(_s_vendu, _m_calme, _snap_tmc, candle_info=_candle_bear)
+assert adv_vendu["action"] == "TENIR", \
+    f"après une vente du jour, pas de nouvel ALLÉGER — obtenu {adv_vendu['action']}"
+assert "allégement déjà réalisé aujourd'hui (2692 actions)" in adv_vendu["raisonnement"]
+
+# Vente d'HIER → le signal peut de nouveau suggérer (nouvelle journée)
+_s_hier = {**_s_vendu, "lots": [
+    {"type": "achat", "date_achat": "2026-06-01", "quantite": 10768},
+    {"type": "vente", "date_achat": "2026-07-14", "quantite": 2692},
+]}
+adv_hier = generate_advice(_s_hier, _m_calme, _snap_tmc, candle_info=_candle_bear)
+assert adv_hier["action"] == "ALLÉGER"
+print("✓ mémoire du jour : vente aujourd'hui → pas de nouvel ALLÉGER ; hier → normal")
+
+
 # ── Cohérence avec l'évaluateur : bande TENIR vol-normalisée ──
 from portfolio.evaluator import _seuil_tenir
 assert _seuil_tenir(20) == 13.4                       # sans ATR : base 3% historique
