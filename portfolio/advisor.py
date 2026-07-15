@@ -123,6 +123,25 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
                      if l.get("type", "achat") == "achat"
                      and str(l.get("date_achat", ""))[:10] == _auj)
 
+    # ── Ré-entrée après clôture ───────────────────────────────────────
+    # Une position entièrement vendue laissait le ticker orphelin de
+    # conseil : summary existait toujours (les lots restent en base),
+    # donc le monde « sans position » — le seul qui produit ACHETER —
+    # était inaccessible. On bascule explicitement en mode ré-entrée,
+    # avec le contexte de sortie dans le texte.
+    intro_sans_position = "Pas de position."
+    if summary and summary.get("position_fermee"):
+        ventes = [l for l in _lots if l.get("type") == "vente"]
+        if ventes:
+            derniere = max(ventes, key=lambda l: str(l.get("date_achat", "")))
+            ds = str(derniere.get("date_achat", ""))[:10]
+            ps = float(derniere.get("prix_achat") or 0)
+            intro_sans_position = (
+                f"Position clôturée le {ds[8:10]}.{ds[5:7]} à {ps:.2f} $ "
+                f"(P&L réalisé {summary.get('pnl_realise', 0):+.2f} $)."
+            )
+        summary = None    # → cas « sans position » : ACHETER redevient possible
+
     def _finalize(conseil, pnl=None, shares=0, px=0):
         # var_1d LIVE (fourni par la route / le scheduler) : permet à
         # _with_candle d'invalider un pattern baissier de la veille
@@ -184,15 +203,21 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
             )
         return r
 
-    # ── Cas 1 : pas de position ───────────────────────────────────────────────
+    # ── Cas 1 : pas de position (ou position clôturée → ré-entrée) ────────────
     if summary is None:
-        if reco == "ACHETER" and score >= c["score_acheter"]:
+        # Clôture AUJOURD'HUI → jamais de ré-entrée le même jour : vendre
+        # tout puis racheter dans la foulée serait du flip-flop assumé
+        if vendu_auj > 0:
+            base = _conseil("SURVEILLER", None, None,
+                f"{cd}{intro_sans_position} Clôture réalisée aujourd'hui — "
+                f"pas de ré-entrée le même jour, laisser le titre se stabiliser.")
+        elif reco == "ACHETER" and score >= c["score_acheter"]:
             base = _conseil("ACHETER", None, prix,
-                f"{cd}Pas de position. Signal SDE haussier ({score:.0f}/100, RSI {rsi:.0f}). "
+                f"{cd}{intro_sans_position} Signal SDE haussier ({score:.0f}/100, RSI {rsi:.0f}). "
                 f"Opportunité d'entrée autour de {prix:.2f} $.")
         else:
             base = _conseil("SURVEILLER", None, None,
-                f"{cd}Pas de position. Signal SDE {reco} ({score:.0f}/100) — "
+                f"{cd}{intro_sans_position} Signal SDE {reco} ({score:.0f}/100) — "
                 f"attendre un signal plus fort avant d'entrer.")
         return _finalize(base)
 
@@ -481,8 +506,11 @@ def ensure_today_advice(username: str, ticker: str, prix_live: float,
             return None, False
 
         summary = get_portfolio_summary(username, ticker, prix_live)
-        if not summary or summary.get("position_fermee"):
-            return None, False       # conseil "position" seulement
+        if not summary:
+            return None, False       # jamais détenu → pas de conseil position
+        # Position clôturée : on continue de générer — generate_advice
+        # bascule en mode ré-entrée (ACHETER/SURVEILLER) et l'email de
+        # changement d'action préviendra au bon moment
 
         market = {**snap.get("market", {}), "price": prix_live or snap["market"].get("price")}
         # Gap pré-marché (fourni par le scheduler pendant la fenêtre

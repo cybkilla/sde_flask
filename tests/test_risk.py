@@ -204,6 +204,40 @@ assert adv_hier["action"] == "ALLÉGER"
 print("✓ mémoire du jour : vente aujourd'hui → pas de nouvel ALLÉGER ; hier → normal")
 
 
+# ── Ré-entrée après clôture : le ticker n'est plus orphelin ──
+# Position entièrement vendue HIER + signal fort → conseil ACHETER
+# (avant : summary existait → monde 'sans position' inaccessible → jamais
+# de conseil de ré-entrée)
+_s_clos = {"pnl_pct": 5.2, "total_shares": 0, "cout_moyen": 4.01,
+           "pnl_realise": 215.36, "position_fermee": True,
+           "lots": [
+               {"type": "achat", "date_achat": "2026-06-01", "quantite": 10768, "prix_achat": 4.01},
+               {"type": "vente", "date_achat": "2026-07-14", "quantite": 10768, "prix_achat": 4.03},
+           ]}
+_snap_fort = {"score_global": 62.0, "recommandation": "ACHETER",
+              "signals_tech": [], "signals_fund": []}
+adv_reentree = generate_advice(_s_clos, _m_calme, _snap_fort)
+assert adv_reentree["action"] == "ACHETER", \
+    f"position clôturée + signal fort → ré-entrée ACHETER, obtenu {adv_reentree['action']}"
+assert "Position clôturée le 14.07 à 4.03 $" in adv_reentree["raisonnement"]
+assert "+215.36 $" in adv_reentree["raisonnement"]
+
+# Clôture AUJOURD'HUI → pas de ré-entrée le même jour, même signal fort
+_s_clos_auj = {**_s_clos, "lots": [
+    {"type": "achat", "date_achat": "2026-06-01", "quantite": 10768, "prix_achat": 4.01},
+    {"type": "vente", "date_achat": str(_date.today()), "quantite": 10768, "prix_achat": 4.03},
+]}
+adv_auj = generate_advice(_s_clos_auj, _m_calme, _snap_fort)
+assert adv_auj["action"] == "SURVEILLER"
+assert "pas de ré-entrée le même jour" in adv_auj["raisonnement"]
+
+# Clôturée + signal faible → SURVEILLER avec le contexte de sortie
+adv_faible = generate_advice(_s_clos, _m_calme, _snap_tmc)
+assert adv_faible["action"] == "SURVEILLER"
+assert "Position clôturée" in adv_faible["raisonnement"]
+print("✓ ré-entrée : clôturée+signal fort → ACHETER, le même jour → SURVEILLER, faible → SURVEILLER")
+
+
 # ── Cohérence avec l'évaluateur : bande TENIR vol-normalisée ──
 from portfolio.evaluator import _seuil_tenir
 assert _seuil_tenir(20) == 13.4                       # sans ATR : base 3% historique
