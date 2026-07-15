@@ -234,6 +234,92 @@ def send_weekly_report(username: str, email: str, watchlist: list,
         print(msg, flush=True)
         raise RuntimeError(msg)
 
+    # ── Métrique de tête : LE COMPTE TOTAL (objectif ultime de SDE) ──────────
+    # cash + portefeuille, comparé à il y a ~7 jours (snapshots quotidiens)
+    # et au buy & hold (qu'aurait valu le compte sans suivre aucun conseil).
+    compte_block = ""
+    try:
+        from portfolio.positions import get_positions as _get_lots, etat_compte
+
+        tous_lots = _get_lots(username) or []
+        # Prix par ticker : ceux déjà récupérés dans la boucle, complétés
+        # pour les tickers en portefeuille absents de la watchlist
+        prix_map = {r["ticker"]: r.get("prix") or 0 for r in ticker_rows}
+        for t in {l["ticker"] for l in tous_lots}:
+            if not prix_map.get(t):
+                prix_map[t] = (get_live_price(t) or {}).get("price") or 0
+
+        # Une devise par bloc (la quasi-totalité des cas : USD seul)
+        devises = {l.get("currency", "USD") for l in tous_lots} or {"USD"}
+        for cur in sorted(devises):
+            lots_cur = [l for l in tous_lots if l.get("currency", "USD") == cur]
+            etat = etat_compte(lots_cur, prix_map)
+            if etat["total"] <= 0:
+                continue
+            sym = _SYM.get(cur, "$")
+
+            # Variation vs le snapshot le plus ancien des ~8 derniers jours
+            var_sem_html = ""
+            try:
+                from portfolio.history import get_history as _hist
+                anciens = [h for h in _hist(username, days=8)
+                           if h.get("currency") == cur and h.get("total_compte")]
+                if anciens:
+                    ref = float(anciens[0]["total_compte"])
+                    if ref > 0:
+                        v = (etat["total"] - ref) / ref * 100
+                        c = "#1D9E75" if v >= 0 else "#D85A30"
+                        var_sem_html = (f'<span style="color:{c};font-size:15px;'
+                                        f'font-weight:600"> {v:+.2f}% sur 7j</span>')
+            except Exception:
+                pass
+
+            # Benchmark buy & hold : ce que les conseils suivis ont rapporté
+            bh_html = ""
+            if etat["buy_hold"] > 0:
+                delta = etat["total"] - etat["buy_hold"]
+                c = "#1D9E75" if delta >= 0 else "#D85A30"
+                verbe = "rapporté" if delta >= 0 else "coûté"
+                bh_html = (f'<div style="font-size:12px;color:#6b7280;margin-top:6px">'
+                           f'vs Buy &amp; Hold (ne rien faire) : {sym}{etat["buy_hold"]:,.2f} '
+                           f'— les conseils suivis ont {verbe} '
+                           f'<b style="color:{c}">{delta:+,.2f} {sym}</b></div>')
+
+            # Cash dormant : > 15% du compte en régime de marché haussier
+            dormant_html = ""
+            try:
+                if etat["cash"] > 0.15 * etat["total"]:
+                    from analysis.market_regime import get_market_context
+                    ctx = get_market_context()
+                    if ctx and ctx.get("regime") == "haussier":
+                        dormant_html = (
+                            f'<div style="background:#FEF3C7;border-radius:6px;'
+                            f'padding:8px 12px;margin-top:8px;font-size:12px;color:#92400E">'
+                            f'💤 Cash dormant : {sym}{etat["cash"]:,.2f} '
+                            f'({etat["cash"]/etat["total"]*100:.0f}% du compte) en marché '
+                            f'haussier — les signaux d\'entrée sur vos tickers sont surveillés.'
+                            f'</div>')
+            except Exception:
+                pass
+
+            compte_block += f"""
+    <div style="background:#1E3A5F;border-radius:8px;padding:18px 20px;
+                margin-bottom:16px;color:#fff">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+                  opacity:.7;margin-bottom:4px">Compte total ({cur})</div>
+      <div style="font-size:28px;font-weight:700">
+        {sym}{etat["total"]:,.2f}{var_sem_html}
+      </div>
+      <div style="font-size:12px;opacity:.75;margin-top:4px">
+        Portefeuille {sym}{etat["valeur_positions"]:,.2f}
+        &nbsp;·&nbsp; Cash suivi {sym}{etat["cash"]:,.2f}
+      </div>
+      {bh_html}
+      {dormant_html}
+    </div>"""
+    except Exception as e:
+        print(f"[Weekly] bloc compte total indisponible : {e}", flush=True)
+
     # ── Construction HTML ─────────────────────────────────────────────────────
     week_start = _current_week_start()
     week_end   = week_start + timedelta(days=6)
@@ -371,6 +457,7 @@ def send_weekly_report(username: str, email: str, watchlist: list,
         </p>
       </div>
 
+      {compte_block}
       {summary_block}
 
       <table style="width:100%;border-collapse:collapse;margin-bottom:16px">

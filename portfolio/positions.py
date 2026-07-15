@@ -180,3 +180,52 @@ def get_cash_disponible(username: str):
     except Exception as e:
         print(f"[Portfolio] get_cash_disponible erreur : {e}", flush=True)
         return None
+
+
+def etat_compte(lots: list, prix_par_ticker: dict) -> dict:
+    """
+    Photographie du compte à partir des lots (UNE devise) et des prix
+    actuels. Fonction PURE — source de vérité unique pour le rapport
+    hebdo, l'en-tête de page et les comparaisons.
+
+    Retourne :
+      valeur_positions : Σ actions détenues × prix actuel
+      cash             : Σventes − Σachats (convention : 'achat' financé
+                         par le cash suivi, 'import' = cash externe exclu),
+                         plancher 0
+      total            : valeur_positions + cash — LA métrique objectif
+      buy_hold         : valeur qu'aurait le compte si on n'avait JAMAIS
+                         suivi les conseils = lots 'import' conservés tels
+                         quels (sans ventes → pas de cash suivi → pas
+                         d'achats non plus). L'écart total − buy_hold
+                         mesure ce que les conseils suivis ont réellement
+                         rapporté ou coûté.
+    """
+    par_ticker: dict = {}
+    cash = 0.0
+    bh   = 0.0
+    for l in lots:
+        t = l.get("ticker", "?")
+        q = float(l.get("quantite") or 0)
+        p = float(l.get("prix_achat") or 0)
+        typ = l.get("type", "achat")
+        if typ in ("achat", "import"):
+            par_ticker[t] = par_ticker.get(t, 0.0) + q
+        elif typ == "vente":
+            par_ticker[t] = par_ticker.get(t, 0.0) - q
+        if typ == "vente":
+            cash += q * p
+        elif typ == "achat":
+            cash -= q * p
+        if typ == "import":
+            bh += q * float(prix_par_ticker.get(t) or 0)
+
+    valeur = sum(max(q, 0) * float(prix_par_ticker.get(t) or 0)
+                 for t, q in par_ticker.items())
+    cash = max(round(cash, 2), 0.0)
+    return {
+        "valeur_positions": round(valeur, 2),
+        "cash":             cash,
+        "total":            round(valeur + cash, 2),
+        "buy_hold":         round(bh, 2),
+    }

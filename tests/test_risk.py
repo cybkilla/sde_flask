@@ -284,4 +284,36 @@ assert _seuil_tenir(1, atr=15.0) == 8.0               # ATR extrême borné à 8
 assert _seuil_tenir(1, atr=0.5)  == 2.0               # ATR minuscule borné à 2
 print("✓ _seuil_tenir : bande TENIR proportionnelle à l'ATR, bornée [2;8]")
 
+# ── etat_compte : la métrique objectif (compte total) et son benchmark ──
+from portfolio.positions import etat_compte
+# Scénario réel admin : import 10768 @ 4.01, vente 2692 @ 4.02, cours 4.13
+lots_admin = [
+    {"ticker": "TMC", "type": "import", "quantite": 10768, "prix_achat": 4.01},
+    {"ticker": "TMC", "type": "vente",  "quantite": 2692,  "prix_achat": 4.02},
+]
+etat = etat_compte(lots_admin, {"TMC": 4.13})
+assert etat["cash"] == round(2692 * 4.02, 2)                       # ventes − 0 achat
+assert etat["valeur_positions"] == round(8076 * 4.13, 2)           # actions restantes
+assert etat["total"] == round(etat["valeur_positions"] + etat["cash"], 2)
+assert etat["buy_hold"] == round(10768 * 4.13, 2)                  # imports conservés
+# L'écart mesure l'effet des conseils : vendu à 4.02, cours à 4.13 → coût
+assert etat["total"] - etat["buy_hold"] < 0
+
+# Réinvestissement : achat 1000 @ 4.00 financé par le cash suivi
+lots_reinv = lots_admin + [
+    {"ticker": "TMC", "type": "achat", "quantite": 1000, "prix_achat": 4.00}]
+etat2 = etat_compte(lots_reinv, {"TMC": 4.13})
+assert etat2["cash"] == round(2692 * 4.02 - 1000 * 4.00, 2)        # cash décrémenté
+assert etat2["valeur_positions"] == round(9076 * 4.13, 2)
+# PAS de double comptage : le total ne bouge que par l'écart prix (4.13 vs 4.00)
+assert abs(etat2["total"] - etat["total"] - 1000 * 0.13) < 0.01
+# Le B&H ignore achats/ventes : inchangé
+assert etat2["buy_hold"] == etat["buy_hold"]
+
+# Convention violée (achat sans cash) → cash planché à 0, pas de total négatif
+etat3 = etat_compte([{"ticker": "X", "type": "achat", "quantite": 100, "prix_achat": 10}],
+                    {"X": 10})
+assert etat3["cash"] == 0.0 and etat3["total"] == 1000.0
+print("✓ etat_compte : compte total exact, pas de double comptage, B&H stable")
+
 print("\n✓ Tous les tests test_risk.py sont OK (hors réseau)")

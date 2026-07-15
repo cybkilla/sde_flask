@@ -496,10 +496,14 @@
           // Cash suivi = ventes − achats (convention : 'achat' est financé
           // par le cash suivi, 'import' = cash externe exclu). Ventes
           // seules = compte doublé après réinvestissement.
+          // Buy & Hold = les lots 'import' conservés tels quels au cours
+          // actuel — l'écart compte total − B&H mesure ce que les conseils
+          // suivis ont réellement rapporté (l'objectif ultime de SDE).
           (pos.summary.lots || []).forEach(l => {
             const montant = parseFloat(l.quantite) * parseFloat(l.prix_achat);
             if (l.type === 'vente')                     g.cash += montant;
             else if ((l.type || 'achat') === 'achat')   g.cash -= montant;
+            if (l.type === 'import') g.bh = (g.bh || 0) + parseFloat(l.quantite) * parseFloat(pos.price || 0);
           });
           g.pnl_cumul += parseFloat(pos.summary.pnl_euros || 0);
         });
@@ -533,6 +537,9 @@
               ${mk("P/L du jour",     _fmtV(g.sym, g.pnl_jour, true), _colV(g.pnl_jour),
                    `(${pjPct >= 0 ? "+" : ""}${pjPct.toFixed(2)}%)`)}
               ${mk("P/L cumulée",     _fmtV(g.sym, g.pnl_cumul, true), _colV(g.pnl_cumul))}
+              ${g.bh > 0.005 ? mk("vs Buy & Hold",
+                   _fmtV(g.sym, total - g.bh, true), _colV(total - g.bh),
+                   `(${(total - g.bh) / g.bh * 100 >= 0 ? "+" : ""}${((total - g.bh) / g.bh * 100).toFixed(2)}% — effet des conseils suivis)`) : ""}
             </div>`;
         }).join("");
 
