@@ -139,8 +139,12 @@ print("✓ conseil : ligne Pré-marché présente avec gap, absente sans")
 # Reproduction du cas TMC 14.07.2026 : base TENIR ('maintien de la
 # position') surclassée en ALLÉGER par un pattern baissier — la première
 # phrase contredisait le badge. Le texte doit maintenant être cohérent.
+# Date dynamique (hier) : le garde-fou de fraîcheur périme les patterns
+# de plus de 2 séances — une date en dur casserait le test avec le temps
+import datetime as _dt
 _candle_bear = {"signal": "bearish", "pattern": "Étoile du soir",
-                "description": "", "date": "13.07.2026"}
+                "description": "",
+                "date": (_dt.date.today() - _dt.timedelta(days=1)).strftime("%d.%m.%Y")}
 _m_tmc = {"price": 3.99, "rsi": 45.0, "history": make_ohlc(0.06)}
 _s_tmc = {"pnl_pct": -0.5, "total_shares": 10768, "cout_moyen": 4.01,
           "lots": [{"type": "achat", "date_achat": "2026-06-01"}]}
@@ -283,6 +287,22 @@ assert _seuil_tenir(20, atr=5.0) == round(5.0 * 20**0.5, 1)   # ±22.4% pour un 
 assert _seuil_tenir(1, atr=15.0) == 8.0               # ATR extrême borné à 8
 assert _seuil_tenir(1, atr=0.5)  == 2.0               # ATR minuscule borné à 2
 print("✓ _seuil_tenir : bande TENIR proportionnelle à l'ATR, bornée [2;8]")
+
+# ── Fraîcheur du pattern : un chandelier de > 3 jours n'escalade plus ──
+# L'Étoile du soir du 13.07 déclenchait ALLÉGER tous les jours suivants
+_candle_vieux = {**_candle_bear,
+                 "date": (_date.today() - __import__("datetime").timedelta(days=4)).strftime("%d.%m.%Y")}
+adv_vieux = generate_advice(_s_tmc, _m_calme, _snap_tmc, candle_info=_candle_vieux)
+assert adv_vieux["action"] == "TENIR", \
+    f"pattern de 4 jours ne doit plus escalader, obtenu {adv_vieux['action']}"
+assert "signal périmé" in adv_vieux["raisonnement"]
+# Pattern d'il y a 2 jours : escalade normale
+_candle_frais = {**_candle_bear,
+                 "date": (_date.today() - __import__("datetime").timedelta(days=2)).strftime("%d.%m.%Y")}
+adv_frais = generate_advice(_s_tmc, _m_calme, _snap_tmc, candle_info=_candle_frais)
+assert adv_frais["action"] == "ALLÉGER"
+print("✓ fraîcheur pattern : > 3 jours → information seulement, ≤ 3 jours → escalade")
+
 
 # ── etat_compte : la métrique objectif (compte total) et son benchmark ──
 from portfolio.positions import etat_compte

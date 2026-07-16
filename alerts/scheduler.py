@@ -80,6 +80,12 @@ def _check_ticker(ticker: str, company: str, username: str, email: str) -> None:
         prix      = prix_live or res["market"]["price"]
 
     # ── 3. Variation par rapport au dernier prix enregistré ──
+    # Fenêtre de courtoisie : hors 08h-23h Paris, ni email ni mise à jour
+    # du dernier état (sinon le changement nocturne serait avalé sans
+    # alerte — la comparaison se fera au premier passage du matin)
+    if not _fenetre_courtoisie():
+        return
+
     last      = get_last_score(ticker)
     old_reco  = last.get("reco", "")
     last_prix = last.get("prix")
@@ -129,6 +135,36 @@ def _check_ticker(ticker: str, company: str, username: str, email: str) -> None:
             check_and_alert(username, ticker, company, prix_live, email)
         except Exception as e:
             print(f"  [Targets] TP/SL check erreur ({ticker}) : {e}", flush=True)
+
+
+def _fenetre_paris(h_debut: int, m_debut: int, h_fin: int, m_fin: int,
+                    jours_ouvres: bool = False) -> bool:
+    """Vrai si l'heure de Paris est dans [début, fin) — le serveur est en UTC."""
+    try:
+        import zoneinfo
+        now = datetime.now(zoneinfo.ZoneInfo("Europe/Paris"))
+        if jours_ouvres and now.weekday() >= 5:
+            return False
+        tot = now.hour * 60 + now.minute
+        return h_debut * 60 + m_debut <= tot < h_fin * 60 + m_fin
+    except Exception:
+        return False
+
+
+def _fenetre_conseils() -> bool:
+    """
+    Génération des conseils position : 10h00-22h30 Paris, jours ouvrés.
+    Avant : date.today() (UTC) basculait à 2h du matin Paris → le conseil
+    du jour naissait la nuit sur le prix de clôture de la veille, et
+    l'email de changement partait à 2h (vécu nuit du 15-16.07). Désormais
+    il naît au pré-marché, avec des données fraîches et le gap détecté.
+    """
+    return _fenetre_paris(10, 0, 22, 30, jours_ouvres=True)
+
+
+def _fenetre_courtoisie() -> bool:
+    """Alertes email (reco/variation/TP-SL) : 08h00-23h00 Paris seulement."""
+    return _fenetre_paris(8, 0, 23, 0)
 
 
 def _fenetre_premarche() -> bool:
@@ -271,7 +307,7 @@ def check_all():
         # position, et alerte par email si l'ACTION change (TENIR →
         # ALLÉGER…). Anti-doublon par construction : l'email ne part
         # qu'à la CRÉATION du conseil du jour (1×/jour/ticker max).
-        if datetime.now().weekday() < 5:      # jours de bourse uniquement
+        if _fenetre_conseils():
             try:
                 _check_position_advice(username, email)
             except Exception as e:

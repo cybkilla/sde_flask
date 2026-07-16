@@ -361,6 +361,28 @@ def _with_candle(conseil: dict, candle_info: dict | None,
     raison  = conseil["raisonnement"]
     label   = "haussier" if signal == "bullish" else "baissier"
 
+    # ── Fraîcheur : un pattern de retournement se joue en 1-2 séances ──
+    # Au-delà, il ne peut plus CHANGER l'action — seulement informer.
+    # Sans ce garde-fou, l'Étoile du soir du 13.07 déclenchait un ALLÉGER
+    # chaque jour suivant, harcelant l'utilisateur avec un signal périmé.
+    if signal == "bearish":
+        try:
+            d_pattern = datetime.strptime(
+                candle_info.get("date", ""), "%d.%m.%Y").date()
+            jours = (date.today() - d_pattern).days
+            # Un pattern du vendredi n'a qu'UNE séance d'âge le lundi
+            if jours >= 2 and d_pattern.weekday() == 4:
+                jours -= 2
+            if jours > 2:
+                raison = (f"{raison}<br>"
+                          f"{d}Pattern chandelier {label} ({name}) du "
+                          f"{candle_info['date']} — signal périmé (plus de "
+                          f"2 séances), information seulement.")
+                return _conseil(action, conseil.get("quantite_suggeree"),
+                                conseil.get("prix_cible"), raison)
+        except Exception:
+            pass    # date illisible → comportement historique
+
     if signal == "bearish":
         # TENIR + baissier + P&L pas catastrophique → alléger prudemment
         if action == "TENIR" and pnl_pct is not None and pnl_pct > -10:
@@ -583,7 +605,11 @@ def ensure_today_advice(username: str, ticker: str, prix_live: float,
                                  candle_info=candle_info,
                                  cfg=get_config(username),
                                  cash_dispo=get_cash_disponible(username))
-        row = save_advice(username, ticker, advice, market, snap)
+        row = save_advice(username, ticker, advice, market, snap,
+                          only_insert=True)
+        if row is None:
+            # Course perdue : un passage concurrent l'a créé — pas d'email
+            return get_today_advice(username, ticker), False
         return row, True
     except Exception as e:
         print(f"[Advisor] ensure_today_advice erreur ({ticker}) : {e}", flush=True)
@@ -613,8 +639,17 @@ def signaux_compacts(snapshot: dict) -> dict:
 
 
 def save_advice(username: str, ticker: str, advice: dict,
-                market: dict, snapshot: dict) -> dict:
-    """Upsert le conseil du jour dans Supabase. Retourne la ligne."""
+                market: dict, snapshot: dict,
+                only_insert: bool = False) -> dict | None:
+    """
+    Upsert le conseil du jour dans Supabase. Retourne la ligne.
+    only_insert=True (scheduler) : INSERT strict — si la ligne existe déjà
+    (créée par un passage concurrent : retry cron, chevauchement
+    d'instances pendant un deploy), retourne None au lieu d'écraser.
+    C'est la contrainte UNIQUE de la base qui arbitre la course, pas un
+    verrou local — l'email de création ne peut plus partir en double
+    (vécu : 2 emails ALLÉGER identiques dans la nuit du 15 au 16.07).
+    """
     try:
         from db import update_one, is_available
         if not is_available():
@@ -631,6 +666,17 @@ def save_advice(username: str, ticker: str, advice: dict,
         }
         cle_conseil = {"username": username, "ticker": ticker.upper(),
                        "date_conseil": str(date.today())}
+        if only_insert:
+            try:
+                import db as _db
+                _db._init()
+                _db._client.table(_TABLE).insert({**row, **cle_conseil}).execute()
+                return {**row, **cle_conseil}
+            except Exception as e:
+                # Violation d'unicité = un autre passage a gagné la course
+                print(f"[Advisor] insert conseil déjà existant ({ticker}) : "
+                      f"{str(e)[:80]} — pas de doublon", flush=True)
+                return None
         try:
             update_one(_TABLE, cle_conseil, {"$set": row}, upsert=True)
         except Exception:
