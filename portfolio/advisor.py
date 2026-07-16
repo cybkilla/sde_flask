@@ -6,6 +6,15 @@ from datetime import date, datetime, timezone
 
 _TABLE = "daily_advice"
 
+# Double confirmation des sorties sur signal isolé : en-dessous de ce
+# score, un pattern baissier suffit à conseiller l'allégement ; au-dessus
+# (et hors régime de marché baissier), il n'est qu'une information.
+# Fondement empirique : l'attribution du backtest montre que les signaux
+# baissiers isolés sont peu fiables en marché porteur (27% sur TMC,
+# 16% sur AAPL) — chaque sortie ratée coûte plus que les baisses évitées
+# (c'est ce qui fait perdre les stratégies actives contre le buy & hold).
+SEUIL_CONFIRMATION_SORTIE = 45
+
 # Labels lisibles pour chaque action
 ACTION_LABELS = {
     "ACHETER":    ("↑ Acheter",    "#1D9E75", "success"),
@@ -152,7 +161,8 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
         r = _with_candle(conseil, candle_info, pnl, score, reco, shares, px,
                          data_date=data_date_str,
                          var_1d=market.get("var_1d"),
-                         deja_vendu=vendu_auj)
+                         deja_vendu=vendu_auj,
+                         regime=(snapshot.get("market_regime") or {}).get("regime"))
         # Filtrer les signaux dans le sens du conseil final
         action = r["action"]
         if action in ("VENDRE", "ALLÉGER"):
@@ -333,7 +343,7 @@ def _with_candle(conseil: dict, candle_info: dict | None,
                  score: float = 50, reco: str = "NEUTRE",
                  total_shares: float = 0, prix: float = 0,
                  data_date: str = "", var_1d: float = None,
-                 deja_vendu: float = 0) -> dict:
+                 deja_vendu: float = 0, regime: str = None) -> dict:
     """
     Enrichit un conseil de base avec le signal du dernier pattern chandelier.
     Peut modifier l'action (ex. TENIR → ALLÉGER sur signal baissier fort)
@@ -407,6 +417,21 @@ def _with_candle(conseil: dict, candle_info: dict | None,
                           f"clôture précédente, mais rebond de {var_1d:+.1f}% sur la "
                           f"séance en cours — signal probablement invalidé, "
                           f"pas d'allégement.")
+                return _conseil(action, conseil.get("quantite_suggeree"),
+                                conseil.get("prix_cible"), raison)
+
+            # DOUBLE CONFIRMATION : en marché porteur avec un score
+            # correct, un pattern isolé n'autorise PAS la sortie — les
+            # signaux baissiers isolés sont statistiquement peu fiables
+            # (attribution backtest), et vendre trop facilement est ce
+            # qui fait perdre contre le buy & hold.
+            if regime != "baissier" and score >= SEUIL_CONFIRMATION_SORTIE:
+                raison = (f"{raison}<br>"
+                          f"{d}Pattern chandelier {label} ({name}) détecté, mais "
+                          f"marché porteur et score correct ({score:.0f}/100) — "
+                          f"pas d'allégement sur signal isolé (double "
+                          f"confirmation requise : régime baissier ou score < "
+                          f"{SEUIL_CONFIRMATION_SORTIE}).")
                 return _conseil(action, conseil.get("quantite_suggeree"),
                                 conseil.get("prix_cible"), raison)
 

@@ -288,6 +288,30 @@ assert _seuil_tenir(1, atr=15.0) == 8.0               # ATR extrême borné à 8
 assert _seuil_tenir(1, atr=0.5)  == 2.0               # ATR minuscule borné à 2
 print("✓ _seuil_tenir : bande TENIR proportionnelle à l'ATR, bornée [2;8]")
 
+# ── Double confirmation des sorties : pattern seul ≠ allégement ──
+# Marché porteur (régime haussier) + score correct (58) + pattern baissier
+# frais → PAS d'allégement (les signaux baissiers isolés sont peu fiables
+# en marché haussier — attribution backtest : 27% sur TMC)
+_snap_porteur = {"score_global": 58.0, "recommandation": "ACHETER",
+                 "signals_tech": [], "signals_fund": [],
+                 "market_regime": {"regime": "haussier"}}
+adv_porteur = generate_advice(_s_tmc, _m_calme, _snap_porteur, candle_info=_candle_bear)
+assert adv_porteur["action"] == "TENIR", \
+    f"marché porteur + score 58 → pas de sortie sur pattern isolé, obtenu {adv_porteur['action']}"
+assert "double confirmation requise" in adv_porteur["raisonnement"]
+
+# Régime BAISSIER + même score → le pattern est confirmé → ALLÉGER
+_snap_baissier = {**_snap_porteur, "market_regime": {"regime": "baissier"}}
+adv_baissier = generate_advice(_s_tmc, _m_calme, _snap_baissier, candle_info=_candle_bear)
+assert adv_baissier["action"] == "ALLÉGER"
+
+# Score < 45 (zone VENDRE) + régime haussier → confirmé par le score → ALLÉGER
+# (_snap_tmc : score 41.4 — c'est pour ça que les tests historiques passent)
+adv_score_bas = generate_advice(_s_tmc, _m_calme, _snap_tmc, candle_info=_candle_bear)
+assert adv_score_bas["action"] == "ALLÉGER"
+print("✓ double confirmation : porteur+score OK → TENIR ; régime baissier ou score <45 → ALLÉGER")
+
+
 # ── Fraîcheur du pattern : un chandelier de > 3 jours n'escalade plus ──
 # L'Étoile du soir du 13.07 déclenchait ALLÉGER tous les jours suivants
 _candle_vieux = {**_candle_bear,
