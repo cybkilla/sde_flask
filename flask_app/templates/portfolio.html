@@ -345,8 +345,6 @@
     const today    = new Date().toISOString().slice(0, 10);
     const followed = (s.lots || []).some(l => l.conseil_date === today);
 
-    const sellLots = (s.lots || []).filter(l => l.type === 'vente');
-    const cashRecu = sellLots.reduce((sum, l) => sum + parseFloat(l.quantite) * parseFloat(l.prix_achat), 0);
 
     const _ms = window.sdeMarketStatus ? window.sdeMarketStatus() : { isOpen: false };
     const mktBadge = _ms.isOpen
@@ -392,7 +390,7 @@
         : `<strong style="color:#2563EB">${parseFloat(s.total_shares).toLocaleString("en-US", {maximumFractionDigits:4})}</strong> actions`}
       &nbsp;·&nbsp; coût moy. <strong style="color:var(--sde-text)">${sym}${parseFloat(s.cout_moyen).toFixed(2)}</strong>
       &nbsp;·&nbsp; investi <strong style="color:var(--sde-text)">${sym}${parseFloat(s.total_investi).toFixed(2)}</strong>
-      ${cashRecu > 0 ? `&nbsp;·&nbsp; <span style="color:var(--sde-muted)" title="Somme brute des ventes de CE ticker — le cash réellement disponible (ventes − achats, tous tickers) est dans l'en-tête Totaux">produit des ventes</span> <strong style="color:#2563EB">${sym}${cashRecu.toFixed(2)}</strong>` : ""}
+
     </span>
     <span style="margin-left:auto;text-align:right;flex-shrink:0">
       ${s.position_fermee ? (() => {

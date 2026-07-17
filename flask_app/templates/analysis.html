@@ -955,8 +955,7 @@ window.sdePortfolio = (function () {
             </div>`;
         }).join("");
 
-        const sellLots = (s.lots || []).filter(l => l.type === 'vente');
-        const cashRecu = sellLots.reduce((sum, l) => sum + parseFloat(l.quantite) * parseFloat(l.prix_achat), 0);
+
 
         wrap.innerHTML = `
           <div style="border-top:1px solid var(--sde-border);padding:10px 0 10px;
@@ -977,10 +976,10 @@ window.sdePortfolio = (function () {
                 </strong>
                 <span style="color:var(--sde-muted);font-size:.78rem"> actions</span>
               </span>
-              ${cashRecu > 0 ? `
-              <span title="Produit cumulé des ventes de ce ticker — le cash global du compte (ventes − achats, tous tickers) est celui utilisé par les conseils">
-                <span style="color:var(--sde-muted)">Produit des ventes</span>
-                <strong style="color:#2563EB"> ${SYM}${cashRecu.toFixed(2)}</strong>
+              ${data.cash_dispo != null ? `
+              <span title="Ventes − achats, tous tickers confondus — le cash que les conseils ACHETER/RENFORCER peuvent engager">
+                <span style="color:var(--sde-muted)">Trésorerie dispo.</span>
+                <strong style="color:#2563EB"> ${SYM}${data.cash_dispo.toFixed(2)}</strong>
               </span>` : ""}
             </div>
             <div style="font-size:.85rem;font-weight:700;color:${pnlColor}">

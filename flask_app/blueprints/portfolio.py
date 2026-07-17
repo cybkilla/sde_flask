@@ -15,11 +15,15 @@ def get_positions(ticker: str):
     ticker = ticker.upper()
     try:
         from data.market            import get_live_price
-        from portfolio.positions    import get_portfolio_summary
+        from portfolio.positions    import get_portfolio_summary, get_cash_disponible
         live    = get_live_price(ticker)
         price   = live.get("price") or 0
         summary = get_portfolio_summary(current_user.id, ticker, price)
-        return jsonify({"ok": True, "summary": summary, "price": price})
+        # Trésorerie GLOBALE (ventes − achats, tous tickers) : c'est elle
+        # qui contraint les conseils — le 'produit des ventes' par ticker
+        # n'aidait aucune décision (retiré le 17.07)
+        return jsonify({"ok": True, "summary": summary, "price": price,
+                        "cash_dispo": get_cash_disponible(current_user.id)})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
