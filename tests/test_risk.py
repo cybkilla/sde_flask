@@ -328,6 +328,39 @@ assert adv_frais["action"] == "ALLÉGER"
 print("✓ fraîcheur pattern : > 3 jours → information seulement, ≤ 3 jours → escalade")
 
 
+# ── Repli exceptionnel : la chute du 16.07 rejouée ──
+# TMC -6.8% en séance (≥ 1×ATR ~6%), RSI 34, score 57, cash dispo →
+# RENFORCER (l'utilisateur avait dû acheter SANS conseil ce jour-là :
+# la règle P&L ratait les soldes du marché)
+_m_krach = {**_m_tmc, "price": 3.83, "var_1d": -6.8, "rsi": 34.0}
+_s_krach = {"pnl_pct": -4.6, "total_shares": 8076, "cout_moyen": 4.01,
+            "lots": [{"type": "import", "date_achat": "2026-07-08", "quantite": 10768}]}
+_snap_krach = {"score_global": 57.0, "recommandation": "ACHETER",
+               "signals_tech": [], "signals_fund": []}
+adv_krach = generate_advice(_s_krach, _m_krach, _snap_krach, cash_dispo=10800.0)
+assert adv_krach["action"] == "RENFORCER", \
+    f"chute ≥1×ATR + RSI bas + score OK + cash → RENFORCER, obtenu {adv_krach['action']}"
+assert "Repli exceptionnel" in adv_krach["raisonnement"]
+assert adv_krach["quantite_suggeree"] == round(8076 * 0.25)   # 2019, cash suffisant
+
+# Chute dans le bruit (-3% pour un ATR ~6%) → pas de repli exceptionnel
+adv_bruit = generate_advice(_s_krach, {**_m_krach, "var_1d": -3.0},
+                            _snap_krach, cash_dispo=10800.0)
+assert adv_bruit["action"] != "RENFORCER"
+
+# Score effondré (41 < 45) pendant la chute → pas d'achat du couteau qui tombe
+adv_couteau = generate_advice(_s_krach, _m_krach,
+                              {**_snap_krach, "score_global": 41.0,
+                               "recommandation": "VENDRE"}, cash_dispo=10800.0)
+assert adv_couteau["action"] != "RENFORCER"
+
+# Sans trésorerie → TENIR avec explication (pas de conseil inapplicable)
+adv_fauche = generate_advice(_s_krach, _m_krach, _snap_krach, cash_dispo=1.0)
+assert adv_fauche["action"] == "TENIR"
+assert "trésorerie suivie insuffisante" in adv_fauche["raisonnement"]
+print("✓ repli exceptionnel : le 16.07 rejoué → RENFORCER ; bruit/score bas/sans cash → non")
+
+
 # ── etat_compte : la métrique objectif (compte total) et son benchmark ──
 from portfolio.positions import etat_compte
 # Scénario réel admin : import 10768 @ 4.01, vente 2692 @ 4.02, cours 4.13

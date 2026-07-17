@@ -21,6 +21,11 @@ from config import ALERT_VAR_THRESHOLD, CHECK_INTERVAL_MIN
 
 USERS_FILE = Path(__file__).parent.parent / "auth" / "users.yaml"
 
+# Anti-spam mémoire des paliers d'alerte {(ticker, date): palier} —
+# filet si la migration var_alerte_* n'est pas encore appliquée
+# (sinon re-email à chaque passage de 30 min)
+_PALIERS_MEM: dict = {}
+
 
 def get_all_users() -> dict:
     """Retourne {username: email} depuis Supabase, ou users.yaml en fallback."""
@@ -88,16 +93,56 @@ def _check_ticker(ticker: str, company: str, username: str, email: str) -> None:
 
     last      = get_last_score(ticker)
     old_reco  = last.get("reco", "")
-    last_prix = last.get("prix")
-
-    if last_prix and last_prix > 0 and prix_live:
-        variation_tracked = round((prix_live - last_prix) / last_prix * 100, 2)
-    else:
-        variation_tracked = live.get("var_1d", 0) or 0
 
     # ── 4. Conditions d'alerte ────────────────────────────
     reco_change = bool(old_reco) and old_reco != new_reco
-    var_alert   = abs(variation_tracked) >= ALERT_VAR_THRESHOLD
+
+    # Variation QUOTIDIENNE (vs clôture de la veille, fournie par Finnhub).
+    # L'ancienne comparaison au passage précédent (30 min) ratait les
+    # chutes progressives : -8.5% par pas de ~1% ne franchissait jamais
+    # le seuil de 5% (vécu TMC 16.07 — aucune alerte reçue).
+    # Anti-spam par PALIERS : alerte à ±5%, re-alerte à ±10%, ±15%…
+    # une seule fois par palier et par jour (persisté dans scores).
+    from datetime import date as _date
+    var_jour  = live.get("var_1d")
+    palier    = 0
+    if var_jour is not None and abs(var_jour) >= ALERT_VAR_THRESHOLD:
+        palier = int(abs(var_jour) // ALERT_VAR_THRESHOLD) * int(ALERT_VAR_THRESHOLD)
+    cle_mem = (ticker, str(_date.today()))
+    deja_alerte = (
+        (str(last.get("var_alerte_date") or "") == str(_date.today())
+         and float(last.get("var_alerte_pct") or 0) >= palier)
+        or _PALIERS_MEM.get(cle_mem, 0) >= palier
+    )
+    var_alert = palier > 0 and not deja_alerte
+    variation_tracked = var_jour if var_jour is not None else 0
+
+    # Note position pour l'email de chute : où est le seuil de
+    # renforcement, combien de trésorerie — l'info pour DÉCIDER
+    # (demande utilisateur du 17.07 après la chute non alertée)
+    position_note = ""
+    if var_alert and (var_jour or 0) < 0:
+        try:
+            from portfolio.positions import get_portfolio_summary, get_cash_disponible
+            from portfolio.risk import atr_pct, seuils_adaptes
+            from portfolio.config_advisor import get_config
+            s = get_portfolio_summary(username, ticker, prix_live)
+            if s and not s.get("position_fermee"):
+                atr_e   = atr_pct((snap or {}).get("market", {}).get("history"))
+                seuils  = seuils_adaptes(get_config(username), atr_e)
+                cout    = float(s["cout_moyen"])
+                prix_rf = cout * (1 + seuils["pnl_renforcer"] / 100)
+                cash    = get_cash_disponible(username)
+                cash_tx = (f" · trésorerie disponible : ${cash:,.2f}"
+                           if cash is not None else "")
+                position_note = (
+                    f"Votre position : {s['total_shares']:g} actions à "
+                    f"{cout:.2f} $ de coût moyen ({s['pnl_pct']:+.1f}%). "
+                    f"Seuil de renforcement SDE : {prix_rf:.2f} $ "
+                    f"({seuils['pnl_renforcer']:+.1f}% de latence){cash_tx}."
+                )
+        except Exception as e:
+            print(f"  [Alerte] note position indisponible : {e}", flush=True)
 
     if reco_change or var_alert:
         print(f"  → Alerte {ticker} pour {username} "
@@ -115,7 +160,18 @@ def _check_ticker(ticker: str, company: str, username: str, email: str) -> None:
             reco_changed  = reco_change,
             var_triggered = var_alert,
             context       = context,
+            position_note = position_note,
         )
+        if var_alert:
+            # Mémorise le palier alerté (anti-spam) — limitation connue :
+            # clé par ticker (pas par user) — si plusieurs utilisateurs
+            # suivent le même ticker, seul le premier du passage reçoit
+            # l'alerte de palier. À revoir si le multi-utilisateur
+            # devient réel.
+            _PALIERS_MEM[cle_mem] = palier
+            save_last_score(ticker, new_score, new_reco, prix_live or prix,
+                            extra={"var_alerte_pct": palier,
+                                   "var_alerte_date": str(_date.today())})
 
     # ── 5. Mise à jour du dernier état connu ─────────────
     save_last_score(ticker, new_score, new_reco, prix_live or prix)
@@ -220,18 +276,18 @@ def _check_position_advice(username: str, email: str) -> None:
             if not prix_live:
                 continue
 
+            # ATR du titre (depuis le snapshot) — sert au gap pré-marché
+            # ET à la réévaluation en séance
+            from portfolio.risk import gap_significatif, atr_pct
+            from snapshot import get_snapshot, MAX_AGE_HOURS
+            snap_t = get_snapshot(ticker, max_age_hours=MAX_AGE_HOURS)
+            atr_t  = atr_pct(snap_t.get("market", {}).get("history")) if snap_t else None
+
             # ── Gap overnight (pré-marché uniquement) ─────────────────
             gap_pct = None
             if premarche and live.get("prev_close"):
                 gap = live.get("var_1d")     # prix pré-marché vs clôture veille
-                from portfolio.risk import gap_significatif
-                from snapshot import get_snapshot, MAX_AGE_HOURS
-                snap_gap = get_snapshot(ticker, max_age_hours=MAX_AGE_HOURS)
-                atr = None
-                if snap_gap:
-                    from portfolio.risk import atr_pct
-                    atr = atr_pct(snap_gap.get("market", {}).get("history"))
-                if gap_significatif(gap, atr):
+                if gap_significatif(gap, atr_t):
                     gap_pct = gap
 
             # Conseil du jour déjà généré + gap significatif + pas encore
@@ -245,9 +301,32 @@ def _check_position_advice(username: str, email: str) -> None:
                     print(f"  [Advice] {ticker} : gap pré-marché {gap_pct:+.1f}% "
                           f"— conseil réévalué", flush=True)
 
+            # ── Réévaluation EN SÉANCE (15h30-22h Paris) ───────────────
+            # Le conseil du jour était figé au prix de sa création : une
+            # chute de -8.5% l'après-midi le laissait périmé toute la
+            # journée (vécu TMC 16.07 — achat manuel sans conseil).
+            # Si le cours s'écarte de ≥ 1×ATR du prix du conseil →
+            # invalidation + régénération (1 fois par jour, marqueur).
+            intraday_pct = None
+            if (ancienne_action is None and atr_t
+                    and _fenetre_paris(15, 30, 22, 0, jours_ouvres=True)):
+                existant = get_today_advice(username, ticker)
+                ref = float(existant.get("prix_jour") or 0) if existant else 0
+                if (existant and ref > 0
+                        and "réévalué en séance" not in (existant.get("raisonnement") or "")):
+                    move = (prix_live - ref) / ref * 100
+                    if abs(move) >= atr_t:
+                        ancienne_action = existant.get("action")
+                        delete_today_advice(username, ticker)
+                        intraday_pct = round(move, 1)
+                        print(f"  [Advice] {ticker} : mouvement en séance "
+                              f"{move:+.1f}% (≥ 1×ATR {atr_t}%) — conseil réévalué",
+                              flush=True)
+
             advice, created = ensure_today_advice(username, ticker, prix_live,
                                                   gap_pct=gap_pct,
-                                                  var_1d=live.get("var_1d"))
+                                                  var_1d=live.get("var_1d"),
+                                                  intraday_pct=intraday_pct)
             if not created or not advice:
                 continue          # déjà généré (page visitée) ou données manquantes
 

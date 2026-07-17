@@ -108,12 +108,16 @@ def get_last_score(ticker: str) -> dict:
     return _jload(SCORE_FILE).get(ticker, {})
 
 
-def save_last_score(ticker: str, score: float, reco: str, prix: float = None):
+def save_last_score(ticker: str, score: float, reco: str, prix: float = None,
+                    extra: dict = None):
+    """extra : champs additionnels (ex. palier d'alerte de variation)."""
     ticker = ticker.upper()
     entry  = {"score": score, "reco": reco,
                "updated": datetime.now().strftime("%Y-%m-%d %H:%M")}
     if prix is not None:
         entry["prix"] = round(prix, 4)
+    if extra:
+        entry.update(extra)
 
     if _db_ok():
         try:

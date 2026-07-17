@@ -41,7 +41,9 @@ CREATE TABLE scores (
   score   FLOAT,
   reco    TEXT,
   updated TEXT,
-  prix    FLOAT
+  prix    FLOAT,
+  var_alerte_pct  FLOAT,   -- dernier palier de variation quotidienne alerté (5, 10, 15…)
+  var_alerte_date TEXT     -- date (YYYY-MM-DD) de ce palier — anti-spam par jour
 );
 
 -- Cache pipeline sérialisé (TTL 24h)
@@ -135,6 +137,18 @@ nouvelle colonne ajoutée ici.
 ---
 
 ## Migrations sur une installation existante
+
+**Colonnes `var_alerte_pct` / `var_alerte_date`** (2026-07-17 — alerte de
+variation QUOTIDIENNE vs clôture de la veille, par paliers de 5% avec
+anti-spam ; l'ancienne comparaison au passage précédent ratait les chutes
+progressives : -8.5% par pas de 1% ne franchissait jamais le seuil) :
+
+```sql
+ALTER TABLE scores
+  ADD COLUMN IF NOT EXISTS var_alerte_pct  FLOAT,
+  ADD COLUMN IF NOT EXISTS var_alerte_date TEXT;
+```
+
 
 **Colonne `signaux_actifs`** (2026-07-08 — vecteur de signaux techniques stocké
 avec chaque conseil ; matière première de la future calibration adaptative des

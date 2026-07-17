@@ -204,6 +204,14 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
                 f"aujourd'hui — pas de nouvelle réduction suggérée le même "
                 f"jour (le stop loss reste actif)."
             )
+        # Réévaluation en séance : marqueur + explication
+        im = market.get("intraday_move")
+        if im is not None:
+            r["raisonnement"] += (
+                f"<br>{cd}Conseil réévalué en séance : le cours a bougé de "
+                f"{im:+.1f}% depuis le calcul précédent (au-delà du bruit "
+                f"quotidien normal du titre)."
+            )
         # Seuils ATR : affichés sur TOUT conseil avec position (pnl fourni),
         # pas seulement quand un seuil se déclenche — l'utilisateur doit voir
         # en permanence à quels niveaux SDE réagira pour CE titre.
@@ -313,6 +321,39 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
             f"{cd}RSI bas ({rsi:.0f}) + signal SDE haussier ({score:.0f}/100). "
             f"Opportunité de renforcement sur faiblesse ({pnl_pct:+.1f}% de latence, "
             f"seuil {seuils['pnl_renforcer']:+.1f}%).{note_cash}")
+        return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
+
+    # Repli exceptionnel : chute du JOUR ≥ max(5%, 1×ATR) avec RSI bas
+    # et score encore correct → opportunité d'achat sur capitulation.
+    # Le RENFORCER standard raisonne en P&L de la position — il ratait
+    # les soldes du marché : le 16.07, TMC à -8.5% n'a déclenché aucun
+    # conseil (P&L amorti par la plus-value réalisée) et l'utilisateur a
+    # acheté sans conseil. La survente est par ailleurs le signal le plus
+    # fiable mesuré sur ce type de titre (attribution backtest).
+    var_j = market.get("var_1d")
+    if (atr and var_j is not None and var_j <= -max(5.0, atr)
+            and rsi <= c["rsi_renforcer"]
+            and score >= SEUIL_CONFIRMATION_SORTIE and reco != "VENDRE"
+            and achete_auj == 0 and vendu_auj == 0):
+        renforcer = max(1, round(total_shares * 0.25))
+        note_cash = ""
+        if cash_dispo is not None and prix > 0:
+            max_achetable = int(cash_dispo // prix)
+            if max_achetable < 1:
+                base = _conseil("TENIR", None, None,
+                    f"{cd}Repli exceptionnel ({var_j:+.1f}% aujourd'hui, RSI "
+                    f"{rsi:.0f}) — opportunité de renforcement, mais trésorerie "
+                    f"suivie insuffisante ({cash_dispo:.2f} $). Maintien.")
+                return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
+            if renforcer > max_achetable:
+                renforcer = max_achetable
+                note_cash = (f" Quantité limitée par la trésorerie disponible "
+                             f"({cash_dispo:,.2f} $).")
+        base = _conseil("RENFORCER", renforcer, prix,
+            f"{cd}Repli exceptionnel : {var_j:+.1f}% aujourd'hui (au-delà du "
+            f"bruit quotidien du titre, ATR {atr:.1f}%), RSI {rsi:.0f} et score "
+            f"SDE encore correct ({score:.0f}/100) — opportunité de renforcement "
+            f"sur capitulation.{note_cash}")
         return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
 
     # Signal haussier confirmé en territoire positif
@@ -548,7 +589,8 @@ def delete_today_advice(username: str, ticker: str) -> bool:
 
 
 def ensure_today_advice(username: str, ticker: str, prix_live: float,
-                        gap_pct: float = None, var_1d: float = None):
+                        gap_pct: float = None, var_1d: float = None,
+                        intraday_pct: float = None):
     """
     Garantit qu'un conseil existe pour aujourd'hui — appelé par le
     scheduler pour les tickers en POSITION, afin que le conseil quotidien
@@ -599,6 +641,10 @@ def ensure_today_advice(username: str, ticker: str, prix_live: float,
         # de la séance en cours
         if var_1d is not None:
             market["var_1d"] = var_1d
+        # Mouvement en séance ≥ 1×ATR vs le prix du conseil précédent :
+        # explique pourquoi le conseil a été réévalué en cours de journée
+        if intraday_pct is not None:
+            market["intraday_move"] = intraday_pct
 
         # Pattern chandelier — même construction que la route portfolio
         candle_info = None

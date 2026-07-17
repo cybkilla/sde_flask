@@ -13,7 +13,8 @@ def send_alert(to_email: str, username: str,
                variation: float,
                reco_changed: bool = False,
                var_triggered: bool = False,
-               context: str = ""):
+               context: str = "",
+               position_note: str = ""):
 
     icons  = {"ACHETER": "▲", "VENDRE": "▼", "NEUTRE": "◆"}
     colors = {"ACHETER": "#1D9E75", "VENDRE": "#D85A30", "NEUTRE": "#BA7517"}
@@ -111,6 +112,16 @@ def send_alert(to_email: str, username: str,
         </tr>
         {reco_row}
       </table>
+
+      {f'''<div style="background:#EEF2FF;border-left:4px solid #6366F1;
+                  border-radius:6px;padding:12px 14px;margin-bottom:16px;
+                  font-size:13px;color:#374151;line-height:1.6">
+        <span style="font-size:11px;font-weight:600;color:#3730A3;
+                     text-transform:uppercase;letter-spacing:0.05em">
+          Votre position
+        </span><br><br>
+        {position_note}
+      </div>''' if position_note else ''}
 
       {f'''<div style="background:{'#EAF3DE' if variation >= 0 else '#FFF3CD'};
                   border-left:4px solid {'#1D9E75' if variation >= 0 else '#F59E0B'};

@@ -241,6 +241,24 @@ def analyze(ticker: str):
     )
 
 
+@bp.route("/api/live/<ticker>")
+def api_live(ticker: str):
+    """
+    Prix live léger (Finnhub /quote) pour le rafraîchissement automatique
+    de l'en-tête : le prix affiché était figé au chargement de la page —
+    pendant la chute du 16.07, SDE affichait 3.83$ quand le titre cotait
+    3.76$ chez Yahoo (page ouverte depuis 1h).
+    """
+    ticker = ticker.upper().strip()
+    if not ticker:
+        return jsonify({}), 400
+    try:
+        from data.market import get_live_price
+        return jsonify(get_live_price(ticker) or {})
+    except Exception:
+        return jsonify({}), 200
+
+
 # ── Backtest (AJAX) ──────────────────────────────────────────────────────────
 
 @bp.route("/backtest/<ticker>")

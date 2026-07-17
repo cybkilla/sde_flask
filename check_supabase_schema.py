@@ -19,7 +19,7 @@ import sys
 SCHEMA_ATTENDU = {
     "users":               [],
     "watchlist":           [],
-    "scores":              [],
+    "scores":              ["var_alerte_pct", "var_alerte_date"],   # paliers alerte 2026-07-17
     "ticker_snapshots":    [],
     "positions":           ["conseil_date"],
     "daily_advice":        ["signaux_actifs",                      # 2026-07-08

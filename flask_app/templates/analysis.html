@@ -109,9 +109,9 @@
   <div class="col-12 col-sm-5 col-lg-4">
     <div class="sde-card h-100">
       <div class="sde-section-title">Prix <span id="sde-mkt-badge"></span></div>
-      <div style="font-size:2rem;font-weight:600;color:{{ cvar }};line-height:1.1">
-        {{ sym }}{{ "%.2f"|format(market.price) }}
-        <span style="font-size:.85rem;font-weight:500;margin-left:6px;vertical-align:middle">
+      <div id="sde-live-wrap" style="font-size:2rem;font-weight:600;color:{{ cvar }};line-height:1.1">
+        <span id="sde-live-price">{{ sym }}{{ "%.2f"|format(market.price) }}</span>
+        <span id="sde-live-var" style="font-size:.85rem;font-weight:500;margin-left:6px;vertical-align:middle">
           {{ arr }} {{ "%+.2f"|format(var) }}%
         </span>
       </div>
@@ -1771,6 +1771,35 @@ const sdeBacktest = (function () {
   }
 
   return { run };
+})();
+
+/* ── Prix live : rafraîchissement automatique ──────────────────────────── */
+// Le prix de l'en-tête était figé au chargement : pendant la chute du
+// 16.07 la page affichait 3.83$ quand le titre cotait 3.76$. Polling
+// toutes les 60s (appel Finnhub léger côté serveur).
+(function () {
+  const TICKER = {{ ticker | tojson }};
+  const SYM    = {{ sym | tojson }};
+  function majPrix() {
+    if (document.hidden) return;          // onglet en arrière-plan : ne rien faire
+    fetch(`/api/live/${TICKER}`)
+      .then(r => r.json())
+      .then(d => {
+        if (!d || !d.price) return;
+        const wrap = document.getElementById("sde-live-wrap");
+        const p    = document.getElementById("sde-live-price");
+        const v    = document.getElementById("sde-live-var");
+        if (!wrap || !p) return;
+        p.textContent = `${SYM}${d.price.toFixed(2)}`;
+        if (v && d.var_1d != null) {
+          const up = d.var_1d >= 0;
+          v.textContent = `${up ? "▲" : "▼"} ${d.var_1d >= 0 ? "+" : ""}${d.var_1d.toFixed(2)}%`;
+          wrap.style.color = up ? "#1D9E75" : "#D85A30";
+        }
+      })
+      .catch(() => {});
+  }
+  setInterval(majPrix, 60000);
 })();
 
 /* ── Graphiques ─────────────────────────────────────────────────────────── */
