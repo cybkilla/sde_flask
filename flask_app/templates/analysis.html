@@ -1530,22 +1530,40 @@ const sdeBacktest = (function () {
   const SYM    = {{ sym | tojson }};
   function majPrix() {
     if (document.hidden) return;          // onglet en arrière-plan : ne rien faire
+    const wrap = document.getElementById("sde-live-wrap");
+
+    // Effet de rafraîchissement : flou + opacité pendant le fetch, retour
+    // net ensuite — durée minimale de 350ms pour rester perceptible même
+    // quand la réponse arrive en 100ms (sinon l'effet clignoterait)
+    if (wrap) {
+      wrap.style.transition = "opacity .25s ease, filter .25s ease";
+      wrap.style.opacity = "0.35";
+      wrap.style.filter  = "blur(2px)";
+    }
+    const t0 = Date.now();
+    const nettete = () => {
+      const attente = Math.max(0, 350 - (Date.now() - t0));
+      setTimeout(() => {
+        if (wrap) { wrap.style.opacity = "1"; wrap.style.filter = "none"; }
+      }, attente);
+    };
+
     fetch(`/api/live/${TICKER}`)
       .then(r => r.json())
       .then(d => {
-        if (!d || !d.price) return;
-        const wrap = document.getElementById("sde-live-wrap");
-        const p    = document.getElementById("sde-live-price");
-        const v    = document.getElementById("sde-live-var");
-        if (!wrap || !p) return;
-        p.textContent = `${SYM}${d.price.toFixed(2)}`;
-        if (v && d.var_1d != null) {
-          const up = d.var_1d >= 0;
-          v.textContent = `${up ? "▲" : "▼"} ${d.var_1d >= 0 ? "+" : ""}${d.var_1d.toFixed(2)}%`;
-          wrap.style.color = up ? "#1D9E75" : "#D85A30";
+        const p = document.getElementById("sde-live-price");
+        const v = document.getElementById("sde-live-var");
+        if (d && d.price && wrap && p) {
+          p.textContent = `${SYM}${d.price.toFixed(2)}`;
+          if (v && d.var_1d != null) {
+            const up = d.var_1d >= 0;
+            v.textContent = `${up ? "▲" : "▼"} ${d.var_1d >= 0 ? "+" : ""}${d.var_1d.toFixed(2)}%`;
+            wrap.style.color = up ? "#1D9E75" : "#D85A30";
+          }
         }
+        nettete();
       })
-      .catch(() => {});
+      .catch(nettete);
   }
   setInterval(majPrix, 60000);
 })();
