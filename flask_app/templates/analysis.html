@@ -924,14 +924,15 @@ window.sdePortfolio = (function () {
           const dateFr = d.toLocaleDateString("fr-FR", {day:"2-digit", month:"short", year:"numeric"});
           const isVente  = l.type === "vente";
           const isImport = l.type === "import";
-          const dotColor = isVente ? "#D85A30" : isImport ? "#6366F1" : "var(--sde-muted)";
+          const dotColor = isVente ? "#D85A30" : isImport ? "#6366F1" : "#1D9E75";
           const typeTag  = isVente
             ? `<span style="font-size:.68rem;background:#FAECE7;color:#D85A30;
                             border-radius:4px;padding:1px 5px;font-weight:600;margin-right:4px">↓ Vente</span>`
             : isImport
             ? `<span style="font-size:.68rem;background:#EEF2FF;color:#6366F1;
                             border-radius:4px;padding:1px 5px;font-weight:600;margin-right:4px">↩ Importé</span>`
-            : "";
+            : `<span style="font-size:.68rem;background:#E1F5EE;color:#1D9E75;
+                            border-radius:4px;padding:1px 5px;font-weight:600;margin-right:4px">↑ Achat</span>`;
           return `
             <div style="display:flex;align-items:center;justify-content:space-between;
                         padding:7px 0;border-bottom:1px solid var(--sde-border)">

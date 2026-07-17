@@ -272,14 +272,15 @@
     const rows = lots.map(l => {
       const isVente  = l.type === "vente";
       const isImport = l.type === "import";
-      const dotColor = isVente ? "#D85A30" : isImport ? "#6366F1" : "var(--sde-muted)";
+      const dotColor = isVente ? "#D85A30" : isImport ? "#6366F1" : "#1D9E75";
       const typeTag  = isVente
         ? `<span style="font-size:.68rem;font-weight:600;color:#D85A30;
                         background:#FAECE7;border-radius:4px;padding:1px 5px;margin-left:4px">↓ Vente</span>`
         : isImport
         ? `<span style="font-size:.68rem;font-weight:600;color:#6366F1;
                         background:#EEF2FF;border-radius:4px;padding:1px 5px;margin-left:4px">↩ Importé</span>`
-        : "";
+        : `<span style="font-size:.68rem;font-weight:600;color:#1D9E75;
+                        background:#E1F5EE;border-radius:4px;padding:1px 5px;margin-left:4px">↑ Achat</span>`;
       const d      = new Date(l.date_achat + "T00:00:00");
       const dateFr = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
       return `
