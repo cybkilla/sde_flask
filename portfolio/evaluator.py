@@ -36,12 +36,21 @@ def _juger(action: str, variation: float, horizon: int, atr: float = None):
     Le conseil était-il bon, vu la variation constatée à cet horizon ?
     Fonction PURE (testable hors réseau). None = action non jugeable.
     `atr` (optionnel) adapte la bande TENIR à la volatilité du titre.
+
+    TENIR/SURVEILLER : jugement ASYMÉTRIQUE. Une bande symétrique
+    pénaliserait une hausse qui dépasse le seuil — absurde : tenir
+    pendant une hausse est toujours une bonne décision (c'est le
+    buy & hold qui gagne), quelle que soit son ampleur. Seule une
+    BAISSE au-delà du bruit normal du titre (bande ATR×√h) signale
+    qu'une sortie aurait été nécessaire.
     """
     if action in ("ACHETER", "RENFORCER"):
         return variation > 0
     if action in ("VENDRE", "ALLÉGER"):
         return variation < 0
     if action in ("TENIR", "SURVEILLER"):
+        if variation >= 0:
+            return True
         return abs(variation) < _seuil_tenir(horizon, atr)
     return None
 

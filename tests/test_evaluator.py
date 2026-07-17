@@ -27,13 +27,21 @@ assert _juger("RENFORCER", -0.1, 5) is False
 # VENDRE/ALLÉGER : bon si ça baisse
 assert _juger("VENDRE",  -4.0, 20) is True
 assert _juger("ALLÉGER", +1.2, 1)  is False
-# TENIR/SURVEILLER : bon si le cours reste dans la bande (dépend de l'horizon)
-assert _juger("TENIR", +5.0, 1)  is False   # 5% > seuil 3% à J+1
-assert _juger("TENIR", +5.0, 20) is True    # 5% < seuil 13.4% à J+20
-assert _juger("SURVEILLER", -6.0, 5) is True   # 6% < 6.7% à J+5
+# TENIR/SURVEILLER : jugement ASYMÉTRIQUE.
+# Une hausse est TOUJOURS un bon TENIR, quelle que soit son ampleur —
+# tenir pendant une hausse est un succès, jamais une erreur (c'est le
+# buy & hold qui gagne). Seule une baisse au-delà de la bande ATR×√h
+# (bruit normal du titre) signale qu'une sortie aurait été nécessaire.
+assert _juger("TENIR", +5.0, 1)  is True    # hausse → toujours bon, même > seuil
+assert _juger("TENIR", +50.0, 1) is True    # grosse hausse → toujours bon
+assert _juger("TENIR", -5.0, 1)  is False   # baisse 5% > seuil 3% à J+1 → mauvais
+assert _juger("TENIR", -2.0, 1)  is True    # baisse 2% < seuil 3% à J+1 → bruit, bon
+assert _juger("TENIR", -5.0, 20) is True    # même baisse, bande plus large à J+20
+assert _juger("SURVEILLER", -6.0, 5) is True   # 6% < 6.7% à J+5 (bande par défaut, sans ATR)
+assert _juger("TENIR", -9.2, 5, atr=6.3) is True   # cas réel TMC 09.07 : -9.2% < 14.1% (ATR 6.3%)
 # Action inconnue → None (non jugeable, pas False)
 assert _juger("???", 1.0, 1) is None
-print("✓ _juger : sens par action, bande TENIR dépendante de l'horizon")
+print("✓ _juger : sens par action, TENIR asymétrique (hausse toujours bonne, baisse bornée par la bande)")
 
 
 # ── _gain : le coût réel signé, pas le binaire ──
