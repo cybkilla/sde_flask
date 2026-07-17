@@ -500,7 +500,7 @@
       // ── Objectifs de prix ──
       const t  = (tgt && tgt.targets) || {};
       const objHtml = `
-        <div style="border-top:1px solid var(--sde-border);margin-top:10px;padding-top:10px">
+        <div>
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px">
             <span style="font-size:.74rem;font-weight:700;color:var(--sde-muted);text-transform:uppercase;letter-spacing:.05em">
               <i class="bi bi-bullseye me-1"></i>Objectifs de prix</span>
@@ -535,11 +535,14 @@
         </div>`;
 
       wrap.innerHTML = `
-        <p style="font-size:.74rem;color:var(--sde-muted);margin-bottom:6px">${statsTxt}</p>
-        ${lignes ? `<div class="table-responsive" style="max-height:220px;overflow-y:auto">
-          <table class="table table-sm mb-0"><tbody>${lignes}</tbody></table></div>`
-          : ""}
-        ${objHtml}`;
+        ${objHtml}
+        <div style="border-top:1px solid var(--sde-border);margin-top:10px;padding-top:10px">
+          <p style="font-size:.74rem;color:var(--sde-muted);margin-bottom:6px">
+            <i class="bi bi-clock-history me-1"></i>${statsTxt}</p>
+          ${lignes ? `<div class="table-responsive" style="max-height:220px;overflow-y:auto">
+            <table class="table table-sm mb-0"><tbody>${lignes}</tbody></table></div>`
+            : ""}
+        </div>`;
     }).catch(() => {
       wrap.innerHTML = `<p class="text-danger small mb-0">Erreur de chargement.</p>`;
       _histObjCharges.delete(ticker);
