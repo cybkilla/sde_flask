@@ -84,3 +84,35 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     return df
+
+def indicateurs_intraday(hist, prix_live: float) -> dict:
+    """
+    RSI(14) et variation 5 séances recalculés EN SÉANCE : le prix live
+    devient la clôture provisoire du jour. Fonction PURE — sert au
+    rafraîchissement 60s de la fiche analyse (les tuiles RSI/Var5j
+    étaient figées au chargement alors que le prix vivait).
+    Le Vol. ratio n'est PAS recalculable : pas de volume temps réel
+    sur nos sources gratuites.
+    Retourne {} si l'historique est inexploitable.
+    """
+    import datetime as _dt
+    try:
+        if hist is None or len(hist) < 15 or not prix_live:
+            return {}
+        close = hist["Close"].copy()
+        # La dernière bougie est-elle celle d'AUJOURD'HUI ? → on la
+        # remplace par le prix live ; sinon on ajoute une bougie provisoire
+        derniere = str(close.index[-1])[:10]
+        prov = close.reset_index(drop=True)     # positionnel : index dates inutile ici
+        if derniere == str(_dt.date.today()):
+            prov.iloc[-1] = float(prix_live)
+        else:
+            prov = pd.concat([prov, pd.Series([float(prix_live)])],
+                             ignore_index=True)
+        out = {"rsi_live": round(float(_rsi_pandas(prov).iloc[-1]), 1)}
+        if len(prov) >= 6:
+            out["var_5d_live"] = round(
+                (float(prov.iloc[-1]) / float(prov.iloc[-6]) - 1) * 100, 2)
+        return out
+    except Exception:
+        return {}

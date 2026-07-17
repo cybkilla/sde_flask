@@ -404,3 +404,19 @@ assert etat3["cash"] == 0.0 and etat3["total"] == 1000.0
 print("✓ etat_compte : compte total exact, pas de double comptage, B&H stable")
 
 print("\n✓ Tous les tests test_risk.py sont OK (hors réseau)")
+
+
+# ── indicateurs_intraday : RSI/Var5j avec clôture provisoire live ──
+from utils.indicators import indicateurs_intraday, _rsi_pandas
+_h = make_ohlc(0.03, n=30)
+# Prix live très bas → le RSI intraday doit être INFÉRIEUR au RSI de clôture
+_rsi_cloture = float(_rsi_pandas(_h["Close"].reset_index(drop=True)).iloc[-1])
+_ii = indicateurs_intraday(_h, float(_h["Close"].iloc[-1]) * 0.90)
+assert _ii and _ii["rsi_live"] < _rsi_cloture
+# Var 5 séances : live vs clôture d'il y a 5 séances
+_attendu = (float(_h["Close"].iloc[-1]) * 0.90 / float(_h["Close"].iloc[-5]) - 1) * 100
+assert abs(_ii["var_5d_live"] - _attendu) < 0.05
+# Historique trop court ou prix nul → {} sans crash
+assert indicateurs_intraday(_h.head(5), 100.0) == {}
+assert indicateurs_intraday(_h, 0) == {}
+print("✓ indicateurs_intraday : RSI/Var5j provisoires cohérents, robustes")

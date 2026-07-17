@@ -132,8 +132,8 @@
   <div class="col-4 col-sm col-lg">
     <div class="sde-card h-100 text-center">
       <div class="sde-section-title">RSI 14j</div>
-      <div class="sde-metric-val" style="color:{{ rsi_c }}">{{ "%.1f"|format(rsi) }}</div>
-      <div class="sde-metric-label">{{ 'Suracheté' if rsi > 70 else 'Survendu' if rsi < 30 else 'Neutre' }}</div>
+      <div class="sde-metric-val" id="sde-rsi-val" style="color:{{ rsi_c }}">{{ "%.1f"|format(rsi) }}</div>
+      <div class="sde-metric-label" id="sde-rsi-label">{{ 'Suracheté' if rsi > 70 else 'Survendu' if rsi < 30 else 'Neutre' }}</div>
     </div>
   </div>
 
@@ -141,7 +141,7 @@
   <div class="col-4 col-sm col-lg">
     <div class="sde-card h-100 text-center">
       <div class="sde-section-title">Var. 5j</div>
-      <div class="sde-metric-val" style="color:{{ '#1D9E75' if v5 >= 0 else '#D85A30' }}">
+      <div class="sde-metric-val" id="sde-var5-val" style="color:{{ '#1D9E75' if v5 >= 0 else '#D85A30' }}">
         {{ "%+.2f"|format(v5) }}%
       </div>
       <div class="sde-metric-label">5 derniers jours</div>
@@ -153,7 +153,7 @@
     <div class="sde-card h-100 text-center">
       <div class="sde-section-title">Vol. ratio</div>
       <div class="sde-metric-val">{{ "%.1f"|format(market.vol_ratio) }}×</div>
-      <div class="sde-metric-label">vs. moy. 20j</div>
+      <div class="sde-metric-label" title="Donnée quotidienne — volume temps réel indisponible">vs. moy. 20j (quotidien)</div>
     </div>
   </div>
 
@@ -369,7 +369,8 @@
 
     <!-- Zone d'entrée -->
     <div class="col-12 col-md-4">
-      <div style="background:{{ th.bg }};border:1px solid {{ th.bd }};border-radius:8px;padding:12px 14px">
+      <div id="sde-zone-entree" data-low="{{ zones.entry_low }}" data-high="{{ zones.entry_high }}"
+           style="background:{{ th.bg }};border:1px solid {{ th.bd }};border-radius:8px;padding:12px 14px;transition:box-shadow .4s ease">
         <div style="font-size:.68rem;font-weight:500;color:{{ th.txt }};text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">
           {% if is_sell %}Zone de vente{% else %}Zone d'entrée{% endif %}
         </div>
@@ -384,7 +385,9 @@
     <div class="col-12 col-md-4">
       {% set pct_t = zones.pct_target %}
       {% set tc = '#1D9E75' if (pct_t or 0) > 0 else '#D85A30' %}
-      <div style="background:#F8FAFC;border:1px solid var(--sde-border);border-radius:8px;padding:12px 14px">
+      <div id="sde-zone-cible" data-low="{{ zones.target_low }}" data-high="{{ zones.target_high }}"
+           data-sens="{{ 'baisse' if is_sell else 'hausse' }}"
+           style="background:#F8FAFC;border:1px solid var(--sde-border);border-radius:8px;padding:12px 14px;transition:box-shadow .4s ease">
         <div style="font-size:.68rem;font-weight:500;color:var(--sde-text);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">
           {% if is_sell %}Objectif de baisse{% else %}Objectif de hausse{% endif %}
         </div>
@@ -404,7 +407,8 @@
     <div class="col-12 col-md-4">
       {% if zones.stop_loss is not none %}
       {% set pct_s = zones.pct_stop %}
-      <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 14px">
+      <div id="sde-zone-stop" data-stop="{{ zones.stop_loss }}" data-sens="{{ 'haut' if is_sell else 'bas' }}"
+           style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 14px;transition:box-shadow .4s ease">
         <div style="font-size:.68rem;font-weight:500;color:#991b1b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Stop-loss</div>
         <div style="font-size:1.35rem;font-weight:500;color:#DC2626;line-height:1">{{ sym }}{{ "%.2f"|format(zones.stop_loss) }}</div>
         <div style="font-size:.82rem;color:#DC2626;margin:2px 0 6px">
@@ -1560,11 +1564,63 @@ const sdeBacktest = (function () {
             v.textContent = `${up ? "▲" : "▼"} ${d.var_1d >= 0 ? "+" : ""}${d.var_1d.toFixed(2)}%`;
             wrap.style.color = up ? "#1D9E75" : "#D85A30";
           }
+          majTuiles(d);
+          majZones(d.price);
         }
         nettete();
       })
       .catch(nettete);
   }
+  // Tuiles RSI / Var5j recalculées en séance (prix live = clôture provisoire)
+  function majTuiles(d) {
+    const r = document.getElementById("sde-rsi-val");
+    if (r && d.rsi_live != null) {
+      r.textContent = d.rsi_live.toFixed(1);
+      r.style.color = d.rsi_live > 70 ? "#D85A30" : d.rsi_live < 30 ? "#1D9E75" : "var(--sde-text)";
+      const lab = document.getElementById("sde-rsi-label");
+      if (lab) lab.textContent = d.rsi_live > 70 ? "Suracheté" : d.rsi_live < 30 ? "Survendu" : "Neutre";
+    }
+    const v5 = document.getElementById("sde-var5-val");
+    if (v5 && d.var_5d_live != null) {
+      v5.textContent = `${d.var_5d_live >= 0 ? "+" : ""}${d.var_5d_live.toFixed(2)}%`;
+      v5.style.color = d.var_5d_live >= 0 ? "#1D9E75" : "#D85A30";
+    }
+  }
+
+  // Zones de trading : les NIVEAUX sont quotidiens (stables en séance),
+  // c'est la position du prix live par rapport à eux qui vit — on met en
+  // évidence la carte concernée quand le cours la touche
+  function majZones(prix) {
+    const marque = (el, on, couleur) => {
+      if (!el) return;
+      el.style.boxShadow = on ? `0 0 0 2px ${couleur}` : "none";
+      let b = el.querySelector(".sde-zone-badge");
+      if (on && !b) {
+        b = document.createElement("div");
+        b.className = "sde-zone-badge";
+        b.style.cssText = `font-size:.66rem;font-weight:700;color:${couleur};margin-top:4px`;
+        b.textContent = "● prix sur ce niveau";
+        el.appendChild(b);
+      } else if (!on && b) b.remove();
+    };
+    const ze = document.getElementById("sde-zone-entree");
+    if (ze) marque(ze, prix >= parseFloat(ze.dataset.low) && prix <= parseFloat(ze.dataset.high), "#6366F1");
+    const zc = document.getElementById("sde-zone-cible");
+    if (zc) {
+      const atteint = zc.dataset.sens === "baisse"
+        ? prix <= parseFloat(zc.dataset.high)
+        : prix >= parseFloat(zc.dataset.low);
+      marque(zc, atteint, "#1D9E75");
+    }
+    const zs = document.getElementById("sde-zone-stop");
+    if (zs) {
+      const franchi = zs.dataset.sens === "haut"
+        ? prix >= parseFloat(zs.dataset.stop)
+        : prix <= parseFloat(zs.dataset.stop);
+      marque(zs, franchi, "#DC2626");
+    }
+  }
+
   setInterval(majPrix, 60000);
 })();
 

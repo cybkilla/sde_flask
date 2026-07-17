@@ -254,7 +254,20 @@ def api_live(ticker: str):
         return jsonify({}), 400
     try:
         from data.market import get_live_price
-        return jsonify(get_live_price(ticker) or {})
+        live = get_live_price(ticker) or {}
+        # RSI et Var5j intraday (prix live = clôture provisoire du jour) —
+        # depuis le cache/snapshot, aucun appel marché supplémentaire
+        try:
+            from cache import get_cached
+            from snapshot import get_snapshot, MAX_AGE_HOURS
+            res  = get_cached(ticker) or get_snapshot(ticker, max_age_hours=MAX_AGE_HOURS)
+            hist = (res or {}).get("market", {}).get("history")
+            if hist is not None and live.get("price"):
+                from utils.indicators import indicateurs_intraday
+                live.update(indicateurs_intraday(hist, live["price"]))
+        except Exception:
+            pass
+        return jsonify(live)
     except Exception:
         return jsonify({}), 200
 
