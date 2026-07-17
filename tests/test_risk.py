@@ -361,6 +361,16 @@ assert "trésorerie suivie insuffisante" in adv_fauche["raisonnement"]
 print("✓ repli exceptionnel : le 16.07 rejoué → RENFORCER ; bruit/score bas/sans cash → non")
 
 
+# ── Point de contrôle post-ouverture : marqueur dans le raisonnement ──
+_m_po = {**_m_krach, "post_ouverture": True}
+adv_po = generate_advice(_s_krach, _m_po, _snap_krach, cash_dispo=10800.0)
+assert "après la première heure de séance" in adv_po["raisonnement"]
+_m_sans_po = {k: v for k, v in _m_po.items() if k != "post_ouverture"}
+adv_spo = generate_advice(_s_krach, _m_sans_po, _snap_krach, cash_dispo=10800.0)
+assert "après la première heure de séance" not in adv_spo["raisonnement"]
+print("✓ post-ouverture : marqueur présent avec le flag, absent sans")
+
+
 # ── etat_compte : la métrique objectif (compte total) et son benchmark ──
 from portfolio.positions import etat_compte
 # Scénario réel admin : import 10768 @ 4.01, vente 2692 @ 4.02, cours 4.13

@@ -323,10 +323,32 @@ def _check_position_advice(username: str, email: str) -> None:
                               f"{move:+.1f}% (≥ 1×ATR {atr_t}%) — conseil réévalué",
                               flush=True)
 
+            # ── Point de contrôle POST-OUVERTURE (16h30-17h30 Paris) ───
+            # Le conseil du jour naît le matin sur la clôture de la veille :
+            # la première heure de séance révèle le ton du jour (gap comblé
+            # ou confirmé). Régénération systématique UNE fois, avec les
+            # données réelles — email seulement si l'action change.
+            # (demande utilisateur du 17.07 : « attendre 1h après
+            # l'ouverture avant de décider »)
+            post_open = False
+            if (ancienne_action is None
+                    and _fenetre_paris(16, 30, 17, 30, jours_ouvres=True)):
+                existant = get_today_advice(username, ticker)
+                r_txt = (existant or {}).get("raisonnement") or ""
+                if (existant
+                        and "après la première heure de séance" not in r_txt
+                        and "réévalué en séance" not in r_txt):
+                    ancienne_action = existant.get("action")
+                    delete_today_advice(username, ticker)
+                    post_open = True
+                    print(f"  [Advice] {ticker} : point de contrôle "
+                          f"post-ouverture — conseil réévalué", flush=True)
+
             advice, created = ensure_today_advice(username, ticker, prix_live,
                                                   gap_pct=gap_pct,
                                                   var_1d=live.get("var_1d"),
-                                                  intraday_pct=intraday_pct)
+                                                  intraday_pct=intraday_pct,
+                                                  post_open=post_open)
             if not created or not advice:
                 continue          # déjà généré (page visitée) ou données manquantes
 

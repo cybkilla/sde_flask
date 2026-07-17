@@ -204,6 +204,13 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
                 f"aujourd'hui — pas de nouvelle réduction suggérée le même "
                 f"jour (le stop loss reste actif)."
             )
+        # Point de contrôle post-ouverture : marqueur + explication
+        if market.get("post_ouverture"):
+            r["raisonnement"] += (
+                f"<br>{cd}Conseil réévalué après la première heure de séance "
+                f"— la tendance du jour est intégrée (le conseil du matin "
+                f"était calculé sur la clôture de la veille)."
+            )
         # Réévaluation en séance : marqueur + explication
         im = market.get("intraday_move")
         if im is not None:
@@ -590,7 +597,7 @@ def delete_today_advice(username: str, ticker: str) -> bool:
 
 def ensure_today_advice(username: str, ticker: str, prix_live: float,
                         gap_pct: float = None, var_1d: float = None,
-                        intraday_pct: float = None):
+                        intraday_pct: float = None, post_open: bool = False):
     """
     Garantit qu'un conseil existe pour aujourd'hui — appelé par le
     scheduler pour les tickers en POSITION, afin que le conseil quotidien
@@ -645,6 +652,11 @@ def ensure_today_advice(username: str, ticker: str, prix_live: float,
         # explique pourquoi le conseil a été réévalué en cours de journée
         if intraday_pct is not None:
             market["intraday_move"] = intraday_pct
+        # Point de contrôle post-ouverture (16h30 Paris) : le conseil du
+        # matin était calculé sur la clôture de la veille — celui-ci
+        # intègre la première heure de séance
+        if post_open:
+            market["post_ouverture"] = True
 
         # Pattern chandelier — même construction que la route portfolio
         candle_info = None
