@@ -781,66 +781,8 @@
   <!-- Résumé P&L + lots en timeline -->
   <div id="sde-positions-wrap"></div>
 
-  <!-- Historique conseils -->
-  <div id="sde-advice-history-wrap"></div>
 
-  <!-- Take Profit / Stop Loss -->
-  <div id="sde-targets-wrap" class="mt-3" style="display:none">
-    <div style="border-top:1px solid var(--sde-border);padding-top:12px">
-      <div class="d-flex align-items-center justify-content-between mb-2">
-        <span style="font-size:.78rem;font-weight:600;color:var(--sde-muted);
-                     text-transform:uppercase;letter-spacing:.05em">
-          <i class="bi bi-bullseye me-1"></i>Objectifs de prix
-        </span>
-        <span>
-          <button onclick="sdePortfolio.suggestTargets()" id="sde-suggest-btn"
-                  title="Pré-remplir avec les seuils ATR du conseil SDE (à valider par Enregistrer)"
-                  style="font-size:.72rem;background:#fff;color:#6366F1;
-                         border:1px solid #6366F1;border-radius:6px;
-                         padding:3px 10px;cursor:pointer;font-weight:600;margin-right:6px">
-            ⚡ Seuils SDE
-          </button>
-          <button onclick="sdePortfolio.saveTargets()"
-                  style="font-size:.72rem;background:#6366F1;color:#fff;
-                         border:none;border-radius:6px;padding:3px 10px;cursor:pointer;font-weight:600">
-            Enregistrer
-          </button>
-        </span>
-      </div>
-      <div id="sde-suggest-note" style="font-size:.7rem;color:var(--sde-muted);
-                                        margin-bottom:6px;display:none"></div>
-
-      <!-- Barre visuelle SL → Prix actuel → TP -->
-      <div id="sde-targets-bar" class="mb-3" style="display:none"></div>
-
-      <div class="d-flex gap-3 flex-wrap">
-        <div style="flex:1;min-width:110px">
-          <label style="font-size:.72rem;color:#D85A30;font-weight:600;display:block;margin-bottom:3px">
-            <i class="bi bi-shield-x me-1"></i>Stop Loss
-          </label>
-          <input type="number" id="sde-sl-input" step="any" min="0.0001"
-                 class="form-control form-control-sm"
-                 placeholder="ex : 3.00"
-                 style="border-color:#D85A30;font-size:.82rem">
-          <div id="sde-sl-dist" style="font-size:.7rem;color:var(--sde-muted);margin-top:2px"></div>
-        </div>
-        <div style="flex:1;min-width:110px">
-          <label style="font-size:.72rem;color:#1D9E75;font-weight:600;display:block;margin-bottom:3px">
-            <i class="bi bi-trophy me-1"></i>Take Profit
-          </label>
-          <input type="number" id="sde-tp-input" step="any" min="0.0001"
-                 class="form-control form-control-sm"
-                 placeholder="ex : 5.00"
-                 style="border-color:#1D9E75;font-size:.82rem">
-          <div id="sde-tp-dist" style="font-size:.7rem;color:var(--sde-muted);margin-top:2px"></div>
-        </div>
-      </div>
-      <p style="font-size:.68rem;color:var(--sde-muted);margin-top:6px;margin-bottom:0">
-        Alerte email envoyée par le scheduler dès que le cours franchit ces niveaux.
-      </p>
-    </div>
-  </div>
-
+  <!-- Objectifs de prix : déplacés vers Mes positions (17.07) -->
 </div>
 
 <!-- Modal ajout position -->
@@ -1057,10 +999,6 @@ window.sdePortfolio = (function () {
              </span>`);
         }
 
-        // N'afficher les objectifs de prix que si position active
-        if (parseFloat(s.total_shares) > 0 && !s.position_fermee) {
-          loadTargets();
-        }
       })
       .catch(() => {
         document.getElementById("sde-positions-wrap").innerHTML =
@@ -1077,7 +1015,6 @@ window.sdePortfolio = (function () {
       .then(r => r.json()).then(data => {
         if (!data.ok) {
           wrap.innerHTML = `<p class="text-muted small text-center py-1 mb-2">${data.error || "Conseil non disponible"}</p>`;
-          loadHistory([]);
           loadPositions();
           return;
         }
@@ -1148,72 +1085,11 @@ window.sdePortfolio = (function () {
             </p>
           </div>`;
 
-        loadHistory(data.history, data.stats);
         loadPositions();
       })
       .catch(() => { wrap.innerHTML = `<p class="text-danger small">Erreur conseil.</p>`; });
   }
 
-  /* ── Historique conseils ── */
-  function loadHistory(history, stats) {
-    const wrap = document.getElementById("sde-advice-history-wrap");
-    if (!history || history.length <= 1) { wrap.innerHTML = ""; return; }
-
-    const statsHtml = stats && stats.total > 0 ? `
-      <span style="font-size:.75rem;color:var(--sde-muted)">
-        Fiabilité J+1 : <strong style="color:${stats.taux_pct >= 60 ? "#1D9E75" : "#D85A30"}">${stats.taux_pct}%</strong>
-        (${stats.total} évalués)${stats.taux_j20_pct != null ? `
-        · <strong>J+20 : <span style="color:${stats.taux_j20_pct >= 60 ? "#1D9E75" : "#D85A30"}">${stats.taux_j20_pct}%</span></strong>
-        (${stats.total_j20} évalués — l'horizon qui fait foi)` : ""}
-      </span>` : "";
-
-    // Une pastille ✓/✗ par horizon évalué — le J+20 est l'horizon aligné
-    // sur les signaux (14-50j), le J+1 ne mesure que la réactivité
-    const _pastille = (bon, label, variation) => {
-      if (bon === null || bon === undefined) return "";
-      const v = variation != null
-        ? ` ${variation >= 0 ? "+" : ""}${parseFloat(variation).toFixed(1)}%` : "";
-      return `<span style="color:${bon ? "#1D9E75" : "#D85A30"};font-size:.72rem;
-                     white-space:nowrap;margin-right:6px">
-        ${bon ? "✓" : "✗"} ${label}${v}</span>`;
-    };
-
-    const rows = history.slice(1).map(h => {
-      const color = ACTION_COLOR[h.action] || "#5a6a7a";
-      const icon  = ACTION_ICON[h.action]  || "◆";
-      let eval_html =
-          _pastille(h.bon_conseil,     "J+1",  h.variation_j1)
-        + _pastille(h.bon_conseil_j5,  "J+5",  h.variation_j5)
-        + _pastille(h.bon_conseil_j20, "J+20", h.variation_j20);
-      if (!eval_html) {
-        eval_html = `<span style="color:var(--sde-muted);font-size:.75rem">En attente…</span>`;
-      }
-      return `<tr>
-        <td style="font-size:.75rem;color:var(--sde-muted)">${h.date_conseil}</td>
-        <td><span style="color:${color};font-weight:600;font-size:.78rem">${icon} ${h.action}</span></td>
-        <td style="font-size:.75rem;color:var(--sde-muted)">${h.prix_jour ? SYM + parseFloat(h.prix_jour).toFixed(2) : "—"}</td>
-        <td>${eval_html}</td>
-      </tr>`;
-    }).join("");
-
-    wrap.innerHTML = `
-      <details class="mt-2" style="font-size:.82rem">
-        <summary style="cursor:pointer;color:var(--sde-muted);font-size:.78rem;list-style:none">
-          <i class="bi bi-clock-history me-1"></i>Historique des conseils ${statsHtml}
-        </summary>
-        <div class="table-responsive mt-2">
-          <table class="table table-sm" style="font-size:.78rem">
-            <thead><tr>
-              <th style="color:var(--sde-muted);font-weight:500">Date</th>
-              <th style="color:var(--sde-muted);font-weight:500">Conseil</th>
-              <th style="color:var(--sde-muted);font-weight:500">Prix</th>
-              <th style="color:var(--sde-muted);font-weight:500">Résultat (J+1 · J+5 · J+20)</th>
-            </tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-      </details>`;
-  }
 
   /* ── Modal ajout / vente ── */
   let _posType = "achat";
@@ -1386,145 +1262,17 @@ window.sdePortfolio = (function () {
     .catch(() => loadAdvice());
   }
 
-  /* ── Take Profit / Stop Loss ── */
-  function loadTargets() {
-    fetch(`/portfolio/targets/${TICKER}`)
-      .then(r => r.json())
-      .then(data => {
-        if (!data.ok) return;
-        const t = data.targets;
-        document.getElementById("sde-targets-wrap").style.display = "";
-        if (t) {
-          if (t.take_profit) document.getElementById("sde-tp-input").value = t.take_profit;
-          if (t.stop_loss)   document.getElementById("sde-sl-input").value = t.stop_loss;
-        }
-        _renderTargetsBar();
-      });
-  }
 
-  function _renderTargetsBar() {
-    const tp   = parseFloat(document.getElementById("sde-tp-input").value) || null;
-    const sl   = parseFloat(document.getElementById("sde-sl-input").value) || null;
-    const prix = LIVE_PRICE;
-    const bar  = document.getElementById("sde-targets-bar");
-    const tdist = document.getElementById("sde-tp-dist");
-    const sdist = document.getElementById("sde-sl-dist");
 
-    if (tp && tdist) {
-      const pct = ((tp - prix) / prix * 100);
-      tdist.textContent = `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}% depuis le cours actuel`;
-      tdist.style.color = pct >= 0 ? "#1D9E75" : "#D85A30";
-    } else if (tdist) { tdist.textContent = ""; }
 
-    if (sl && sdist) {
-      const pct = ((sl - prix) / prix * 100);
-      sdist.textContent = `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}% depuis le cours actuel`;
-      sdist.style.color = pct >= 0 ? "#1D9E75" : "#D85A30";
-    } else if (sdist) { sdist.textContent = ""; }
 
-    if (!tp && !sl) { bar.style.display = "none"; return; }
-
-    const low  = sl  || prix * 0.8;
-    const high = tp  || prix * 1.2;
-    const range = high - low;
-    const pos  = Math.max(0, Math.min(100, ((prix - low) / range * 100)));
-
-    bar.style.display = "";
-    bar.innerHTML = `
-      <div style="position:relative;height:8px;border-radius:4px;
-                  background:linear-gradient(to right,#D85A30,#F1F5F9 ${pos}%,#1D9E75);
-                  margin:8px 0 4px">
-        <div style="position:absolute;left:${pos}%;top:-4px;
-                    transform:translateX(-50%);
-                    width:16px;height:16px;border-radius:50%;
-                    background:#fff;border:2px solid #374151;
-                    box-shadow:0 1px 4px rgba(0,0,0,.2)"></div>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:.68rem;color:var(--sde-muted)">
-        <span style="color:#D85A30">${sl ? SYM + sl.toFixed(2) : "—"}</span>
-        <span style="font-weight:600;color:var(--sde-text)">${SYM}${prix.toFixed(2)}</span>
-        <span style="color:#1D9E75">${tp ? SYM + tp.toFixed(2) : "—"}</span>
-      </div>`;
-  }
-
-  function suggestTargets() {
-    // Pré-remplit TP/SL avec les seuils ATR calculés par l'advisor —
-    // suggestion seulement : rien n'est sauvé tant que l'utilisateur
-    // ne clique pas Enregistrer (il garde la décision finale).
-    const btn  = document.getElementById("sde-suggest-btn");
-    const note = document.getElementById("sde-suggest-note");
-    btn.disabled = true;
-    fetch(`/portfolio/targets/suggest/${TICKER}`)
-      .then(r => r.json()).then(d => {
-        btn.disabled = false;
-        if (!d.ok) {
-          note.style.display = "";
-          note.innerHTML = `<span style="color:#D85A30">${d.error}</span>`;
-          return;
-        }
-        document.getElementById("sde-sl-input").value = d.stop_loss;
-        document.getElementById("sde-tp-input").value = d.take_profit;
-        // Déclenche les listeners 'input' → barre visuelle + distances
-        document.getElementById("sde-sl-input").dispatchEvent(new Event("input"));
-        document.getElementById("sde-tp-input").dispatchEvent(new Event("input"));
-        note.style.display = "";
-        note.innerHTML =
-          `Suggestion SDE depuis le coût moyen ${SYM}${d.cout_moyen} et la volatilité ` +
-          `du titre (ATR ${d.atr_pct}%/j) : stop ${d.sl_pct}% → <strong style="color:#D85A30">` +
-          `${SYM}${d.stop_loss}</strong> · objectif +${d.tp_pct}% → ` +
-          `<strong style="color:#1D9E75">${SYM}${d.take_profit}</strong>. ` +
-          `Cliquer <strong>Enregistrer</strong> pour activer les alertes.`;
-      })
-      .catch(() => {
-        btn.disabled = false;
-        note.style.display = "";
-        note.innerHTML = `<span style="color:#D85A30">Erreur de suggestion.</span>`;
-      });
-  }
-
-  function saveTargets() {
-    const tp = parseFloat(document.getElementById("sde-tp-input").value) || null;
-    const sl = parseFloat(document.getElementById("sde-sl-input").value) || null;
-    const CSRF = document.querySelector('meta[name="csrf-token"]').content;
-    fetch(`/portfolio/targets/${TICKER}`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
-      body: JSON.stringify({take_profit: tp, stop_loss: sl}),
-    })
-    .then(r => r.json())
-    .then(data => {
-      const btn = document.querySelector("[onclick='sdePortfolio.saveTargets()']");
-      if (data.ok) {
-        _renderTargetsBar();
-        if (btn) {
-          const orig = btn.textContent;
-          btn.textContent = "✓ Enregistré";
-          setTimeout(() => { btn.textContent = orig; }, 1800);
-        }
-      } else {
-        if (btn) {
-          const orig = btn.textContent;
-          btn.style.background = "#D85A30";
-          btn.textContent = "✗ Erreur : " + (data.error || "sauvegarde impossible");
-          setTimeout(() => { btn.textContent = orig; btn.style.background = ""; }, 3000);
-        }
-        console.error("[SDE] saveTargets:", data.error);
-      }
-    })
-    .catch(err => console.error("[SDE] saveTargets réseau:", err));
-  }
-
-  document.addEventListener("DOMContentLoaded", function () {
-    document.getElementById("sde-tp-input")?.addEventListener("input", _renderTargetsBar);
-    document.getElementById("sde-sl-input")?.addEventListener("input", _renderTargetsBar);
-  });
 
   /* ── Init ── */
   document.addEventListener("DOMContentLoaded", function () {
-    loadAdvice();   // appelle loadPositions() en fin de chaîne, qui appelle loadTargets() si position active
+    loadAdvice();   // appelle loadPositions() en fin de chaîne
   });
 
-  return { openAddModal, submitAdd, deletePos, refreshAdvice, setPosType, saveTargets, suggestTargets };
+  return { openAddModal, submitAdd, deletePos, refreshAdvice, setPosType };
 })();
 {% endif %}
 

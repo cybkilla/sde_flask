@@ -441,7 +441,138 @@
   <!-- Lots détaillés + bouton Ajouter -->
   ${lotsHtml(ticker, sym, s.lots || [], company, currency || "USD")}
 
+  <!-- Historique des conseils & objectifs de prix (chargés à la demande —
+       déplacés ici depuis la fiche analyse : contenu de SUIVI, pas de
+       décision du jour) -->
+  <details class="mt-2" style="border-top:1px solid var(--sde-border);padding-top:8px"
+           ontoggle="if (this.open) chargerHistoObjectifs('${ticker}', '${sym}')">
+    <summary style="cursor:pointer;font-size:.78rem;color:var(--sde-muted);font-weight:600">
+      <i class="bi bi-clock-history me-1"></i>Historique des conseils &amp; objectifs de prix
+    </summary>
+    <div id="histobj-${ticker}" class="mt-2">
+      <p class="text-muted small mb-0">Chargement…</p>
+    </div>
+  </details>
+
 </div>`;
+  }
+
+  /* ── Historique des conseils + objectifs de prix (par carte) ── */
+  const _histObjCharges = new Set();
+
+  function chargerHistoObjectifs(ticker, sym) {
+    if (_histObjCharges.has(ticker)) return;
+    _histObjCharges.add(ticker);
+    const wrap = document.getElementById("histobj-" + ticker);
+
+    Promise.all([
+      fetch(`/portfolio/advice/${ticker}`).then(r => r.json()),
+      fetch(`/portfolio/targets/${ticker}`).then(r => r.json()),
+    ]).then(([adv, tgt]) => {
+      // ── Historique + fiabilité ──
+      const hist  = adv.history || [];
+      const stats = adv.stats   || {};
+      const past = (bon, label, v) => {
+        if (bon === null || bon === undefined) return "";
+        const txt = v != null ? ` ${v >= 0 ? "+" : ""}${parseFloat(v).toFixed(1)}%` : "";
+        return `<span style="color:${bon ? "#1D9E75" : "#D85A30"};font-size:.72rem;
+                       white-space:nowrap;margin-right:6px">${bon ? "✓" : "✗"} ${label}${txt}</span>`;
+      };
+      const lignes = hist.map(h => {
+        let ev = past(h.bon_conseil, "J+1", h.variation_j1)
+               + past(h.bon_conseil_j5, "J+5", h.variation_j5)
+               + past(h.bon_conseil_j20, "J+20", h.variation_j20);
+        if (!ev) ev = `<span style="color:var(--sde-muted);font-size:.72rem">en attente…</span>`;
+        return `<tr>
+          <td style="font-size:.74rem;color:var(--sde-muted)">${h.date_conseil}</td>
+          <td style="font-size:.76rem;font-weight:600">${h.action}</td>
+          <td style="font-size:.74rem;color:var(--sde-muted)">${h.prix_jour ? sym + parseFloat(h.prix_jour).toFixed(2) : "—"}</td>
+          <td>${ev}</td>
+        </tr>`;
+      }).join("");
+      const statsTxt = stats.total
+        ? `Fiabilité J+1 : <strong>${stats.taux_pct}%</strong> (${stats.total} évalués)`
+          + (stats.taux_j20_pct != null
+             ? ` · J+20 : <strong>${stats.taux_j20_pct}%</strong> (${stats.total_j20} — l'horizon qui fait foi)`
+             : "")
+        : "Aucun conseil évalué pour l'instant.";
+
+      // ── Objectifs de prix ──
+      const t  = (tgt && tgt.targets) || {};
+      const objHtml = `
+        <div style="border-top:1px solid var(--sde-border);margin-top:10px;padding-top:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+            <span style="font-size:.74rem;font-weight:700;color:var(--sde-muted);text-transform:uppercase;letter-spacing:.05em">
+              <i class="bi bi-bullseye me-1"></i>Objectifs de prix</span>
+            <span>
+              <button onclick="suggererObjectifs('${ticker}','${sym}')"
+                      style="font-size:.7rem;background:#fff;color:#6366F1;border:1px solid #6366F1;
+                             border-radius:6px;padding:2px 8px;cursor:pointer;font-weight:600;margin-right:4px">
+                ⚡ Seuils SDE</button>
+              <button onclick="sauverObjectifs('${ticker}')"
+                      style="font-size:.7rem;background:#6366F1;color:#fff;border:none;
+                             border-radius:6px;padding:2px 8px;cursor:pointer;font-weight:600">
+                Enregistrer</button>
+            </span>
+          </div>
+          <div id="obj-note-${ticker}" style="font-size:.7rem;color:var(--sde-muted);margin-bottom:6px"></div>
+          <div class="d-flex gap-2 flex-wrap">
+            <div style="flex:1;min-width:100px">
+              <label style="font-size:.7rem;color:#D85A30;font-weight:600">Stop Loss</label>
+              <input type="number" id="obj-sl-${ticker}" step="any" min="0.0001"
+                     class="form-control form-control-sm" value="${t.stop_loss || ""}"
+                     style="border-color:#D85A30;font-size:.8rem">
+            </div>
+            <div style="flex:1;min-width:100px">
+              <label style="font-size:.7rem;color:#1D9E75;font-weight:600">Take Profit</label>
+              <input type="number" id="obj-tp-${ticker}" step="any" min="0.0001"
+                     class="form-control form-control-sm" value="${t.take_profit || ""}"
+                     style="border-color:#1D9E75;font-size:.8rem">
+            </div>
+          </div>
+          <p style="font-size:.66rem;color:var(--sde-muted);margin:6px 0 0">
+            Alerte email dès que le cours franchit ces niveaux.</p>
+        </div>`;
+
+      wrap.innerHTML = `
+        <p style="font-size:.74rem;color:var(--sde-muted);margin-bottom:6px">${statsTxt}</p>
+        ${lignes ? `<div class="table-responsive" style="max-height:220px;overflow-y:auto">
+          <table class="table table-sm mb-0"><tbody>${lignes}</tbody></table></div>`
+          : ""}
+        ${objHtml}`;
+    }).catch(() => {
+      wrap.innerHTML = `<p class="text-danger small mb-0">Erreur de chargement.</p>`;
+      _histObjCharges.delete(ticker);
+    });
+  }
+
+  function suggererObjectifs(ticker, sym) {
+    const note = document.getElementById("obj-note-" + ticker);
+    fetch(`/portfolio/targets/suggest/${ticker}`)
+      .then(r => r.json()).then(d => {
+        if (!d.ok) { note.innerHTML = `<span style="color:#D85A30">${d.error}</span>`; return; }
+        document.getElementById("obj-sl-" + ticker).value = d.stop_loss;
+        document.getElementById("obj-tp-" + ticker).value = d.take_profit;
+        note.innerHTML = `Suggestion SDE (coût moyen ${sym}${d.cout_moyen}, ATR ${d.atr_pct}%/j) :
+          stop ${d.sl_pct}% → <strong style="color:#D85A30">${sym}${d.stop_loss}</strong> ·
+          objectif +${d.tp_pct}% → <strong style="color:#1D9E75">${sym}${d.take_profit}</strong>.
+          Cliquer <strong>Enregistrer</strong> pour activer.`;
+      }).catch(() => { note.textContent = "Erreur de suggestion."; });
+  }
+
+  function sauverObjectifs(ticker) {
+    const note = document.getElementById("obj-note-" + ticker);
+    const tp = parseFloat(document.getElementById("obj-tp-" + ticker).value) || null;
+    const sl = parseFloat(document.getElementById("obj-sl-" + ticker).value) || null;
+    fetch(`/portfolio/targets/${ticker}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+      body: JSON.stringify({ take_profit: tp, stop_loss: sl }),
+    }).then(r => r.json()).then(d => {
+      note.innerHTML = d.ok
+        ? `<span style="color:#1D9E75">✓ Objectifs enregistrés — alertes actives.</span>`
+        : `<span style="color:#D85A30">${d.error || "Erreur"}</span>`;
+    }).catch(() => { note.textContent = "Erreur d'enregistrement."; });
   }
 
   /* ── Reset conseil du jour ── */
@@ -675,6 +806,9 @@
   window.submitAdd     = submitAdd;
   window.deletePos     = deletePos;
   window.resetAdvice   = resetAdvice;
+  window.chargerHistoObjectifs = chargerHistoObjectifs;
+  window.suggererObjectifs     = suggererObjectifs;
+  window.sauverObjectifs       = sauverObjectifs;
 
   document.addEventListener("DOMContentLoaded", loadOverview);
 })();
