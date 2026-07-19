@@ -15,8 +15,9 @@
 #      renforcé, JAMAIS inversé automatiquement — inverser un signal sur
 #      données passées est le meilleur moyen d'overfitter un régime révolu
 #      (leçon du classifieur : le régime change).
-#   3. Minimum 8 épisodes : en dessous, poids inchangé — pas de décision
-#      sur du bruit.
+#   3. Minimum 6 épisodes : en dessous, poids inchangé — pas de décision
+#      sur du bruit (le shrinkage du garde-fou 1 fait le reste du travail :
+#      un signal à 6-7 épisodes n'est que modérément corrigé, pas neutralisé).
 # Et une exigence : chaque ajustement est journalisé et affiché dans l'UI.
 
 import numpy as np
@@ -24,10 +25,19 @@ import pandas as pd
 
 from analysis.scoring import TECH_WEIGHTS, TECH_LABELS
 
+# MIN_EPISODES=6 (abaissé de 8 le 19.07.2026) : le croisement baissier
+# MA20<MA50 sur TMC a 7 épisodes, 28.6% de fiabilité et un rendement moyen
+# INVERSÉ de +23% (le signal dit baissier, le titre monte) — mais restait
+# à son poids manuel PLEIN (-15) car 7 < 8, l'ancien seuil. Il est resté
+# actif 44% des jours de la semaine du 13-19.07, tirant le score vers le
+# bas sans jamais être corrigé. Le shrinkage (K_PRIOR=10) protège déjà
+# contre le surajustement sur peu de données : abaisser le seuil à 6
+# laisse le shrinkage faire son travail au lieu d'ignorer purement et
+# simplement un signal proche du seuil.
 K_PRIOR      = 10    # pseudo-épisodes neutres ajoutés (force du shrinkage)
 PENTE        = 4     # sensibilité : multiplicateur = 1 + PENTE × (fiab' − 0.5)
 M_MIN, M_MAX = 0.0, 1.5   # bornes du multiplicateur (éteindre oui, inverser non)
-MIN_EPISODES = 8     # en dessous : aucune modification du poids
+MIN_EPISODES = 6     # en dessous : aucune modification du poids
 
 
 def facteur_fiabilite(hit_pct: float, n_episodes: int) -> float:
@@ -116,3 +126,79 @@ def poids_calibres(ticker: str) -> dict | None:
     except Exception as e:
         print(f"[Calibration] indisponible pour {ticker} : {e}", flush=True)
         return None
+
+
+# ── Confiance affichée par conseil ────────────────────────────────────────
+# Croise les signaux DOMINANTS du conseil du jour (points >= 10, même
+# seuil que _dominant_signals_note dans advisor.py) avec leur fiabilité
+# MESURÉE sur ce titre précis (l'attribution du backtest, déjà calculée
+# dans le detail de calibration). Objectif : afficher qu'un conseil VENDRE
+# porté par un signal fiable à 28.6% n'a pas la même valeur qu'un conseil
+# porté par un signal fiable à 65% — information que l'utilisateur n'avait
+# aucun moyen de voir avant (cas réel : ma_cross_down sur TMC, 28.6%,
+# a motivé plusieurs VENDRE/ALLÉGER de la semaine du 13-19.07 sans que
+# rien ne le signale).
+
+SEUIL_SIGNAL_DOMINANT   = 10    # points — même seuil que _dominant_signals_note
+MIN_EPISODES_CONFIANCE  = 6     # sous ce nombre, la fiabilité mesurée est trop bruitée pour juger
+SEUIL_CONFIANCE_BASSE   = 40    # pire signal sous ce %  → confiance basse
+SEUIL_CONFIANCE_HAUTE   = 55    # moyenne des signaux au-dessus  → confiance haute
+
+
+def confiance_conseil(action: str, signals_tech: list, calibration_detail: list) -> dict:
+    """
+    Fonction PURE. Détermine le niveau de confiance du conseil du jour en
+    croisant ses signaux techniques dominants avec leur fiabilité mesurée
+    sur CE titre (attribution du backtest, via le detail de calibration).
+
+    Retourne un dict avec au minimum la clé "niveau" :
+      None            : action non directionnelle (TENIR/SURVEILLER) —
+                        pas de pari à juger
+      "indéterminée"  : aucun signal dominant suffisamment mesuré
+      "basse"         : au moins un signal dominant a une fiabilité < 40%
+      "moyenne"       : ni basse ni haute
+      "haute"         : fiabilité moyenne des signaux dominants >= 55%
+    """
+    if action in ("ACHETER", "RENFORCER"):
+        sens = "haussier"
+    elif action in ("ALLÉGER", "VENDRE"):
+        sens = "baissier"
+    else:
+        return {"niveau": None}
+
+    calib_par_code = {c["code"]: c for c in (calibration_detail or [])}
+
+    dominants = [
+        s for s in (signals_tech or [])
+        if abs(s.get("points", 0)) >= SEUIL_SIGNAL_DOMINANT and s.get("sens") == sens
+    ]
+
+    signaux_mesures = []
+    for s in dominants:
+        c = calib_par_code.get(s.get("code"))
+        if c and c.get("n_episodes", 0) >= MIN_EPISODES_CONFIANCE:
+            signaux_mesures.append({
+                "label": s.get("nom", s.get("code")),
+                "hit_pct": c["hit_pct"],
+                "n_episodes": c["n_episodes"],
+            })
+
+    if not signaux_mesures:
+        return {"niveau": "indéterminée", "signaux": []}
+
+    moyenne = round(sum(s["hit_pct"] for s in signaux_mesures) / len(signaux_mesures), 1)
+    pire    = min(signaux_mesures, key=lambda s: s["hit_pct"])
+
+    if pire["hit_pct"] < SEUIL_CONFIANCE_BASSE:
+        niveau = "basse"
+    elif moyenne >= SEUIL_CONFIANCE_HAUTE:
+        niveau = "haute"
+    else:
+        niveau = "moyenne"
+
+    return {
+        "niveau": niveau,
+        "moyenne_hit_pct": moyenne,
+        "pire_signal": pire,
+        "signaux": signaux_mesures,
+    }

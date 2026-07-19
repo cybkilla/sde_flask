@@ -367,6 +367,16 @@ def get_advice(ticker: str):
                        "price": price or snap["market"].get("price")}
             if live.get("var_1d") is not None:
                 market["var_1d"] = live["var_1d"]
+            # Tendance de fond (MA200/52 semaines) — tempère un VENDRE fort
+            # quand le titre est structurellement haussier (backtest : le
+            # scoring technique perd contre le buy & hold dans ce cas)
+            try:
+                from analysis.backtest import tendance_fond
+                tf = tendance_fond(ticker)
+                if tf:
+                    market["tendance_fond"] = tf
+            except Exception:
+                pass
             summary = get_portfolio_summary(current_user.id, ticker, price)
 
             # Pattern chandelier depuis l'historique du snapshot

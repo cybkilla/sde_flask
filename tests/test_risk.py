@@ -208,6 +208,37 @@ assert adv_hier["action"] == "ALLÉGER"
 print("✓ mémoire du jour : vente aujourd'hui → pas de nouvel ALLÉGER ; hier → normal")
 
 
+# COOLDOWN POST-ACHAT : rejoue exactement le cas du 16-17.07 — achat
+# manuel à 3.825$, revendu 25% le LENDEMAIN sur l'escalade chandelier
+# (double confirmation satisfaite, score 41.4 < 45). Avec le cooldown,
+# cet aller-retour perdant ne doit plus se produire.
+_hier      = (_date.today() - _dt.timedelta(days=1)).strftime("%Y-%m-%d")
+_avant_hier = (_date.today() - _dt.timedelta(days=2)).strftime("%Y-%m-%d")
+
+_s_achat_hier = {"pnl_pct": -2.7, "total_shares": 2793, "cout_moyen": 3.825,
+                 "lots": [{"type": "achat", "date_achat": _hier, "quantite": 2793}]}
+adv_cooldown = generate_advice(_s_achat_hier, _m_calme, _snap_tmc, candle_info=_candle_bear)
+assert adv_cooldown["action"] == "TENIR", \
+    f"achat d'hier + pattern baissier confirmé → cooldown, pas d'ALLÉGER (obtenu {adv_cooldown['action']})"
+assert "achat il y a 1 jour" in adv_cooldown["raisonnement"]
+
+# Achat d'avant-hier (hors cooldown de 1 jour) → l'escalade redevient normale
+_s_achat_ancien = {**_s_achat_hier,
+                   "lots": [{"type": "achat", "date_achat": _avant_hier, "quantite": 2793}]}
+adv_hors_cooldown = generate_advice(_s_achat_ancien, _m_calme, _snap_tmc, candle_info=_candle_bear)
+assert adv_hors_cooldown["action"] == "ALLÉGER", \
+    "achat d'il y a 2 jours (hors cooldown de 1j) → l'escalade doit redevenir normale"
+
+# Le stop loss reste un contrôle de RISQUE, jamais suspendu par le cooldown
+_s_achat_perte = {"pnl_pct": -30.0, "total_shares": 2793, "cout_moyen": 5.5,
+                  "lots": [{"type": "achat", "date_achat": _hier, "quantite": 2793}]}
+adv_stop_cooldown = generate_advice(_s_achat_perte, _m_calme, _snap_tmc, candle_info=_candle_bear)
+assert adv_stop_cooldown["action"] == "VENDRE", \
+    "le stop loss doit rester actif même pendant le cooldown post-achat"
+print("✓ cooldown post-achat : achat d'hier → pas d'allégement discrétionnaire "
+      "(cas réel 16-17.07), avant-hier → normal, stop loss jamais suspendu")
+
+
 # ── Ré-entrée après clôture : le ticker n'est plus orphelin ──
 # Position entièrement vendue HIER + signal fort → conseil ACHETER
 # (avant : summary existait → monde 'sans position' inaccessible → jamais

@@ -347,3 +347,51 @@ def run_backtest(ticker: str, period: str = "2y",
     }
     _CACHE[ticker] = (time.time(), result)
     return result
+
+
+# ── Tendance de fond (MA200 / distance au plus haut 52 semaines) ──────────
+# Étape 2 du plan "battre le buy & hold" : le backtest a montré que la
+# stratégie technique de SDE fait -17.9% sur TMC quand le simple buy & hold
+# fait +256.2% — le titre est en tendance de fond haussière forte et le
+# scoring technique multiplie les signaux "vendeur" à contre-courant.
+# Cette fonction expose l'état de cette tendance de fond pour tempérer
+# les décisions de VENTE COMPLÈTE dans l'advisor (portfolio/advisor.py) —
+# volontairement PAS injectée dans le score technique lui-même (qui reste
+# un signal court/moyen terme mesurable indépendamment).
+
+_CACHE_TENDANCE: dict = {}
+_CACHE_TENDANCE_TTL_S = 3600
+
+
+def tendance_fond(ticker: str) -> dict | None:
+    """
+    Tendance de fond du titre : prix vs MA200 et distance au plus haut
+    52 semaines, sur l'historique 2 ans déjà utilisé par le backtest.
+    Fonction quasi-pure (un seul appel réseau caché 1h, comme run_backtest).
+    Retourne None si moins de 200 séances disponibles (titre trop récent) —
+    l'appelant ne doit alors appliquer AUCUN filtre (silence, pas de biais).
+    """
+    ticker = ticker.upper().strip()
+    if ticker in _CACHE_TENDANCE:
+        ts, val = _CACHE_TENDANCE[ticker]
+        if time.time() - ts < _CACHE_TENDANCE_TTL_S:
+            return val
+    try:
+        hist  = _fetch_history(ticker)
+        close = hist["Close"]
+        if len(close) < 200:
+            _CACHE_TENDANCE[ticker] = (time.time(), None)
+            return None
+        ma200   = float(close.rolling(200).mean().iloc[-1])
+        dernier = float(close.iloc[-1])
+        haut_52s = float(close.tail(252).max())
+        resultat = {
+            "tendance":              "haussiere" if dernier > ma200 else "baissiere",
+            "vs_ma200_pct":          round((dernier / ma200 - 1) * 100, 1),
+            "dist_plus_haut_52s_pct": round((dernier / haut_52s - 1) * 100, 1),
+        }
+        _CACHE_TENDANCE[ticker] = (time.time(), resultat)
+        return resultat
+    except Exception as e:
+        print(f"[Backtest] tendance_fond indisponible pour {ticker} : {e}", flush=True)
+        return None

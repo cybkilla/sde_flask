@@ -197,6 +197,16 @@
         &nbsp;·&nbsp; Presse&nbsp;: {{ res.sentiment.label }}
       </div>
 
+      {# ── Hystérésis : la reco affichée est lissée, jamais masquée ── #}
+      {% if res.get('hysteresis') and res.hysteresis.reco_brute != res.hysteresis.reco_stable %}
+        <div style="margin-top:8px;padding:6px 10px;border-radius:6px;background:#EEF2FF;
+                    font-size:.7rem;color:#3730A3">
+          ⏳ Signal brut du jour&nbsp;: <strong>{{ res.hysteresis.reco_brute }}</strong>
+          — en confirmation ({{ res.hysteresis.confirmations }}/2 calculs), la reco stable
+          reste {{ res.recommandation }} pour l'instant.
+        </div>
+      {% endif %}
+
       {# ── Contexte marché (régime QQQ) — absent sur les vieux snapshots ── #}
       {% if res.get('market_regime') %}
         {% set mr = res.market_regime %}

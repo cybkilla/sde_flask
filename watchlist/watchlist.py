@@ -110,7 +110,7 @@ def get_last_score(ticker: str) -> dict:
 
 def save_last_score(ticker: str, score: float, reco: str, prix: float = None,
                     extra: dict = None):
-    """extra : champs additionnels (ex. palier d'alerte de variation)."""
+    """extra : champs additionnels (ex. palier d'alerte, état d'hystérésis)."""
     ticker = ticker.upper()
     entry  = {"score": score, "reco": reco,
                "updated": datetime.now().strftime("%Y-%m-%d %H:%M")}
@@ -124,8 +124,22 @@ def save_last_score(ticker: str, score: float, reco: str, prix: float = None,
             from db import update_one
             update_one("scores", {"ticker": ticker}, {"$set": entry}, upsert=True)
             return
-        except Exception:
-            pass
+        except Exception as e:
+            # Retry SANS les champs "extra" : une migration manquante sur
+            # une colonne optionnelle (ex. hyst_stable avant que la migration
+            # SQL soit appliquée) ne doit PAS faire échouer la mise à jour
+            # de score/reco/prix — le scheduler en dépend pour ses alertes
+            # de changement de recommandation. Même pattern que
+            # save_advice(only_insert=) et signaux_actifs cette semaine.
+            if extra:
+                try:
+                    from db import update_one, log_db_error
+                    base_entry = {k: v for k, v in entry.items() if k not in extra}
+                    update_one("scores", {"ticker": ticker}, {"$set": base_entry}, upsert=True)
+                    log_db_error("[Watchlist] save_last_score (extra ignoré)", "scores", e)
+                    return
+                except Exception:
+                    pass
     data = _jload(SCORE_FILE)
     data[ticker] = entry
     _jsave(SCORE_FILE, data)

@@ -43,7 +43,10 @@ CREATE TABLE scores (
   updated TEXT,
   prix    FLOAT,
   var_alerte_pct  FLOAT,   -- dernier palier de variation quotidienne alerté (5, 10, 15…)
-  var_alerte_date TEXT     -- date (YYYY-MM-DD) de ce palier — anti-spam par jour
+  var_alerte_date TEXT,    -- date (YYYY-MM-DD) de ce palier — anti-spam par jour
+  hyst_stable     TEXT,    -- recommandation STABLE (lissée par hystérésis)
+  hyst_candidat   TEXT,    -- nouvelle reco candidate pas encore confirmée
+  hyst_streak     INTEGER  -- nombre de calculs frais consécutifs confirmant le candidat
 );
 
 -- Cache pipeline sérialisé (TTL 24h)
@@ -147,6 +150,19 @@ progressives : -8.5% par pas de 1% ne franchissait jamais le seuil) :
 ALTER TABLE scores
   ADD COLUMN IF NOT EXISTS var_alerte_pct  FLOAT,
   ADD COLUMN IF NOT EXISTS var_alerte_date TEXT;
+```
+
+**Colonnes `hyst_stable` / `hyst_candidat` / `hyst_streak`** (2026-07-19 —
+hystérésis sur la recommandation globale : le score de TMC a franchi les
+seuils ACHETER/VENDRE 6 fois en une semaine, provoquant des allers-retours
+de conseil. La reco stable n'adopte un changement qu'après confirmation
+sur 2 calculs frais consécutifs, ou un franchissement net) :
+
+```sql
+ALTER TABLE scores
+  ADD COLUMN IF NOT EXISTS hyst_stable   TEXT,
+  ADD COLUMN IF NOT EXISTS hyst_candidat TEXT,
+  ADD COLUMN IF NOT EXISTS hyst_streak   INTEGER;
 ```
 
 

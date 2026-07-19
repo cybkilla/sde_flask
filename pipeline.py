@@ -168,7 +168,31 @@ def run(ticker: str, use_cache: bool = True) -> dict:
     except Exception as e:
         print(f"[Pipeline] régime marché ignoré : {e}", flush=True)
 
-    reco = recommandation(g_score)
+    reco_brute = recommandation(g_score)
+
+    # ── Hystérésis : lisse les allers-retours de la recommandation ────────
+    # Semaine du 13-19.07 sur TMC : le score a franchi les seuils
+    # ACHETER/VENDRE six fois en une semaine — chaque franchissement
+    # change la reco affichée et peut déclencher une escalade de conseil.
+    # La reco STABLE n'adopte le changement que sur confirmation (2 calculs
+    # frais consécutifs) ou un franchissement net (marge de 5 pts) — la
+    # reco brute reste toujours visible, jamais masquée.
+    reco = reco_brute
+    hysteresis_info = None
+    try:
+        from analysis.hysteresis import appliquer_hysteresis
+        from watchlist.watchlist import get_last_score, save_last_score
+        etat_prec = get_last_score(ticker)
+        reco, nouvel_etat = appliquer_hysteresis(g_score, etat_prec)
+        save_last_score(ticker, g_score, reco, extra=nouvel_etat)
+        hysteresis_info = {
+            "reco_brute":   reco_brute,
+            "reco_stable":  reco,
+            "en_attente":   nouvel_etat.get("hyst_candidat"),
+            "confirmations": nouvel_etat.get("hyst_streak", 0),
+        }
+    except Exception as e:
+        print(f"[Pipeline] hystérésis ignorée : {e}", flush=True)
 
     # DataFrame récapitulatif des 3 composantes (Pandas)
     df_scores = pd.DataFrame([
@@ -189,7 +213,9 @@ def run(ticker: str, use_cache: bool = True) -> dict:
         "ceo_name":       market["ceo_name"],
         "sector":         market["sector"],
         # Recommandation finale
-        "recommandation": reco,
+        "recommandation": reco,             # STABLE (lissée par hystérésis)
+        "reco_brute":     reco_brute,       # brute, sans lissage — transparence
+        "hysteresis":     hysteresis_info,  # {reco_brute, reco_stable, en_attente, confirmations}
         "score_global":   g_score,          # score APRÈS ajustement régime
         "score_brut":     g_score_brut,     # score avant contexte marché
         "market_regime":  regime_ctx,       # dict régime QQQ (ou None)

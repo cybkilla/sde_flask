@@ -15,6 +15,17 @@ _TABLE = "daily_advice"
 # (c'est ce qui fait perdre les stratégies actives contre le buy & hold).
 SEUIL_CONFIRMATION_SORTIE = 45
 
+# Cooldown post-achat : nombre de jours CALENDAIRES après un achat pendant
+# lesquels les suggestions de réduction DISCRÉTIONNAIRES (escalade
+# chandelier, trailing stop, take-profit) sont suspendues. Cas réel :
+# achat manuel le 16.07 à 3.825$, revendu le 17.07 à 3.72$ sur un ALLÉGER
+# parfaitement conforme aux règles — un aller-retour perdant sur des
+# actions qui n'avaient même pas eu une séance pour se développer. Les
+# contrôles de RISQUE (stop loss, signal VENDRE fort) restent actifs :
+# ce n'est qu'un délai de grâce pour les décisions d'optimisation, jamais
+# pour la protection du capital.
+COOLDOWN_ACHAT_JOURS = 1
+
 # Labels lisibles pour chaque action
 ACTION_LABELS = {
     "ACHETER":    ("↑ Acheter",    "#1D9E75", "success"),
@@ -135,6 +146,23 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
                      if l.get("type", "achat") == "achat"
                      and str(l.get("date_achat", ""))[:10] == _auj)
 
+    # Cooldown post-achat : y a-t-il un achat (pas un import — les imports
+    # sont des positions historiques, pas des décisions récentes) dans les
+    # COOLDOWN_ACHAT_JOURS derniers jours calendaires ? Cette position n'a
+    # peut-être pas encore eu le temps de se développer.
+    achete_recemment_jours = None
+    for l in _lots:
+        if l.get("type", "achat") != "achat":
+            continue
+        try:
+            d_achat = datetime.strptime(str(l.get("date_achat", ""))[:10], "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        age = (date.today() - d_achat).days
+        if 0 <= age <= COOLDOWN_ACHAT_JOURS:
+            if achete_recemment_jours is None or age < achete_recemment_jours:
+                achete_recemment_jours = age
+
     # ── Ré-entrée après clôture ───────────────────────────────────────
     # Une position entièrement vendue laissait le ticker orphelin de
     # conseil : summary existait toujours (les lots restent en base),
@@ -162,7 +190,8 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
                          data_date=data_date_str,
                          var_1d=market.get("var_1d"),
                          deja_vendu=vendu_auj,
-                         regime=(snapshot.get("market_regime") or {}).get("regime"))
+                         regime=(snapshot.get("market_regime") or {}).get("regime"),
+                         achete_recemment_jours=achete_recemment_jours)
         # Filtrer les signaux dans le sens du conseil final
         action = r["action"]
         if action in ("VENDRE", "ALLÉGER"):
@@ -174,6 +203,33 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
         note = _dominant_signals_note(snapshot, data_date_str, direction)
         if note:
             r["raisonnement"] += note
+
+        # Confiance du conseil : croise les signaux dominants avec leur
+        # fiabilité MESURÉE sur ce titre (attribution du backtest) — un
+        # conseil directionnel porté par un signal à 28.6% de fiabilité
+        # (ex. ma_cross_down sur TMC) n'a pas la même valeur qu'un conseil
+        # porté par un signal à 65%. Rien de tout ça n'était visible avant.
+        try:
+            from analysis.calibration import confiance_conseil
+            conf = confiance_conseil(
+                r["action"], snapshot.get("signals_tech"), snapshot.get("calibration"),
+            )
+            r["confiance"] = conf
+            if conf.get("niveau") == "basse":
+                pire = conf["pire_signal"]
+                r["raisonnement"] += (
+                    f"<br>{cd}⚠️ Confiance BASSE — le signal dominant "
+                    f"« {pire['label']} » n'est fiable qu'à {pire['hit_pct']}% "
+                    f"sur ce titre ({pire['n_episodes']} épisodes mesurés)."
+                )
+            elif conf.get("niveau") == "haute":
+                r["raisonnement"] += (
+                    f"<br>{cd}✓ Confiance haute — signaux dominants fiables à "
+                    f"{conf['moyenne_hit_pct']}% en moyenne sur ce titre."
+                )
+        except Exception as e:
+            print(f"[Advisor] confiance_conseil ignorée : {e}", flush=True)
+
         # Contexte macro : le score étant déjà ajusté par le régime dans le
         # pipeline, on EXPLIQUE ici l'ajustement plutôt que de le ré-appliquer
         # (sinon double comptage). Absent des vieux snapshots → .get défensif.
@@ -276,7 +332,9 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
     # Stop suiveur : la position est en gain mais rend ses acquis.
     # Le P&L vs prix d'entrée ne le voit pas — on compare au PLUS HAUT
     # atteint depuis l'achat (high-water mark) : repli > 2×ATR → sécuriser.
-    if seuils["adapte"] and pnl_pct > 0 and vendu_auj == 0:
+    # Cooldown post-achat : décision d'OPTIMISATION (pas de risque), suspendue
+    # tant que la position n'a pas eu le temps de se développer.
+    if seuils["adapte"] and pnl_pct > 0 and vendu_auj == 0 and achete_recemment_jours is None:
         from portfolio.risk import drawdown_depuis_plus_haut
         hwm, dd = drawdown_depuis_plus_haut(hist_px, summary.get("lots"), prix)
         if dd is not None and dd <= -(TRAIL_ATR_MULT * atr):
@@ -289,7 +347,9 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
             return _finalize(base, pnl=pnl_pct)
 
     # Prise de bénéfices sur signal vendeur fort — objectif ATR
-    if pnl_pct >= seuils["take_profit_pct"] and reco == "VENDRE" and vendu_auj == 0:
+    # (cooldown post-achat : idem, décision d'optimisation non urgente)
+    if (pnl_pct >= seuils["take_profit_pct"] and reco == "VENDRE" and vendu_auj == 0
+            and achete_recemment_jours is None):
         alleger = max(1, round(total_shares * 0.5))
         base = _conseil("ALLÉGER", alleger, prix,
             f"{cd}Plus-value de {pnl_pct:+.1f}% (objectif {seuils['take_profit_pct']:+.1f}%) "
@@ -299,6 +359,29 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
 
     # Signal vendeur fort sans plus-value importante
     if reco == "VENDRE" and score <= c["score_vendre"]:
+        # FILTRE TENDANCE DE FOND : le backtest a montré que vendre sur
+        # signal technique perd contre le buy & hold quand le titre est
+        # dans une tendance de fond structurellement haussière (au-dessus
+        # de sa MA200) — sauf si le régime de marché GLOBAL confirme
+        # aussi la baisse (deux échelles de temps qui s'alignent, pas
+        # une seule). Si non confirmé : sortie partielle plutôt que
+        # totale, en expliquant pourquoi.
+        tendance   = market.get("tendance_fond")
+        regime_now = (snapshot.get("market_regime") or {}).get("regime")
+        trend_confirme = not (
+            tendance and tendance.get("tendance") == "haussiere" and regime_now != "baissier"
+        )
+        if not trend_confirme:
+            alleger = max(1, round(total_shares * 0.25))
+            base = _conseil("ALLÉGER", alleger, prix,
+                f"{cd}Signal SDE baissier fort ({score:.0f}/100, RSI {rsi:.0f}), "
+                f"mais tendance de fond du titre haussière "
+                f"({tendance['vs_ma200_pct']:+.1f}% vs MA200) — allégement partiel "
+                f"plutôt qu'une sortie complète (le backtest montre que vendre "
+                f"intégralement contre une tendance de fond forte perd contre "
+                f"le buy & hold sur ce type de titre).")
+            return _finalize(base, pnl=pnl_pct)
+
         base = _conseil("VENDRE", total_shares, prix,
             f"{cd}Signal SDE baissier fort ({score:.0f}/100, RSI {rsi:.0f}). "
             f"Sortie de position recommandée (P&L actuelle : {pnl_pct:+.1f}%).")
@@ -391,7 +474,8 @@ def _with_candle(conseil: dict, candle_info: dict | None,
                  score: float = 50, reco: str = "NEUTRE",
                  total_shares: float = 0, prix: float = 0,
                  data_date: str = "", var_1d: float = None,
-                 deja_vendu: float = 0, regime: str = None) -> dict:
+                 deja_vendu: float = 0, regime: str = None,
+                 achete_recemment_jours: int = None) -> dict:
     """
     Enrichit un conseil de base avec le signal du dernier pattern chandelier.
     Peut modifier l'action (ex. TENIR → ALLÉGER sur signal baissier fort)
@@ -453,6 +537,19 @@ def _with_candle(conseil: dict, candle_info: dict | None,
                           f"mais allégement déjà réalisé aujourd'hui "
                           f"({deja_vendu:g} actions) — pas de nouvelle réduction "
                           f"sur le même signal.")
+                return _conseil(action, conseil.get("quantite_suggeree"),
+                                conseil.get("prix_cible"), raison)
+            # COOLDOWN POST-ACHAT : ces actions n'ont pas eu le temps de se
+            # développer — cas réel du 16-17.07 : achat manuel à 3.825$,
+            # revendu 25% le lendemain à 3.72$ sur ce même mécanisme,
+            # aller-retour perdant sur des actions à peine acquises.
+            if achete_recemment_jours is not None:
+                raison = (f"{raison}<br>"
+                          f"{d}Pattern chandelier {label} ({name}) actif, mais achat "
+                          f"il y a {achete_recemment_jours} jour(s) sur cette position — "
+                          f"pas d'allégement discrétionnaire avant qu'elle ait eu le "
+                          f"temps de se développer (le stop loss et le signal VENDRE "
+                          f"fort restent actifs).")
                 return _conseil(action, conseil.get("quantite_suggeree"),
                                 conseil.get("prix_cible"), raison)
             # INVALIDATION : un pattern de retournement baissier (détecté
@@ -657,6 +754,18 @@ def ensure_today_advice(username: str, ticker: str, prix_live: float,
         # intègre la première heure de séance
         if post_open:
             market["post_ouverture"] = True
+
+        # Tendance de fond (MA200/52 semaines) : tempère un VENDRE fort
+        # quand le titre est en tendance haussière structurelle — le
+        # backtest a montré que vendre sur signal technique perd contre
+        # le buy & hold quand la tendance de fond est solide.
+        try:
+            from analysis.backtest import tendance_fond
+            tf = tendance_fond(ticker)
+            if tf:
+                market["tendance_fond"] = tf
+        except Exception:
+            pass
 
         # Pattern chandelier — même construction que la route portfolio
         candle_info = None

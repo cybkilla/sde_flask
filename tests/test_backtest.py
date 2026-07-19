@@ -161,4 +161,80 @@ try:
 except ValueError:
     print("✓ historique trop court correctement refusé")
 
+# ── tendance_fond : MA200 / distance au plus haut 52 semaines ──
+# Étape 2 du plan "battre le buy & hold" : sur TMC, la stratégie technique
+# fait -17.9% quand le buy & hold fait +256.2% — le titre reste souvent
+# au-dessus de sa MA200 pendant que le score technique multiplie les
+# signaux vendeurs. tendance_fond() expose cet état pour tempérer les
+# ventes complètes dans l'advisor.
+from analysis.backtest import tendance_fond
+
+def make_trend(pente_quotidienne: float, n: int = 260, seed: int = 7) -> pd.DataFrame:
+    """Historique synthétique en tendance nette (haussière ou baissière)."""
+    np.random.seed(seed)
+    close = 100 * np.cumprod(1 + np.random.normal(pente_quotidienne, 0.008, n))
+    dates = pd.bdate_range("2024-01-02", periods=n)
+    return pd.DataFrame({"Close": close}, index=dates)
+
+# Tendance haussière nette (+0.3%/jour) → prix bien au-dessus de sa MA200,
+# proche de son plus haut 52 semaines (une hausse régulière fait ses plus
+# hauts en fin de période)
+bt_mod._fetch_history = lambda ticker, period="2y": make_trend(+0.003)
+tf_haussier = tendance_fond("FAKE_HAUSSE")
+assert tf_haussier is not None
+assert tf_haussier["tendance"] == "haussiere"
+assert tf_haussier["vs_ma200_pct"] > 0
+assert tf_haussier["dist_plus_haut_52s_pct"] > -15   # proche de son plus haut
+
+# Tendance baissière nette (-0.3%/jour) → sous sa MA200, loin de son plus haut
+bt_mod._fetch_history = lambda ticker, period="2y": make_trend(-0.003)
+tf_baissier = tendance_fond("FAKE_BAISSE")
+assert tf_baissier is not None
+assert tf_baissier["tendance"] == "baissiere"
+assert tf_baissier["vs_ma200_pct"] < 0
+print(f"✓ tendance_fond : haussière ({tf_haussier['vs_ma200_pct']:+.1f}% vs MA200) / "
+      f"baissière ({tf_baissier['vs_ma200_pct']:+.1f}% vs MA200) correctement détectées")
+
+# Historique trop court (< 200 séances) → None, pas de biais silencieux
+bt_mod._fetch_history = lambda ticker, period="2y": make_trend(+0.003, n=100)
+assert tendance_fond("FAKE_COURT") is None
+print("✓ tendance_fond : historique < 200 séances → None (aucun filtre appliqué)")
+
+
+# ── Intégration advisor : la tendance de fond tempère le VENDRE fort ──
+from portfolio.advisor import generate_advice
+
+_hist_ind = make_trend(+0.001, n=60)   # juste pour ATR/historique du conseil
+_m_base   = {"price": float(_hist_ind["Close"].iloc[-1]), "rsi": 30.0, "history": _hist_ind}
+_s_base   = {"pnl_pct": -2.0, "total_shares": 1000, "cout_moyen": 10.0,
+             "lots": [{"type": "achat", "date_achat": "2024-01-01", "quantite": 1000}]}
+_snap_vendre_fort = {"score_global": 30.0, "recommandation": "VENDRE",
+                     "signals_tech": [], "signals_fund": []}
+
+# Tendance de fond haussière + régime NON baissier (donc pas de 2e
+# confirmation) → sortie complète downgradée en allégement partiel
+m_haussier = {**_m_base, "tendance_fond": {"tendance": "haussiere", "vs_ma200_pct": 15.0}}
+adv_downgrade = generate_advice(_s_base, m_haussier, _snap_vendre_fort)
+assert adv_downgrade["action"] == "ALLÉGER", \
+    f"tendance de fond haussière non confirmée par le régime → downgrade en ALLÉGER, obtenu {adv_downgrade['action']}"
+assert "tendance de fond du titre haussière" in adv_downgrade["raisonnement"]
+
+# Même tendance haussière, mais régime de marché GLOBAL baissier
+# (confirmation à une autre échelle) → la sortie complète est maintenue
+snap_regime_baissier = {**_snap_vendre_fort, "market_regime": {"regime": "baissier"}}
+adv_confirme = generate_advice(_s_base, m_haussier, snap_regime_baissier)
+assert adv_confirme["action"] == "VENDRE", \
+    "régime baissier confirmé → la sortie complète doit être maintenue malgré la tendance de fond"
+
+# Tendance de fond baissière (ou inconnue) → comportement historique, VENDRE complet
+m_baissier = {**_m_base, "tendance_fond": {"tendance": "baissiere", "vs_ma200_pct": -20.0}}
+adv_normal = generate_advice(_s_base, m_baissier, _snap_vendre_fort)
+assert adv_normal["action"] == "VENDRE"
+
+m_inconnu = {**_m_base}   # pas de tendance_fond (titre trop récent, ou indisponible)
+adv_sans_tf = generate_advice(_s_base, m_inconnu, _snap_vendre_fort)
+assert adv_sans_tf["action"] == "VENDRE"
+print("✓ tendance de fond : downgrade en ALLÉGER si haussière ET régime non confirmé ; "
+      "VENDRE maintenu si régime confirme, si tendance baissière, ou si inconnue")
+
 print("\n✓ Tous les tests test_backtest.py sont OK (hors réseau)")
