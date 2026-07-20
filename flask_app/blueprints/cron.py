@@ -102,7 +102,7 @@ def test_email():
 def test_weekly():
     """
     Force l'envoi du rapport hebdomadaire pour un utilisateur donné (?to=email).
-    Bypass le guard dimanche/22h et l'anti-doublon Supabase.
+    Bypass le guard dimanche/8h et l'anti-doublon Supabase.
     Protégé par le même secret que /run.
     """
     if not _check_secret():

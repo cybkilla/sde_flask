@@ -1,4 +1,4 @@
-# alerts/weekly_report.py — Rapport hebdomadaire du portefeuille (dimanche soir)
+# alerts/weekly_report.py — Rapport hebdomadaire du portefeuille (dimanche)
 
 import os
 from datetime import date, timedelta, datetime, timezone
@@ -11,14 +11,24 @@ _TABLE = "weekly_reports"
 
 def should_send(username: str) -> bool:
     """
-    Retourne True si c'est dimanche ≥ 22h00 Paris et que le rapport
+    Retourne True si c'est dimanche ≥ 8h00 Paris et que le rapport
     de cette semaine n'a pas encore été envoyé.
+
+    Le seuil de 8h (et non 22h comme avant le 20.07.2026) : le marché
+    est fermé depuis vendredi 22h Paris, aucune donnée n'est plus
+    "fraîche" à 22h qu'au matin — le contenu du rapport (prix de clôture
+    vendredi, historique daily_advice de la semaine) est figé depuis le
+    week-end. Le 22h était hérité par inertie de la fenêtre d'évaluation
+    des conseils (_is_eval_window, 20h-22h en semaine), où il sert à
+    attendre la clôture NASDAQ — logique absente un dimanche. 8h reprend
+    simplement le début de la fenêtre de courtoisie déjà utilisée pour
+    les autres emails (_fenetre_courtoisie du scheduler, 08h-23h Paris).
     """
     try:
         import zoneinfo
         paris = zoneinfo.ZoneInfo("Europe/Paris")
         now   = datetime.now(paris)
-        if now.weekday() != 6 or now.hour < 22:   # 6 = dimanche
+        if now.weekday() != 6 or now.hour < 8:   # 6 = dimanche
             return False
     except Exception:
         return False

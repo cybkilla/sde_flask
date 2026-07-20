@@ -414,7 +414,7 @@ def check_all():
             except Exception as e:
                 print(f"  [Advice] Erreur conseils positions {username} : {e}", flush=True)
 
-        # ── Rapport hebdomadaire (dimanche ≥ 22h Paris) ──────────
+        # ── Rapport hebdomadaire (dimanche ≥ 8h Paris) ───────────
         # Déclenché même si la watchlist est vide (le rapport inclut le portefeuille)
         if email:
             try:
