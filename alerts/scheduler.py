@@ -219,8 +219,15 @@ def _fenetre_conseils() -> bool:
 
 
 def _fenetre_courtoisie() -> bool:
-    """Alertes email (reco/variation/TP-SL) : 08h00-23h00 Paris seulement."""
-    return _fenetre_paris(8, 0, 23, 0)
+    """
+    Alertes email (reco/variation/TP-SL) : 06h00-23h00 Paris.
+    Élargie de 08h à 06h le 22.07.2026 : un mouvement de +8% sur TMC
+    (pré-marché/après-bourse dans la nuit du 21 au 22.07) n'a été détecté
+    qu'au premier passage après 8h — soit ~2h après l'ouverture du
+    pré-marché US typique (04h ET ≈ 06h Paris en heure d'été). 06h capte
+    ce pré-marché sans rouvrir la vraie coupure nocturne (23h-06h, ~7h).
+    """
+    return _fenetre_paris(6, 0, 23, 0)
 
 
 def _fenetre_premarche() -> bool:

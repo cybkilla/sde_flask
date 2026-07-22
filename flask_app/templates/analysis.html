@@ -95,6 +95,47 @@
 </div>
 {% endif %}
 
+{# ── Divergence technique vs structurel (fondamental+média) ──────────────
+   Volontairement TRÈS visible : pleine largeur, juste après l'en-tête,
+   avant tout le reste — un signal qui reste noyé dans le score agrégé
+   ne sert à rien (cas TMC : news positives dès le 07.07, invisibles
+   jusqu'au rebond du 21.07). #}
+{% if res.get('divergence') %}
+  {% set dv = res.divergence %}
+  {% set dv_hausse = dv.direction == 'haussiere_ignoree' %}
+  {% set dv_color  = '#1D9E75' if dv_hausse else '#D85A30' %}
+  {% set dv_bg     = '#E1F5EE' if dv_hausse else '#FAECE7' %}
+  {% set dv_icon   = '📈' if dv_hausse else '📉' %}
+<div style="background:{{ dv_bg }};border:2px solid {{ dv_color }};border-radius:10px;
+            padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;
+            gap:14px;flex-wrap:wrap;box-shadow:0 2px 8px {{ dv_color }}33">
+  <div style="font-size:1.8rem;line-height:1">{{ dv_icon }}</div>
+  <div style="flex:1;min-width:240px">
+    <div style="font-size:.78rem;font-weight:800;color:{{ dv_color }};
+                text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">
+      ⚠ Divergence détectée
+    </div>
+    <div style="font-size:.9rem;color:var(--sde-text);line-height:1.5">
+      {% if dv_hausse %}
+      Les <strong>fondamentaux et l'actualité</strong> sont haussiers
+      ({{ dv.score_structurel }}/100) alors que la <strong>technique</strong>
+      reste baissière ({{ dv.score_tech }}/100) — un signal positif est
+      peut-être noyé dans le score agrégé.
+      {% else %}
+      La <strong>technique</strong> est haussière ({{ dv.score_tech }}/100)
+      mais les <strong>fondamentaux et l'actualité</strong> restent baissiers
+      ({{ dv.score_structurel }}/100) — momentum sans base structurelle,
+      risque de retournement si l'élan s'essouffle.
+      {% endif %}
+    </div>
+  </div>
+  <div style="text-align:right;flex-shrink:0">
+    <div style="font-size:.68rem;color:var(--sde-muted);text-transform:uppercase;letter-spacing:.04em">Écart</div>
+    <div style="font-size:1.3rem;font-weight:700;color:{{ dv_color }}">{{ dv.ecart }}&thinsp;pts</div>
+  </div>
+</div>
+{% endif %}
+
 <!-- ══ MÉTRIQUES LIVE ════════════════════════════════════════════════════════ -->
 {% set var  = market.var_1d if market.var_1d is not none else 0.0 %}
 {% set cvar = '#1D9E75' if var >= 0 else '#D85A30' %}

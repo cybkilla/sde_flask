@@ -203,6 +203,15 @@ def run(ticker: str, use_cache: bool = True) -> dict:
         contribution=lambda df: (df["score"] * df["poids"]).round(1)
     )
 
+    # Divergence technique vs structurel (fondamental+média) — voir
+    # analysis/divergence.py. Défensif : jamais bloquant pour l'analyse.
+    divergence = None
+    try:
+        from analysis.divergence import detecter_divergence
+        divergence = detecter_divergence(tech["score"], fund["score"], media)
+    except Exception as e:
+        print(f"[Pipeline] divergence ignorée : {e}", flush=True)
+
     # ── Construction du dict résultat ─────────────────────
     # IMPORTANT : result doit être créé AVANT l'appel au LLM
     # car generate_explanation() en a besoin pour construire le prompt
@@ -229,6 +238,10 @@ def run(ticker: str, use_cache: bool = True) -> dict:
         "score_fund":     fund["score"],
         "score_media":    media,
         "df_scores":      df_scores,
+        # Divergence technique vs structurel (fondamental+média) — signal
+        # potentiellement noyé dans le score agrégé (cas TMC 07-21.07 :
+        # news positives dès le 07.07, restées invisibles jusqu'au rebond)
+        "divergence":     divergence,
         # Signaux détaillés
         "signals_tech":   tech["signals"],
         "signals_fund":   fund["signals"],
