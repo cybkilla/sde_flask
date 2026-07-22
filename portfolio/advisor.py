@@ -446,6 +446,43 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
             f"sur capitulation.{note_cash}")
         return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
 
+    # Signal haussier isolé mais MESURÉ très fiable sur ce titre, neutralisé
+    # par une reco globale elle-même tirée par des signaux moins fiables.
+    # Symétrique côté achat de la double confirmation côté vente (16.07) :
+    # là-bas, un signal peu fiable ne pouvait plus À LUI SEUL déclencher une
+    # sortie ; ici, un signal TRÈS fiable ne doit pas être totalement
+    # ignoré juste parce que d'autres signaux, moins fiables, dominent le
+    # score agrégé. Réutilise confiance_conseil (item du 19.07) — mêmes
+    # seuils, mêmes garde-fous (n_episodes suffisant, jamais de décision
+    # sur du bruit).
+    if reco != "ACHETER" and achete_auj == 0 and pnl_pct <= seuils["pnl_renforcer"]:
+        from analysis.calibration import confiance_conseil
+        conf_achat = confiance_conseil(
+            "ACHETER", snapshot.get("signals_tech"), snapshot.get("calibration"),
+        )
+        if conf_achat.get("niveau") == "haute":
+            renforcer  = max(1, round(total_shares * 0.25))
+            signal_txt = ", ".join(s["label"] for s in conf_achat["signaux"])
+            note_cash  = ""
+            if cash_dispo is not None and prix > 0:
+                max_achetable = int(cash_dispo // prix)
+                if max_achetable < 1:
+                    base = _conseil("TENIR", None, None,
+                        f"{cd}Signal haussier fiable à {conf_achat['moyenne_hit_pct']}% "
+                        f"sur ce titre ({signal_txt}), ignoré par la reco globale "
+                        f"{reco} — mais trésorerie suivie insuffisante "
+                        f"({cash_dispo:.2f} $). Maintien.")
+                    return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
+                if renforcer > max_achetable:
+                    renforcer = max_achetable
+                    note_cash = (f" Quantité limitée par la trésorerie disponible "
+                                 f"({cash_dispo:,.2f} $).")
+            base = _conseil("RENFORCER", renforcer, prix,
+                f"{cd}Signal haussier fiable à {conf_achat['moyenne_hit_pct']}% sur "
+                f"ce titre ({signal_txt}) — renforcement malgré la reco globale "
+                f"{reco}, tirée par des signaux moins fiables.{note_cash}")
+            return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
+
     # Signal haussier confirmé en territoire positif
     if reco == "ACHETER" and score >= c["score_tenir"] and pnl_pct > 0:
         base = _conseil("TENIR", None, None,

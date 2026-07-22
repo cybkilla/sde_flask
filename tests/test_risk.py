@@ -451,3 +451,56 @@ assert abs(_ii["var_5d_live"] - _attendu) < 0.05
 assert indicateurs_intraday(_h.head(5), 100.0) == {}
 assert indicateurs_intraday(_h, 0) == {}
 print("✓ indicateurs_intraday : RSI/Var5j provisoires cohérents, robustes")
+
+
+# ── Signal haussier fiable ignoré par la reco globale (22.07) ──
+# Cas motivant : TMC +8% le 21.07 après plusieurs jours de VENDRE — mais
+# le SEUL signal haussier actif ce jour-là (rsi_bas, 48.4% fiabilité) était
+# sous le seuil de dominance et pas particulièrement fiable. Le nouveau
+# mécanisme ne doit PAS réécrire ce cas rétroactivement (honnêteté avant
+# tout) mais DOIT se déclencher si un signal réellement fiable existe.
+_signals_2007 = [
+    {"code": "rsi_bas", "nom": "RSI dans zone basse (30-45)", "sens": "haussier", "points": 9.5},
+    {"code": "macd_bear", "nom": "MACD sous sa ligne de signal", "sens": "baissier", "points": -12.2},
+]
+_calib_2007 = [
+    {"code": "rsi_bas", "hit_pct": 48.4, "n_episodes": 31},
+    {"code": "macd_bear", "hit_pct": 58.8, "n_episodes": 17},
+]
+_snap_2007 = {"score_global": 41.3, "recommandation": "VENDRE",
+             "signals_tech": _signals_2007, "calibration": _calib_2007}
+_m_2007 = {"price": 3.69, "rsi": 31.4, "history": None}
+_s_2007 = {"pnl_pct": -7.05, "total_shares": 8152, "cout_moyen": 3.97,
+          "lots": [{"type": "import", "date_achat": "2026-07-08", "quantite": 8152}]}
+adv_2007 = generate_advice(_s_2007, _m_2007, _snap_2007, cash_dispo=10245.85)
+assert adv_2007["action"] == "TENIR", \
+    f"rsi_bas (9.5pts, sous le seuil de dominance 10) ne doit PAS déclencher, obtenu {adv_2007['action']}"
+
+# Signal VRAIMENT fiable (65%, assez d'épisodes) contredit par la reco
+# globale VENDRE → doit déclencher RENFORCER malgré tout
+_signals_fiable = [
+    {"code": "rsi_survente", "nom": "RSI en zone de survente (< 30)", "sens": "haussier", "points": 20.0},
+    {"code": "macd_bear", "nom": "MACD sous sa ligne de signal", "sens": "baissier", "points": -12.0},
+]
+_calib_fiable = [{"code": "rsi_survente", "hit_pct": 65.0, "n_episodes": 15}]
+_snap_fiable = {"score_global": 40.0, "recommandation": "VENDRE",
+               "signals_tech": _signals_fiable, "calibration": _calib_fiable}
+_m_fiable = {"price": 3.50, "rsi": 25.0, "history": None}
+adv_fiable = generate_advice(_s_2007, _m_fiable, _snap_fiable, cash_dispo=10245.85)
+assert adv_fiable["action"] == "RENFORCER", \
+    f"signal à 65% de fiabilité doit outrepasser la reco VENDRE, obtenu {adv_fiable['action']}"
+assert "tirée par des signaux moins fiables" in adv_fiable["raisonnement"]
+assert adv_fiable["quantite_suggeree"] == round(8152 * 0.25)
+
+# Même signal fiable, mais SANS trésorerie → TENIR explicite, pas de crash
+adv_sans_cash = generate_advice(_s_2007, _m_fiable, _snap_fiable, cash_dispo=1.0)
+assert adv_sans_cash["action"] == "TENIR"
+assert "trésorerie suivie insuffisante" in adv_sans_cash["raisonnement"]
+
+# reco déjà ACHETER → le chemin standard s'applique, pas de doublon/conflit
+_snap_achat = {**_snap_fiable, "recommandation": "ACHETER"}
+adv_deja_achat = generate_advice(_s_2007, _m_fiable, _snap_achat, cash_dispo=10245.85)
+assert adv_deja_achat["action"] in ("RENFORCER", "TENIR")  # pas d'exception, cohérent
+
+print("✓ signal fiable vs reco globale : rsi_bas (48%) n'outrepasse pas, "
+      "signal à 65% outrepasse, plafonné par le cash, pas de doublon si déjà ACHETER")
