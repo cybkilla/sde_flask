@@ -309,3 +309,39 @@ def stats():
         import traceback
         print(traceback.format_exc(), flush=True)   # trace dans les logs, PAS au client
         return jsonify({"ok": False, "error": "Erreur interne — voir les logs serveur."}), 500
+
+
+# ── Scan d'opportunités (Top 5 potentiel court terme) ─────────────────────
+# Entonnoir à 2 étages (analysis/screener.py) déclenché à la demande —
+# jamais par cron, pour ne consommer les quotas API que si l'admin a
+# effectivement du cash à placer ce jour-là.
+
+@bp.route("/opportunites")
+@login_required
+def opportunites():
+    _require_admin()
+    from analysis.screener import get_scan_state
+    from portfolio.positions import get_cash_disponible
+    return render_template(
+        "admin_opportunites.html",
+        state=get_scan_state(),
+        cash_dispo=get_cash_disponible(current_user.id),
+    )
+
+
+@bp.route("/opportunites/scan", methods=["POST"])
+@login_required
+def opportunites_scan():
+    _require_admin()
+    from analysis.screener import lancer_scan
+    if not lancer_scan():
+        return jsonify({"ok": False, "message": "Scan déjà en cours"}), 429
+    return jsonify({"ok": True, "message": "Scan lancé en arrière-plan"}), 202
+
+
+@bp.route("/opportunites/status")
+@login_required
+def opportunites_status():
+    _require_admin()
+    from analysis.screener import get_scan_state
+    return jsonify(get_scan_state())

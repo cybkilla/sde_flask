@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}SDE — Admin · Opportunités{% endblock %}
+
+{% block content %}
+<div class="sde-ticker-header mb-3">
+  <div style="flex:1">
+    <div class="d-flex align-items-center gap-2">
+      <span class="sde-ticker-name">
+        <i class="bi bi-binoculars-fill me-1"></i>Scan d'opportunités
+      </span>
+    </div>
+    <div class="sde-ticker-meta mt-1">
+      Top {{ 5 }} potentiel court terme · sélection curatée NASDAQ (IA/semis, cloud/SaaS, conso/fintech/énergie) · filtre technique puis analyse complète SDE sur la présélection
+      {% if cash_dispo is not none %}
+      · <strong style="color:var(--sde-teal)">${{ "%.2f"|format(cash_dispo) }}</strong> de cash disponible
+      {% endif %}
+    </div>
+  </div>
+  <button class="sde-nav-btn" id="sde-scan-btn" onclick="lancerScan()">
+    <i class="bi bi-search me-1"></i>
+    <span class="hide-xs">Scanner</span>
+  </button>
+</div>
+
+<div class="sde-card mb-3" id="sde-scan-wrap">
+  {% if state.resultats %}
+    <div id="sde-scan-body"></div>
+  {% else %}
+    <div class="text-center py-4" id="sde-scan-empty">
+      <i class="bi bi-search" style="font-size:2rem;color:var(--sde-muted)"></i>
+      <p class="mt-2 text-muted small">
+        Aucun scan encore effectué. Cliquez sur « Scanner » pour lancer une analyse
+        de la sélection curatée NASDAQ (≈ 2-4 minutes).
+      </p>
+    </div>
+  {% endif %}
+</div>
+
+<p class="small text-muted" style="font-size:.72rem">
+  <i class="bi bi-info-circle me-1"></i>
+  Étage 1 : score technique seul sur tout l'univers (rapide). Étage 2 : pipeline SDE complet
+  (actualités, fondamentaux, calibration, LLM) sur les 15 meilleurs de l'étage 1 seulement —
+  pour rester dans le budget des API gratuites. Le scan est manuel : il ne tourne jamais tout seul.
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const initialState = {{ state | tojson }};
+  let polling = null;
+
+  function renderEmpty(msg) {
+    document.getElementById("sde-scan-wrap").innerHTML = `
+      <div class="text-center py-4">
+        <i class="bi bi-search" style="font-size:2rem;color:var(--sde-muted)"></i>
+        <p class="mt-2 text-muted small">${msg}</p>
+      </div>`;
+  }
+
+  function renderResultats(state) {
+    const wrap = document.getElementById("sde-scan-wrap");
+    if (!state.resultats || state.resultats.length === 0) {
+      renderEmpty("Aucun résultat pour l'instant.");
+      return;
+    }
+    const maj = state.derniere_maj
+      ? new Date(state.derniere_maj).toLocaleString("fr-FR", {day:"numeric", month:"short", hour:"2-digit", minute:"2-digit"})
+      : "—";
+
+    const ACTION_COLOR = {
+      ACHETER:"#1D9E75", RENFORCER:"#15803d",
+      TENIR:"#BA7517", SURVEILLER:"#5a6a7a",
+      "ALLÉGER":"#D85A30", VENDRE:"#991b1b",
+    };
+
+    wrap.innerHTML = `
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <h6 class="fw-semibold mb-0" style="font-size:.85rem;color:var(--sde-navy)">
+          <i class="bi bi-trophy me-1"></i>Top ${state.resultats.length}
+        </h6>
+        <span style="font-size:.72rem;color:var(--sde-muted)">Dernier scan : ${maj}</span>
+      </div>
+      <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead>
+          <tr style="border-bottom:2px solid var(--sde-border);color:var(--sde-muted)">
+            <th style="padding:6px 8px;text-align:left">#</th>
+            <th style="padding:6px 8px;text-align:left">Ticker</th>
+            <th style="padding:6px 8px;text-align:right">Score global</th>
+            <th style="padding:6px 8px;text-align:left">Conseil</th>
+            <th style="padding:6px 8px;text-align:right">Prix</th>
+            <th style="padding:6px 8px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${state.resultats.map((r, i) => {
+            const color = ACTION_COLOR[r.recommandation] || "#5a6a7a";
+            const dv = r.divergence
+              ? `<span title="Divergence technique/structurel détectée" style="margin-left:6px;color:${r.divergence.direction === 'haussiere_ignoree' ? '#1D9E75' : '#D85A30'}">⚠</span>`
+              : "";
+            return `
+              <tr style="border-bottom:1px solid var(--sde-border)">
+                <td style="padding:8px;color:var(--sde-muted)">${i + 1}</td>
+                <td style="padding:8px;font-weight:700;color:var(--sde-navy)">
+                  ${r.ticker}${dv}
+                  <div style="font-weight:400;color:var(--sde-muted);font-size:.72rem">${r.company_name || ""}</div>
+                </td>
+                <td style="padding:8px;text-align:right;font-weight:700">${r.score_global != null ? r.score_global.toFixed(1) : "—"}</td>
+                <td style="padding:8px">
+                  <span style="background:${color}18;color:${color};padding:2px 8px;border-radius:12px;font-weight:600;font-size:.75rem">${r.recommandation || "—"}</span>
+                </td>
+                <td style="padding:8px;text-align:right">${r.prix != null ? "$" + r.prix.toFixed(2) : "—"}</td>
+                <td style="padding:8px;text-align:right">
+                  <a href="/analyze/${r.ticker}" class="sde-nav-btn" style="font-size:.75rem;white-space:nowrap">
+                    Analyser <i class="bi bi-arrow-right ms-1"></i>
+                  </a>
+                </td>
+              </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+      </div>`;
+  }
+
+  function renderProgress(state) {
+    document.getElementById("sde-scan-wrap").innerHTML = `
+      <div class="text-center py-4">
+        <div class="spinner-border" style="color:var(--sde-teal);width:2rem;height:2rem"></div>
+        <p class="text-muted mt-3 mb-0" style="font-size:.85rem">Scan en cours…</p>
+        <p class="text-muted" style="font-size:.75rem">${state.progression || ""}</p>
+      </div>`;
+  }
+
+  function poll() {
+    fetch("/admin/opportunites/status")
+      .then(r => r.json())
+      .then(state => {
+        if (state.en_cours) {
+          renderProgress(state);
+        } else {
+          clearInterval(polling);
+          polling = null;
+          document.getElementById("sde-scan-btn").disabled = false;
+          if (state.erreur) {
+            renderEmpty(`Erreur pendant le scan : ${state.erreur}`);
+          } else {
+            renderResultats(state);
+          }
+        }
+      });
+  }
+
+  window.lancerScan = function () {
+    const btn = document.getElementById("sde-scan-btn");
+    const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+    btn.disabled = true;
+    renderProgress({progression: "Démarrage…"});
+    fetch("/admin/opportunites/scan", {
+      method: "POST",
+      headers: {"X-CSRFToken": CSRF},
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        btn.disabled = false;
+        renderEmpty(data.message || "Impossible de lancer le scan.");
+        return;
+      }
+      if (!polling) polling = setInterval(poll, 3000);
+    });
+  };
+
+  document.addEventListener("DOMContentLoaded", () => {
+    if (initialState.en_cours) {
+      document.getElementById("sde-scan-btn").disabled = true;
+      renderProgress(initialState);
+      polling = setInterval(poll, 3000);
+    } else if (initialState.resultats && initialState.resultats.length) {
+      renderResultats(initialState);
+    }
+  });
+})();
+</script>
+{% endblock %}
