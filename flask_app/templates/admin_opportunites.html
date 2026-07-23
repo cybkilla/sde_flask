@@ -187,8 +187,9 @@
             return `
               <tr style="border-bottom:1px solid var(--sde-border)">
                 <td style="padding:8px;color:var(--sde-muted)">${i + 1}</td>
-                <td style="padding:8px;font-weight:700;color:var(--sde-navy)">
-                  ${r.ticker}${dv}
+                <td style="padding:8px;font-weight:700">
+                  <a href="/analyze/${r.ticker}" data-sde-loading="Analyse de ${r.ticker}…"
+                     style="color:var(--sde-navy);text-decoration:none">${r.ticker}</a>${dv}
                   <div style="font-weight:400;color:var(--sde-muted);font-size:.72rem">${r.company_name || ""}</div>
                 </td>
                 <td style="padding:8px;text-align:right;font-weight:700">${r.score_global != null ? r.score_global.toFixed(1) : "—"}</td>
@@ -204,7 +205,8 @@
                 <td style="padding:8px;text-align:right">${rsiBadge(r.rsi)}</td>
                 <td style="padding:8px;text-align:right">${r.prix != null ? "$" + r.prix.toFixed(2) : "—"}</td>
                 <td style="padding:8px;text-align:right">
-                  <a href="/analyze/${r.ticker}" class="sde-nav-btn" style="font-size:.75rem;white-space:nowrap">
+                  <a href="/analyze/${r.ticker}" data-sde-loading="Analyse de ${r.ticker}…"
+                     class="sde-nav-btn" style="font-size:.75rem;white-space:nowrap">
                     Analyser <i class="bi bi-arrow-right ms-1"></i>
                   </a>
                 </td>
