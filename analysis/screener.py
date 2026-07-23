@@ -137,6 +137,12 @@ def _scan_complet(ticker: str) -> dict | None:
             "recommandation": res["recommandation"],
             "prix":           res["market"].get("price"),
             "divergence":     res.get("divergence"),
+            # RSI affiché à part du score : la qualité de l'opportunité
+            # (score_global) et le timing d'entrée (RSI) sont deux questions
+            # différentes — les fondre en un seul tri masquerait l'une des
+            # deux (discuté avec l'utilisateur le 23.07.2026 sur le cas ADVB,
+            # RSI 79 mais ACHETER car momentum fort par ailleurs).
+            "rsi":            res["market"].get("rsi"),
         }
     except Exception as e:
         print(f"[Screener] étage 2 échoué pour {ticker} : {e}", flush=True)

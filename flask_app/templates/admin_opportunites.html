@@ -44,11 +44,9 @@
 
 <p class="small text-muted" style="font-size:.72rem">
   <i class="bi bi-info-circle me-1"></i>
-  Étage 1 : score technique seul sur tout l'univers (rapide). Étage 2 : pipeline SDE complet
-  (actualités, fondamentaux, calibration, LLM) sur les 10 meilleurs de l'étage 1 seulement —
-  pour rester dans le budget des API gratuites. Le scan est manuel : il ne tourne jamais tout seul.
-  La suggestion de quantité (sur les conseils ACHETER) montre ce qui serait possible en mettant
-  tout le cash disponible sur ce seul ticker — ce n'est pas une répartition entre les 5.
+  Filtre technique rapide sur tout l'univers, puis pipeline SDE complet sur les 10 meilleurs
+  seulement (budget API). Scan déclenché manuellement, jamais automatique. Quantité suggérée =
+  tout le cash sur ce seul ticker, pas une répartition entre les 5.
 </p>
 
 <!-- Univers de scan (collapsible) -->
@@ -125,6 +123,17 @@
     return "/mes-positions?" + params.toString();
   }
 
+  function rsiBadge(rsi) {
+    if (rsi == null) return "—";
+    // Qualité de l'opportunité (score_global) et timing d'entrée (RSI) sont
+    // deux questions différentes — affichées côte à côte plutôt que fondues
+    // dans un seul tri, pour laisser l'utilisateur arbitrer lui-même.
+    if (rsi > 70) {
+      return `<span style="color:#D85A30;font-weight:700" title="Zone de surachat — le mouvement a déjà eu lieu, envisager d'attendre un repli">⚠ ${rsi.toFixed(0)}</span>`;
+    }
+    return rsi.toFixed(0);
+  }
+
   function renderEmpty(msg) {
     document.getElementById("sde-scan-wrap").innerHTML = `
       <div class="text-center py-4">
@@ -164,6 +173,7 @@
             <th style="padding:6px 8px;text-align:left">Ticker</th>
             <th style="padding:6px 8px;text-align:right">Score global</th>
             <th style="padding:6px 8px;text-align:left">Conseil</th>
+            <th style="padding:6px 8px;text-align:right">RSI</th>
             <th style="padding:6px 8px;text-align:right">Prix</th>
             <th style="padding:6px 8px"></th>
           </tr>
@@ -191,6 +201,7 @@
                     : `<span style="background:${color}18;color:${color};padding:2px 8px;border-radius:12px;font-weight:600;font-size:.75rem">${r.recommandation || "—"}</span>`}
                   ${suggestionAchat(r, color)}
                 </td>
+                <td style="padding:8px;text-align:right">${rsiBadge(r.rsi)}</td>
                 <td style="padding:8px;text-align:right">${r.prix != null ? "$" + r.prix.toFixed(2) : "—"}</td>
                 <td style="padding:8px;text-align:right">
                   <a href="/analyze/${r.ticker}" class="sde-nav-btn" style="font-size:.75rem;white-space:nowrap">
