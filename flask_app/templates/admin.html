@@ -167,19 +167,22 @@
   </div>
 </div>
 
-<!-- Scan d'opportunités -->
-<div class="sde-card mt-3 d-flex align-items-center justify-content-between" style="padding:14px 18px">
-  <div>
-    <span style="font-size:.85rem;font-weight:700;color:var(--sde-navy)">
-      <i class="bi bi-binoculars-fill me-2"></i>Scan d'opportunités
-    </span>
-    <div class="sde-ticker-meta mt-1">Top 5 potentiel court terme sur une sélection curatée NASDAQ (IA, cloud, conso/fintech)</div>
-  </div>
-  <a href="{{ url_for('admin.opportunites') }}"
-     style="background:#6366F1;color:#fff;border:none;border-radius:7px;
-            padding:6px 16px;font-size:.8rem;font-weight:600;text-decoration:none;white-space:nowrap">
-    <i class="bi bi-search me-1"></i>Ouvrir
-  </a>
+<!-- Scan d'opportunités (collapsible) -->
+<div class="sde-card mt-3">
+  <details id="sde-opp-details">
+    <summary style="cursor:pointer;list-style:none;display:flex;
+                    align-items:center;justify-content:space-between">
+      <h6 class="fw-semibold mb-0" style="font-size:.85rem;color:var(--sde-navy)">
+        <i class="bi bi-binoculars-fill me-1"></i>Scan d'opportunités
+      </h6>
+      <span id="sde-opp-arrow" style="color:var(--sde-muted);font-size:.8rem">▼ Afficher</span>
+    </summary>
+    <div style="margin-top:16px" id="sde-opp-content">
+      <p class="text-muted small text-center py-2">
+        <span class="spinner-border spinner-border-sm me-1"></span>Chargement…
+      </p>
+    </div>
+  </details>
 </div>
 
 <!-- Présentation utilisateurs -->
@@ -733,6 +736,423 @@
         Les évaluations J+1 seront complètes après la clôture (22h00) — certains résultats peuvent manquer.`;
       const wrap = document.getElementById("sde-global-wrap");
       if (wrap) wrap.parentElement.insertBefore(note, wrap);
+    }
+  });
+
+  /* ══════════════════════════════════════════════════════════════════
+     Scan d'opportunités — bandeau dépliable (chargé au 1er dépliement,
+     même principe que Calibration/Gestion des données ci-dessus).
+     Réutilise ACTION_COLOR déjà déclaré en tête de fichier.
+     ══════════════════════════════════════════════════════════════════ */
+  let oppPolling = null, oppPollingUnivers = null;
+
+  function _contenuOpportunites(data) {
+    const cash = data.cash_dispo;
+    return `
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <div class="sde-ticker-meta" style="margin:0">
+          Top 5 potentiel court terme · sélection curatée NASDAQ
+          ${cash != null ? `· <strong style="color:var(--sde-teal)">$${cash.toFixed(2)}</strong> de cash disponible` : ""}
+        </div>
+        <div class="d-flex gap-2">
+          <button class="sde-nav-btn" onclick="oppRafraichir()" title="Recharger le dernier résultat (sans relancer un scan)">
+            <i class="bi bi-arrow-clockwise me-1"></i>Rafraîchir
+          </button>
+          <button class="sde-nav-btn" id="sde-scan-btn" onclick="oppLancerScan()">
+            <i class="bi bi-search me-1"></i>Scanner
+          </button>
+        </div>
+      </div>
+
+      <div id="sde-scan-wrap">
+        <div class="text-center py-4" id="sde-scan-empty">
+          <i class="bi bi-search" style="font-size:2rem;color:var(--sde-muted)"></i>
+          <p class="mt-2 text-muted small">
+            Aucun scan encore effectué. Cliquez sur « Scanner » pour lancer une analyse
+            de la sélection curatée NASDAQ (≈ 2-4 minutes).
+          </p>
+        </div>
+      </div>
+
+      <p class="small text-muted mt-2" style="font-size:.72rem">
+        <i class="bi bi-info-circle me-1"></i>
+        Filtre technique rapide sur tout l'univers, puis pipeline SDE complet sur les 10 meilleurs
+        seulement (budget API). Scan déclenché manuellement, jamais automatique. Quantité suggérée =
+        tout le cash sur ce seul ticker, pas une répartition entre les 5.
+      </p>
+
+      <div style="border-top:1px solid var(--sde-border);padding-top:14px;margin-top:10px">
+        <details id="sde-univers-details">
+          <summary style="cursor:pointer;list-style:none;display:flex;
+                          align-items:center;justify-content:space-between">
+            <span class="small fw-semibold" style="color:var(--sde-navy)">
+              <i class="bi bi-list-stars me-1"></i>Univers de scan (${data.univers_actif.length} tickers)
+            </span>
+            <span id="sde-univers-arrow" style="color:var(--sde-muted);font-size:.8rem">▼ Afficher</span>
+          </summary>
+          <div style="margin-top:14px">
+            <p class="small text-muted" style="font-size:.75rem">${data.univers_actif.join(", ")}</p>
+            <p class="small text-muted" style="font-size:.7rem">
+              <i class="bi bi-info-circle me-1"></i>
+              Copie le prompt ci-dessous dans Gemini (ou une autre IA avec accès web), colle sa réponse
+              plus bas — chaque ticker proposé est vérifié (données de marché réelles) et trié par
+              performance récente avant affichage. Rien n'est appliqué automatiquement.
+              <br>Pourquoi coller à la main plutôt qu'un bouton automatique : l'appel direct depuis le
+              serveur (hébergé en Europe) est bloqué géographiquement par Google pour cette
+              fonctionnalité — ton propre navigateur, lui, ne l'est pas.
+            </p>
+
+            <label class="form-label small fw-semibold" for="sde-univers-prompt"
+                   style="font-size:.75rem;color:var(--sde-navy)">Prompt à copier-coller dans l'IA</label>
+            <textarea id="sde-univers-prompt" class="form-control form-control-sm mb-1"
+                      rows="3" style="font-size:.78rem">${data.suggestion_state.prompt || ""}</textarea>
+            <button class="sde-nav-btn mb-2" id="sde-univers-copier-btn" onclick="oppCopierPrompt()">
+              <i class="bi bi-clipboard me-1"></i>Copier le prompt
+            </button>
+
+            <label class="form-label small fw-semibold" for="sde-univers-reponse"
+                   style="font-size:.75rem;color:var(--sde-navy)">Réponse de l'IA (coller ici)</label>
+            <textarea id="sde-univers-reponse" class="form-control form-control-sm mb-2"
+                      rows="3" style="font-size:.78rem" placeholder="Colle ici ce que l'IA a répondu…"></textarea>
+
+            <button class="sde-nav-btn" id="sde-univers-analyser-btn" onclick="oppAnalyserTexteUnivers()">
+              <i class="bi bi-search me-1"></i>Analyser le texte collé
+            </button>
+            <div id="sde-univers-suggestion-wrap" class="mt-2"></div>
+          </div>
+        </details>
+      </div>`;
+  }
+
+  function oppQtyAchetable(r) {
+    if (r.recommandation !== "ACHETER" || !window._oppCashDispo || !r.prix || r.prix <= 0) return null;
+    return Math.floor(window._oppCashDispo / r.prix);
+  }
+
+  function oppSuggestionAchat(r, color) {
+    const nb = oppQtyAchetable(r);
+    if (nb === null) return "";
+    if (nb < 1) return `<div style="font-size:.68rem;color:var(--sde-muted);margin-top:2px">cash insuffisant pour 1 action</div>`;
+    const cout = (nb * r.prix).toFixed(2);
+    return `<div style="font-size:.7rem;color:${color};margin-top:2px;white-space:nowrap">
+      → jusqu'à <strong>${nb}</strong> action${nb > 1 ? "s" : ""} (~$${cout})
+    </div>`;
+  }
+
+  function oppLienAchat(r, nb) {
+    const params = new URLSearchParams({
+      open: "achat", ticker: r.ticker, company: r.company_name || r.ticker,
+      prix: r.prix, qty: nb > 0 ? nb : "",
+    });
+    return "/mes-positions?" + params.toString();
+  }
+
+  function oppRsiBadge(rsi) {
+    if (rsi == null) return "—";
+    if (rsi > 70) {
+      return `<span style="color:#D85A30;font-weight:700" title="Zone de surachat — le mouvement a déjà eu lieu, envisager d'attendre un repli">⚠ ${rsi.toFixed(0)}</span>`;
+    }
+    return rsi.toFixed(0);
+  }
+
+  function oppRenderEmpty(msg) {
+    document.getElementById("sde-scan-wrap").innerHTML = `
+      <div class="text-center py-4">
+        <i class="bi bi-search" style="font-size:2rem;color:var(--sde-muted)"></i>
+        <p class="mt-2 text-muted small">${msg}</p>
+      </div>`;
+  }
+
+  function oppRenderResultats(state) {
+    const wrap = document.getElementById("sde-scan-wrap");
+    if (!state.resultats || state.resultats.length === 0) {
+      oppRenderEmpty("Aucun résultat pour l'instant.");
+      return;
+    }
+    const maj = state.derniere_maj
+      ? new Date(state.derniere_maj).toLocaleString("fr-FR", {day:"numeric", month:"short", hour:"2-digit", minute:"2-digit"})
+      : "—";
+
+    wrap.innerHTML = `
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <h6 class="fw-semibold mb-0" style="font-size:.85rem;color:var(--sde-navy)">
+          <i class="bi bi-trophy me-1"></i>Top ${state.resultats.length}
+        </h6>
+        <span style="font-size:.72rem;color:var(--sde-muted)">Dernier scan : ${maj}</span>
+      </div>
+      <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead>
+          <tr style="border-bottom:2px solid var(--sde-border);color:var(--sde-muted)">
+            <th style="padding:6px 8px;text-align:left">#</th>
+            <th style="padding:6px 8px;text-align:left">Ticker</th>
+            <th style="padding:6px 8px;text-align:right">Score global</th>
+            <th style="padding:6px 8px;text-align:left">Conseil</th>
+            <th style="padding:6px 8px;text-align:right">RSI</th>
+            <th style="padding:6px 8px;text-align:right">Prix</th>
+            <th style="padding:6px 8px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${state.resultats.map((r, i) => {
+            const color = ACTION_COLOR[r.recommandation] || "#5a6a7a";
+            const dv = r.divergence
+              ? `<span title="Divergence technique/structurel détectée" style="margin-left:6px;color:${r.divergence.direction === 'haussiere_ignoree' ? '#1D9E75' : '#D85A30'}">⚠</span>`
+              : "";
+            return `
+              <tr style="border-bottom:1px solid var(--sde-border)">
+                <td style="padding:8px;color:var(--sde-muted)">${i + 1}</td>
+                <td style="padding:8px;font-weight:700">
+                  <a href="/analyze/${r.ticker}" data-sde-loading="Analyse de ${r.ticker}…"
+                     style="color:var(--sde-navy);text-decoration:none">${r.ticker}</a>${dv}
+                  <div style="font-weight:400;color:var(--sde-muted);font-size:.72rem">${r.company_name || ""}</div>
+                </td>
+                <td style="padding:8px;text-align:right;font-weight:700">${r.score_global != null ? r.score_global.toFixed(1) : "—"}</td>
+                <td style="padding:8px">
+                  ${r.recommandation === "ACHETER"
+                    ? `<a href="${oppLienAchat(r, oppQtyAchetable(r))}"
+                          style="background:${color}18;color:${color};padding:2px 8px;border-radius:12px;
+                                 font-weight:600;font-size:.75rem;text-decoration:none;cursor:pointer"
+                          title="Saisir un achat prérempli">${r.recommandation} <i class="bi bi-pencil-square" style="font-size:.68rem;opacity:.8"></i></a>`
+                    : `<span style="background:${color}18;color:${color};padding:2px 8px;border-radius:12px;font-weight:600;font-size:.75rem">${r.recommandation || "—"}</span>`}
+                  ${oppSuggestionAchat(r, color)}
+                </td>
+                <td style="padding:8px;text-align:right">${oppRsiBadge(r.rsi)}</td>
+                <td style="padding:8px;text-align:right">${r.prix != null ? "$" + r.prix.toFixed(2) : "—"}</td>
+                <td style="padding:8px;text-align:right">
+                  <a href="/analyze/${r.ticker}" data-sde-loading="Analyse de ${r.ticker}…"
+                     class="sde-nav-btn" style="font-size:.75rem;white-space:nowrap">
+                    Analyser <i class="bi bi-arrow-right ms-1"></i>
+                  </a>
+                </td>
+              </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+      </div>`;
+  }
+
+  function oppRenderProgress(state) {
+    document.getElementById("sde-scan-wrap").innerHTML = `
+      <div class="text-center py-4">
+        <div class="spinner-border" style="color:var(--sde-teal);width:2rem;height:2rem"></div>
+        <p class="text-muted mt-3 mb-0" style="font-size:.85rem">Scan en cours…</p>
+        <p class="text-muted" style="font-size:.75rem">${state.progression || ""}</p>
+      </div>`;
+  }
+
+  function oppPoll() {
+    fetch("/admin/opportunites/status")
+      .then(r => r.json())
+      .then(state => {
+        if (state.en_cours) {
+          oppRenderProgress(state);
+        } else {
+          clearInterval(oppPolling);
+          oppPolling = null;
+          document.getElementById("sde-scan-btn").disabled = false;
+          if (state.erreur) {
+            oppRenderEmpty(`Erreur pendant le scan : ${state.erreur}`);
+          } else {
+            oppRenderResultats(state);
+          }
+        }
+      });
+  }
+
+  window.oppLancerScan = function () {
+    const btn = document.getElementById("sde-scan-btn");
+    const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+    btn.disabled = true;
+    oppRenderProgress({progression: "Démarrage…"});
+    fetch("/admin/opportunites/scan", {
+      method: "POST",
+      headers: {"X-CSRFToken": CSRF},
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        btn.disabled = false;
+        oppRenderEmpty(data.message || "Impossible de lancer le scan.");
+        return;
+      }
+      if (!oppPolling) oppPolling = setInterval(oppPoll, 3000);
+    });
+  };
+
+  window.oppRafraichir = oppPoll;
+
+  function oppRenderSuggestionWrap(html) {
+    document.getElementById("sde-univers-suggestion-wrap").innerHTML = html;
+  }
+
+  function oppRenderUniversProgress(state) {
+    oppRenderSuggestionWrap(`
+      <div class="d-flex align-items-center gap-2" style="font-size:.8rem;color:var(--sde-muted)">
+        <span class="spinner-border spinner-border-sm"></span>
+        ${state.progression || "En cours…"}
+      </div>`);
+  }
+
+  function oppRenderSuggestion(items) {
+    const rows = items.map(it => {
+      const perfColor = (it.var_5d ?? 0) >= 0 ? "#1D9E75" : "#D85A30";
+      const perfTxt = it.var_5d != null
+        ? `${it.var_5d >= 0 ? "+" : ""}${it.var_5d.toFixed(1)}% (5j)`
+        : "—";
+      return `
+        <tr style="border-bottom:1px solid var(--sde-border)">
+          <td style="padding:5px 8px;font-weight:700">${it.ticker}</td>
+          <td style="padding:5px 8px;color:var(--sde-muted)">${it.company_name || ""}</td>
+          <td style="padding:5px 8px;text-align:right">${it.prix != null ? "$" + it.prix.toFixed(2) : "—"}</td>
+          <td style="padding:5px 8px;text-align:right;color:${perfColor};font-weight:600">${perfTxt}</td>
+        </tr>`;
+    }).join("");
+
+    oppRenderSuggestionWrap(`
+      <div style="background:#F1F5F9;border-radius:8px;padding:10px 12px;margin-top:6px">
+        <p class="small mb-2" style="font-size:.78rem"><strong>Suggestion (${items.length}) :</strong></p>
+        <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:.78rem">
+          <thead>
+            <tr style="color:var(--sde-muted)">
+              <th style="padding:5px 8px;text-align:left">Ticker</th>
+              <th style="padding:5px 8px;text-align:left">Société</th>
+              <th style="padding:5px 8px;text-align:right">Prix</th>
+              <th style="padding:5px 8px;text-align:right">Perf. récente</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        </div>
+        <div class="mt-2">
+          <button class="sde-nav-btn" style="font-size:.75rem;color:#1D9E75" onclick="oppAppliquerUnivers()">
+            <i class="bi bi-check-circle me-1"></i>Appliquer
+          </button>
+          <button class="sde-nav-btn" style="font-size:.75rem" onclick="oppRenderSuggestionWrapPublic('')">
+            Ignorer
+          </button>
+        </div>
+      </div>`);
+    window._oppSuggestionUnivers = items.map(it => it.ticker);
+  }
+
+  window.oppRenderSuggestionWrapPublic = oppRenderSuggestionWrap;
+
+  function oppPollUnivers() {
+    fetch("/admin/opportunites/univers/status")
+      .then(r => r.json())
+      .then(state => {
+        if (state.en_cours) {
+          oppRenderUniversProgress(state);
+        } else {
+          clearInterval(oppPollingUnivers);
+          oppPollingUnivers = null;
+          document.getElementById("sde-univers-analyser-btn").disabled = false;
+          if (state.erreur) {
+            oppRenderSuggestionWrap(`<p class="small text-danger" style="font-size:.78rem">Erreur : ${state.erreur}</p>`);
+          } else if (state.suggestion && state.suggestion.length) {
+            oppRenderSuggestion(state.suggestion);
+          }
+        }
+      });
+  }
+
+  window.oppCopierPrompt = function () {
+    const btn  = document.getElementById("sde-univers-copier-btn");
+    const texte = document.getElementById("sde-univers-prompt").value;
+    navigator.clipboard.writeText(texte).then(() => {
+      const original = btn.innerHTML;
+      btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copié !';
+      setTimeout(() => { btn.innerHTML = original; }, 1500);
+    });
+  };
+
+  window.oppAnalyserTexteUnivers = function () {
+    const btn   = document.getElementById("sde-univers-analyser-btn");
+    const CSRF  = document.querySelector('meta[name="csrf-token"]').content;
+    const texte = document.getElementById("sde-univers-reponse").value;
+    if (!texte.trim()) {
+      oppRenderSuggestionWrap(`<p class="small text-danger" style="font-size:.78rem">Colle d'abord la réponse de l'IA ci-dessus.</p>`);
+      return;
+    }
+    btn.disabled = true;
+    oppRenderUniversProgress({progression: "Démarrage…"});
+    fetch("/admin/opportunites/univers/analyser", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+      body: JSON.stringify({texte}),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        btn.disabled = false;
+        oppRenderSuggestionWrap(`<p class="small text-danger" style="font-size:.78rem">${data.message}</p>`);
+        return;
+      }
+      if (!oppPollingUnivers) oppPollingUnivers = setInterval(oppPollUnivers, 3000);
+    });
+  };
+
+  window.oppAppliquerUnivers = function () {
+    const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+    fetch("/admin/opportunites/univers/appliquer", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+      body: JSON.stringify({tickers: window._oppSuggestionUnivers || []}),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        oppRenderSuggestionWrap(`<p class="small text-danger" style="font-size:.78rem">${data.error}</p>`);
+        return;
+      }
+      oppRenderSuggestionWrap(`<p class="small" style="font-size:.78rem;color:#1D9E75">✓ Univers mis à jour — rechargez la page pour voir la nouvelle liste.</p>`);
+    });
+  };
+
+  function chargerOpportunites() {
+    fetch("/admin/opportunites/bootstrap")
+      .then(r => r.json())
+      .then(data => {
+        window._oppCashDispo = data.cash_dispo;
+        document.getElementById("sde-opp-content").innerHTML = _contenuOpportunites(data);
+
+        if (data.state.en_cours) {
+          document.getElementById("sde-scan-btn").disabled = true;
+          oppRenderProgress(data.state);
+          oppPolling = setInterval(oppPoll, 3000);
+        } else if (data.state.resultats && data.state.resultats.length) {
+          oppRenderResultats(data.state);
+        }
+
+        const det2   = document.getElementById("sde-univers-details");
+        const arrow2 = document.getElementById("sde-univers-arrow");
+        if (det2) {
+          det2.addEventListener("toggle", () => {
+            arrow2.textContent = det2.open ? "▲ Masquer" : "▼ Afficher";
+          });
+        }
+
+        if (data.suggestion_state.en_cours) {
+          document.getElementById("sde-univers-analyser-btn").disabled = true;
+          oppRenderUniversProgress(data.suggestion_state);
+          oppPollingUnivers = setInterval(oppPollUnivers, 3000);
+        } else if (data.suggestion_state.suggestion && data.suggestion_state.suggestion.length) {
+          oppRenderSuggestion(data.suggestion_state.suggestion);
+        }
+      });
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const det   = document.getElementById("sde-opp-details");
+    const arrow = document.getElementById("sde-opp-arrow");
+    let   loaded = false;
+    if (det) {
+      det.addEventListener("toggle", () => {
+        arrow.textContent = det.open ? "▲ Masquer" : "▼ Afficher";
+        if (det.open && !loaded) { loaded = true; chargerOpportunites(); }
+      });
     }
   });
 })();

@@ -316,19 +316,24 @@ def stats():
 # jamais par cron, pour ne consommer les quotas API que si l'admin a
 # effectivement du cash à placer ce jour-là.
 
-@bp.route("/opportunites")
+@bp.route("/opportunites/bootstrap")
 @login_required
-def opportunites():
+def opportunites_bootstrap():
+    """
+    Rassemble en un seul appel tout ce dont le bandeau dépliable a besoin à
+    son premier dépliement (même principe de chargement paresseux que
+    'Calibration des règles de conseil' — pas de coût si l'admin ne l'ouvre
+    jamais dans une visite donnée).
+    """
     _require_admin()
     from analysis.screener import get_scan_state, get_univers_actif, get_suggestion_state
     from portfolio.positions import get_cash_disponible
-    return render_template(
-        "admin_opportunites.html",
-        state=get_scan_state(),
-        suggestion_state=get_suggestion_state(),
-        cash_dispo=get_cash_disponible(current_user.id),
-        univers_actif=get_univers_actif(),
-    )
+    return jsonify({
+        "state":            get_scan_state(),
+        "suggestion_state": get_suggestion_state(),
+        "cash_dispo":       get_cash_disponible(current_user.id),
+        "univers_actif":    get_univers_actif(),
+    })
 
 
 @bp.route("/opportunites/scan", methods=["POST"])
