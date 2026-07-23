@@ -227,8 +227,10 @@ _TABLE_UNIVERS = "opportunites_univers"
 _lock_univers  = threading.Lock()
 
 PROMPT_SUGGESTION_DEFAUT = (
-    "Liste exactement 20 tickers NASDAQ parmi les plus prometteurs pour un "
-    "investissement à court terme actuellement."
+    "Liste exactement 20 tickers NASDAQ qui affichent une dynamique de "
+    "performance RÉCENTE POSITIVE (en hausse sur les 5 derniers jours de "
+    "bourse), pas simplement des entreprises connues ou de grosse "
+    "capitalisation — vérifie leur cours actuel avant de répondre."
 )
 
 _state_univers = {
@@ -278,6 +280,23 @@ def _valider_ticker(ticker: str) -> dict | None:
         return None
 
 
+def _extraire_texte_gemini(data: dict) -> str:
+    """
+    Extrait le texte généré par generateContent : data["candidates"][0]
+    ["content"]["parts"][0]["text"] — forme VÉRIFIÉE en réel le 23.07.2026
+    (la doc officielle, résumée via un fetch web, indiquait une tout autre
+    forme "steps[]" pour un autre endpoint — elle s'est révélée fausse pour
+    generateContent une fois testée avec une vraie clé. Leçon : un test
+    réel bat toujours un résumé de documentation).
+    On lève une ValueError explicite plutôt que de laisser un KeyError brut
+    remonter — plus facile à diagnostiquer si Google change encore la forme.
+    """
+    try:
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+    except Exception:
+        raise ValueError(f"Format de réponse Gemini inattendu : {data}")
+
+
 def _extraire_tickers(texte: str, limite: int = 30) -> list[str]:
     """
     Extrait des symboles ticker plausibles (1-5 lettres majuscules) d'un texte
@@ -296,12 +315,15 @@ def _extraire_tickers(texte: str, limite: int = 30) -> list[str]:
 
 def suggerer_univers(prompt: str | None = None) -> bool:
     """
-    Lance en thread background : interroge Groq avec `prompt` (ou le prompt
-    par défaut si None/vide — l'utilisateur peut l'éditer côté UI et
-    relancer), extrait les tickers, valide chacun (get_market_data réel,
-    récupère aussi nom + performance récente pour l'affichage), stocke la
-    suggestion dans _state_univers — ne touche PAS l'univers actif
-    (appliquer_univers est un appel séparé, déclenché explicitement).
+    Lance en thread background : interroge Gemini AVEC grounding Google
+    Search (contrairement à Groq/LLaMA, qui répond uniquement depuis sa
+    mémoire d'entraînement — Gemini peut vérifier ce qui bouge réellement
+    sur le marché avant de répondre) avec `prompt` (ou le prompt par défaut
+    si None/vide — l'utilisateur peut l'éditer côté UI et relancer), extrait
+    les tickers, valide chacun (get_market_data réel, récupère aussi nom +
+    performance récente pour l'affichage), stocke la suggestion dans
+    _state_univers — ne touche PAS l'univers actif (appliquer_univers est
+    un appel séparé, déclenché explicitement).
     """
     if not _lock_univers.acquire(blocking=False):
         return False
@@ -314,42 +336,35 @@ def suggerer_univers(prompt: str | None = None) -> bool:
             _state_univers["erreur"]     = None
             _state_univers["suggestion"] = None
             _state_univers["prompt"]     = prompt
-            _state_univers["progression"] = "Interrogation de l'IA…"
+            _state_univers["progression"] = "Interrogation de l'IA (recherche web)…"
 
             import requests
-            from config import GROQ_API_KEY, GROQ_MODEL, LLM_TIMEOUT
+            from config import GEMINI_API_KEY, GEMINI_MODEL, LLM_TIMEOUT
 
-            if not GROQ_API_KEY or GROQ_API_KEY == "votre_cle_groq":
-                raise ValueError("Clé Groq absente — voir config.py")
+            if not GEMINI_API_KEY or GEMINI_API_KEY == "votre_cle_gemini_ici":
+                raise ValueError("Clé Gemini absente — voir config.py")
 
             resp = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {GROQ_API_KEY}",
-                    "Content-Type":  "application/json",
-                },
+                f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
+                params={"key": GEMINI_API_KEY},
+                headers={"Content-Type": "application/json"},
                 json={
-                    "model": GROQ_MODEL,
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": (
-                                "Tu es un analyste financier. Tu réponds "
-                                "UNIQUEMENT avec des symboles ticker NASDAQ, "
-                                "séparés par des virgules, sans aucun texte "
-                                "avant, après ou entre — pas de phrase, pas "
-                                "de numérotation, pas d'explication."
-                            ),
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    "max_tokens":  150,
-                    "temperature": 0.4,
+                    "contents": [{
+                        "role": "user",
+                        "parts": [{"text": (
+                            "Tu es un analyste financier. Réponds UNIQUEMENT avec "
+                            "des symboles ticker NASDAQ séparés par des virgules, "
+                            "sans aucun texte avant, après ou entre — pas de "
+                            "phrase, pas de numérotation, pas d'explication.\n\n"
+                            + prompt
+                        )}],
+                    }],
+                    "tools": [{"google_search": {}}],
                 },
                 timeout=LLM_TIMEOUT,
             )
             resp.raise_for_status()
-            texte = resp.json()["choices"][0]["message"]["content"]
+            texte = _extraire_texte_gemini(resp.json())
             candidats = _extraire_tickers(texte)
 
             valides = []
@@ -365,6 +380,16 @@ def suggerer_univers(prompt: str | None = None) -> bool:
 
             if not valides:
                 raise ValueError("Aucun ticker valide n'a pu être extrait de la réponse IA")
+
+            # Tri par performance récente décroissante — même prompté pour
+            # une dynamique positive, l'IA reste biaisée vers les valeurs
+            # connues (vérifié en réel le 23.07.2026 : suggestions correctes
+            # mais majoritairement en baisse malgré le prompt). Le tri rend
+            # ce biais visible d'un coup d'œil plutôt que de le masquer dans
+            # une liste à l'ordre arbitraire. None (perf indisponible) en
+            # dernier, jamais traité comme "positif" par défaut.
+            valides.sort(key=lambda d: d["var_5d"] if d["var_5d"] is not None else float("-inf"),
+                         reverse=True)
 
             _state_univers["suggestion"] = valides
         except Exception as e:

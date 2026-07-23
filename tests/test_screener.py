@@ -135,11 +135,39 @@ except ValueError:
 print("✓ appliquer_univers : liste vide/inexploitable rejetée avant tout accès réseau")
 
 
+# ── Tri par performance récente décroissante (même clé que suggerer_univers) ──
+# Vérifié en réel le 23.07.2026 : même en demandant une dynamique positive,
+# l'IA reste biaisée vers les valeurs connues (Gemini avait renvoyé une
+# majorité de tickers en baisse malgré le prompt) — le tri rend ce biais
+# visible plutôt que de le laisser dans un ordre arbitraire.
+brut = [
+    {"ticker": "A", "var_5d": -3.0},
+    {"ticker": "B", "var_5d": 5.0},
+    {"ticker": "C", "var_5d": None},   # perf indisponible -> ne doit jamais passer pour "positif"
+    {"ticker": "D", "var_5d": 0.0},
+]
+brut.sort(key=lambda d: d["var_5d"] if d["var_5d"] is not None else float("-inf"), reverse=True)
+assert [d["ticker"] for d in brut] == ["B", "D", "A", "C"]
+print("✓ tri par var_5d : meilleure perf d'abord, valeur manquante toujours en dernier")
+
+
+# ── _extraire_texte_gemini : forme réponse generateContent, vérifiée en réel ──
+reponse_generate_content = {"candidates": [{"content": {"parts": [{"text": "MSFT,GOOGL"}]}}]}
+assert screener._extraire_texte_gemini(reponse_generate_content) == "MSFT,GOOGL"
+
+try:
+    screener._extraire_texte_gemini({"quelquechose": "inattendu"})
+    raise AssertionError("aurait dû lever ValueError sur un format inconnu")
+except ValueError:
+    pass
+print("✓ _extraire_texte_gemini : parse le format generateContent, échoue proprement sinon")
+
+
 # ── suggerer_univers(prompt=...) : le prompt personnalisé est bien retenu
-#    dans l'état, même si l'appel échoue ensuite (ex. clé Groq absente) ──
+#    dans l'état, même si l'appel échoue ensuite (ex. clé Gemini absente) ──
 import config as _config
-_cle_groq_orig = _config.GROQ_API_KEY
-_config.GROQ_API_KEY = ""   # force l'échec avant tout appel réseau réel
+_cle_gemini_orig = _config.GEMINI_API_KEY
+_config.GEMINI_API_KEY = ""   # force l'échec avant tout appel réseau réel
 
 ok = screener.suggerer_univers(prompt="mon prompt personnalisé de test")
 assert ok is True
@@ -152,7 +180,7 @@ while screener.get_suggestion_state()["en_cours"]:
 state = screener.get_suggestion_state()
 assert state["prompt"] == "mon prompt personnalisé de test"
 assert state["erreur"] is not None   # clé absente -> échoue, mais le prompt a bien été retenu
-_config.GROQ_API_KEY = _cle_groq_orig
+_config.GEMINI_API_KEY = _cle_gemini_orig
 print("✓ suggerer_univers : le prompt personnalisé est retenu dans l'état même en cas d'échec")
 
 print("\n✓ Tous les tests test_screener.py sont OK (hors réseau)")

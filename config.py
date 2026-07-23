@@ -104,6 +104,17 @@ USE_FINBERT      = False  # True si GPU dispo, False → VADER
 GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL    = "llama-3.3-70b-versatile"
 
+# ── Gemini — grounding Google Search (suggestion univers scan) ───────────
+# Clé sur : https://aistudio.google.com/apikey
+# Quota gratuit : 5 000 requêtes/mois (Gemini 3) — largement suffisant pour
+# un bouton déclenché manuellement, jamais par cron. ATTENTION : contrairement
+# à la génération de texte simple, le GROUNDING (recherche web) a renvoyé
+# "quota dépassé" tant qu'aucun compte de facturation n'était lié au projet
+# Google — vérifié en réel le 23.07.2026. L'usage reste gratuit sous le
+# quota, mais la carte doit être enregistrée pour débloquer la fonctionnalité.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL   = "gemini-3.6-flash"   # modèle vérifié en réel avec grounding actif
+
 # ── LLM — Ollama (fallback local) ─────────────────────────
 # Installer : https://ollama.com → puis 'ollama pull mistral'
 OLLAMA_URL    = "http://localhost:11434"
