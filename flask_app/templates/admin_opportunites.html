@@ -65,18 +65,29 @@
       <p class="small text-muted" style="font-size:.75rem">{{ univers_actif|join(", ") }}</p>
       <p class="small text-muted" style="font-size:.7rem">
         <i class="bi bi-info-circle me-1"></i>
-        Suggestion IA (Gemini avec recherche Google intégrée) : malgré l'accès web réel, chaque
-        ticker proposé reste vérifié (résolution réelle des données de marché, triés par
-        performance récente) avant d'être affiché ci-dessous. Rien n'est appliqué automatiquement.
+        Copie le prompt ci-dessous dans Gemini (ou une autre IA avec accès web), colle sa réponse
+        plus bas — chaque ticker proposé est vérifié (données de marché réelles) et trié par
+        performance récente avant affichage. Rien n'est appliqué automatiquement.
+        <br>Pourquoi coller à la main plutôt qu'un bouton automatique : l'appel direct depuis le
+        serveur (hébergé en Europe) est bloqué géographiquement par Google pour cette
+        fonctionnalité — ton propre navigateur, lui, ne l'est pas.
       </p>
 
       <label class="form-label small fw-semibold" for="sde-univers-prompt"
-             style="font-size:.75rem;color:var(--sde-navy)">Prompt envoyé à l'IA</label>
-      <textarea id="sde-univers-prompt" class="form-control form-control-sm mb-2"
-                rows="2" style="font-size:.78rem">{{ suggestion_state.prompt or "" }}</textarea>
+             style="font-size:.75rem;color:var(--sde-navy)">Prompt à copier-coller dans l'IA</label>
+      <textarea id="sde-univers-prompt" class="form-control form-control-sm mb-1"
+                rows="3" style="font-size:.78rem">{{ suggestion_state.prompt or "" }}</textarea>
+      <button class="sde-nav-btn mb-2" id="sde-univers-copier-btn" onclick="copierPrompt()">
+        <i class="bi bi-clipboard me-1"></i>Copier le prompt
+      </button>
 
-      <button class="sde-nav-btn" id="sde-univers-suggerer-btn" onclick="suggererUnivers()">
-        <i class="bi bi-magic me-1"></i>Rafraîchir via IA
+      <label class="form-label small fw-semibold" for="sde-univers-reponse"
+             style="font-size:.75rem;color:var(--sde-navy)">Réponse de l'IA (coller ici)</label>
+      <textarea id="sde-univers-reponse" class="form-control form-control-sm mb-2"
+                rows="3" style="font-size:.78rem" placeholder="Colle ici ce que l'IA a répondu…"></textarea>
+
+      <button class="sde-nav-btn" id="sde-univers-analyser-btn" onclick="analyserTexteUnivers()">
+        <i class="bi bi-search me-1"></i>Analyser le texte collé
       </button>
       <div id="sde-univers-suggestion-wrap" class="mt-2"></div>
     </div>
@@ -322,7 +333,7 @@
         } else {
           clearInterval(pollingUnivers);
           pollingUnivers = null;
-          document.getElementById("sde-univers-suggerer-btn").disabled = false;
+          document.getElementById("sde-univers-analyser-btn").disabled = false;
           if (state.erreur) {
             renderSuggestionWrap(`<p class="small text-danger" style="font-size:.78rem">Erreur : ${state.erreur}</p>`);
           } else if (state.suggestion && state.suggestion.length) {
@@ -332,16 +343,30 @@
       });
   }
 
-  window.suggererUnivers = function () {
-    const btn = document.getElementById("sde-univers-suggerer-btn");
-    const CSRF = document.querySelector('meta[name="csrf-token"]').content;
-    const prompt = document.getElementById("sde-univers-prompt").value;
+  window.copierPrompt = function () {
+    const btn  = document.getElementById("sde-univers-copier-btn");
+    const texte = document.getElementById("sde-univers-prompt").value;
+    navigator.clipboard.writeText(texte).then(() => {
+      const original = btn.innerHTML;
+      btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copié !';
+      setTimeout(() => { btn.innerHTML = original; }, 1500);
+    });
+  };
+
+  window.analyserTexteUnivers = function () {
+    const btn   = document.getElementById("sde-univers-analyser-btn");
+    const CSRF  = document.querySelector('meta[name="csrf-token"]').content;
+    const texte = document.getElementById("sde-univers-reponse").value;
+    if (!texte.trim()) {
+      renderSuggestionWrap(`<p class="small text-danger" style="font-size:.78rem">Colle d'abord la réponse de l'IA ci-dessus.</p>`);
+      return;
+    }
     btn.disabled = true;
     renderUniversProgress({progression: "Démarrage…"});
-    fetch("/admin/opportunites/univers/suggerer", {
+    fetch("/admin/opportunites/univers/analyser", {
       method: "POST",
       headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
-      body: JSON.stringify({prompt}),
+      body: JSON.stringify({texte}),
     })
     .then(r => r.json())
     .then(data => {
@@ -382,7 +407,7 @@
 
     const initialSuggestion = {{ suggestion_state | tojson }};
     if (initialSuggestion.en_cours) {
-      document.getElementById("sde-univers-suggerer-btn").disabled = true;
+      document.getElementById("sde-univers-analyser-btn").disabled = true;
       renderUniversProgress(initialSuggestion);
       pollingUnivers = setInterval(pollUnivers, 3000);
     } else if (initialSuggestion.suggestion && initialSuggestion.suggestion.length) {

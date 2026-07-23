@@ -135,6 +135,37 @@ except ValueError:
 print("✓ appliquer_univers : liste vide/inexploitable rejetée avant tout accès réseau")
 
 
+# ── analyser_texte_univers : mode collage manuel (contourne le blocage
+#    géographique Gemini sur Render EU), même pipeline que le mode auto ──
+screener.get_market_data = lambda t: (
+    {"price": 50.0, "company_name": t + " Inc.", "var_5d": {"AAA": -2.0, "BBB": 6.0}[t]}
+    if t in ("AAA", "BBB") else (_ for _ in ()).throw(ValueError("introuvable"))
+)
+ok = screener.analyser_texte_univers("Voici ma liste : AAA, BBB (copié depuis Gemini)")
+assert ok is True
+_t0 = time.time()
+while screener.get_suggestion_state()["en_cours"]:
+    if time.time() - _t0 > 5:
+        raise TimeoutError("analyse pas terminée à temps")
+    time.sleep(0.01)
+state = screener.get_suggestion_state()
+assert state["erreur"] is None
+assert [d["ticker"] for d in state["suggestion"]] == ["BBB", "AAA"]   # trié par var_5d décroissant
+print("✓ analyser_texte_univers : extrait, valide et trie le texte collé manuellement")
+
+# Texte vide -> erreur claire, pas de crash
+screener._state_univers["suggestion"] = None
+ok = screener.analyser_texte_univers("   ")
+assert ok is True
+_t0 = time.time()
+while screener.get_suggestion_state()["en_cours"]:
+    if time.time() - _t0 > 5:
+        raise TimeoutError("analyse pas terminée à temps")
+    time.sleep(0.01)
+assert screener.get_suggestion_state()["erreur"] is not None
+print("✓ analyser_texte_univers : texte vide rejeté proprement")
+
+
 # ── Tri par performance récente décroissante (même clé que suggerer_univers) ──
 # Vérifié en réel le 23.07.2026 : même en demandant une dynamique positive,
 # l'IA reste biaisée vers les valeurs connues (Gemini avait renvoyé une

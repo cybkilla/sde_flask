@@ -370,6 +370,23 @@ def opportunites_univers_status():
     return jsonify(get_suggestion_state())
 
 
+@bp.route("/opportunites/univers/analyser", methods=["POST"])
+@login_required
+def opportunites_univers_analyser():
+    """
+    Mode manuel : l'admin colle la réponse d'une IA (copiée-collée depuis
+    son propre navigateur, jamais bloqué géographiquement contrairement à
+    un appel serveur Gemini depuis Render EU). Même état/pipeline que la
+    suggestion automatique.
+    """
+    _require_admin()
+    from analysis.screener import analyser_texte_univers
+    texte = (request.get_json(silent=True) or {}).get("texte")
+    if not analyser_texte_univers(texte):
+        return jsonify({"ok": False, "message": "Une analyse est déjà en cours"}), 429
+    return jsonify({"ok": True, "message": "Analyse lancée en arrière-plan"}), 202
+
+
 @bp.route("/opportunites/univers/appliquer", methods=["POST"])
 @login_required
 def opportunites_univers_appliquer():

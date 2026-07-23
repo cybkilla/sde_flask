@@ -227,6 +227,9 @@ _TABLE_UNIVERS = "opportunites_univers"
 _lock_univers  = threading.Lock()
 
 PROMPT_SUGGESTION_DEFAUT = (
+    "Tu es un analyste financier. Réponds UNIQUEMENT avec des symboles "
+    "ticker NASDAQ séparés par des virgules, sans aucun texte avant, après "
+    "ou entre — pas de phrase, pas de numérotation, pas d'explication.\n\n"
     "Liste exactement 20 tickers NASDAQ qui affichent une dynamique de "
     "performance RÉCENTE POSITIVE (en hausse sur les 5 derniers jours de "
     "bourse), pas simplement des entreprises connues ou de grosse "
@@ -313,6 +316,80 @@ def _extraire_tickers(texte: str, limite: int = 30) -> list[str]:
     return candidats[:limite]
 
 
+def _traiter_reponse_ia(texte: str) -> list[dict]:
+    """
+    Pipeline partagé entre le mode automatique (appel Gemini) et le mode
+    collage manuel (copié depuis l'interface web d'une IA, pour contourner
+    le blocage géographique de l'API Gemini sur Render EU — vérifié en réel
+    le 23.07.2026 : "User location is not supported"). Extraction des
+    tickers, validation réelle (get_market_data), tri par performance
+    récente décroissante — la partie qui compte vraiment pour la qualité du
+    résultat, peu importe QUI a proposé les candidats.
+    """
+    candidats = _extraire_tickers(texte)
+
+    valides = []
+    for i, ticker in enumerate(candidats):
+        _state_univers["progression"] = f"Vérification {i + 1}/{len(candidats)} ({ticker})"
+        detail = _valider_ticker(ticker)
+        if detail:
+            valides.append(detail)
+        if len(valides) >= 20:
+            break
+        if i < len(candidats) - 1:
+            time.sleep(PAUSE_ETAGE1_S)
+
+    if not valides:
+        raise ValueError("Aucun ticker valide n'a pu être extrait du texte")
+
+    # Tri par performance récente décroissante — même en demandant une
+    # dynamique positive, l'IA reste biaisée vers les valeurs connues
+    # (vérifié en réel : suggestions correctes mais majoritairement en
+    # baisse malgré le prompt). Le tri rend ce biais visible d'un coup
+    # d'œil plutôt que de le masquer dans une liste à l'ordre arbitraire.
+    # None (perf indisponible) en dernier, jamais traité comme "positif".
+    valides.sort(key=lambda d: d["var_5d"] if d["var_5d"] is not None else float("-inf"),
+                 reverse=True)
+    return valides
+
+
+def analyser_texte_univers(texte: str) -> bool:
+    """
+    Mode manuel : l'utilisateur copie le prompt affiché côté UI dans une IA
+    de son choix (Gemini, ChatGPT...) depuis son propre navigateur — jamais
+    bloqué géographiquement, contrairement à un appel serveur depuis Render
+    EU — puis colle la réponse ici. Même pipeline d'extraction/validation/
+    tri que le mode automatique (_traiter_reponse_ia), sans appel réseau
+    vers une API IA côté serveur.
+    """
+    if not _lock_univers.acquire(blocking=False):
+        return False
+
+    texte = (texte or "").strip()
+
+    def _run():
+        try:
+            _state_univers["en_cours"]   = True
+            _state_univers["erreur"]     = None
+            _state_univers["suggestion"] = None
+            _state_univers["progression"] = "Analyse du texte collé…"
+
+            if not texte:
+                raise ValueError("Texte collé vide")
+
+            _state_univers["suggestion"] = _traiter_reponse_ia(texte)
+        except Exception as e:
+            _state_univers["erreur"] = str(e)
+            print(f"[Screener] analyse texte collé erreur : {e}", flush=True)
+        finally:
+            _state_univers["progression"] = None
+            _state_univers["en_cours"] = False
+            _lock_univers.release()
+
+    threading.Thread(target=_run, daemon=True).start()
+    return True
+
+
 def suggerer_univers(prompt: str | None = None) -> bool:
     """
     Lance en thread background : interroge Gemini AVEC grounding Google
@@ -349,16 +426,12 @@ def suggerer_univers(prompt: str | None = None) -> bool:
                 params={"key": GEMINI_API_KEY},
                 headers={"Content-Type": "application/json"},
                 json={
-                    "contents": [{
-                        "role": "user",
-                        "parts": [{"text": (
-                            "Tu es un analyste financier. Réponds UNIQUEMENT avec "
-                            "des symboles ticker NASDAQ séparés par des virgules, "
-                            "sans aucun texte avant, après ou entre — pas de "
-                            "phrase, pas de numérotation, pas d'explication.\n\n"
-                            + prompt
-                        )}],
-                    }],
+                    # `prompt` EST le texte envoyé tel quel — rien de caché côté
+                    # serveur. Le textarea de l'UI montre exactement ceci, pour
+                    # que "ce que l'utilisateur voit" == "ce que Gemini reçoit"
+                    # (demandé après que la consigne "analyste financier" était
+                    # cachée dans le code, invisible/non éditable côté UI).
+                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
                     "tools": [{"google_search": {}}],
                 },
                 timeout=LLM_TIMEOUT,
@@ -371,33 +444,8 @@ def suggerer_univers(prompt: str | None = None) -> bool:
             if not resp.ok:
                 raise ValueError(f"Gemini a répondu {resp.status_code} : {resp.text[:500]}")
             texte = _extraire_texte_gemini(resp.json())
-            candidats = _extraire_tickers(texte)
 
-            valides = []
-            for i, ticker in enumerate(candidats):
-                _state_univers["progression"] = f"Vérification {i + 1}/{len(candidats)} ({ticker})"
-                detail = _valider_ticker(ticker)
-                if detail:
-                    valides.append(detail)
-                if len(valides) >= 20:
-                    break
-                if i < len(candidats) - 1:
-                    time.sleep(PAUSE_ETAGE1_S)
-
-            if not valides:
-                raise ValueError("Aucun ticker valide n'a pu être extrait de la réponse IA")
-
-            # Tri par performance récente décroissante — même prompté pour
-            # une dynamique positive, l'IA reste biaisée vers les valeurs
-            # connues (vérifié en réel le 23.07.2026 : suggestions correctes
-            # mais majoritairement en baisse malgré le prompt). Le tri rend
-            # ce biais visible d'un coup d'œil plutôt que de le masquer dans
-            # une liste à l'ordre arbitraire. None (perf indisponible) en
-            # dernier, jamais traité comme "positif" par défaut.
-            valides.sort(key=lambda d: d["var_5d"] if d["var_5d"] is not None else float("-inf"),
-                         reverse=True)
-
-            _state_univers["suggestion"] = valides
+            _state_univers["suggestion"] = _traiter_reponse_ia(texte)
         except Exception as e:
             _state_univers["erreur"] = str(e)
             print(f"[Screener] suggestion univers erreur : {e}", flush=True)
