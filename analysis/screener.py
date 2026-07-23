@@ -153,7 +153,7 @@ def lancer_scan(univers: list[str] | None = None) -> bool:
     if not _lock.acquire(blocking=False):
         return False
 
-    univers = univers or UNIVERS_SCAN
+    univers = univers or get_univers_actif()
 
     def _run():
         try:
@@ -211,3 +211,169 @@ def lancer_scan(univers: list[str] | None = None) -> bool:
 
     threading.Thread(target=_run, daemon=True).start()
     return True
+
+
+# ── Univers de scan : suggestion IA + application ─────────────────────────
+# Demandé par l'utilisateur (23.07.2026) après avoir constitué la liste
+# initiale à la main via Gemini (interface web, probablement avec recherche
+# live). Groq (déjà intégré à SDE pour les explications, cf. llm_explain.py)
+# n'a PAS d'accès web — une suggestion via Groq est un rappel de mémoire
+# d'entraînement, pas une donnée de marché vérifiée ni aussi fraîche qu'une
+# recherche live. D'où : chaque ticker suggéré est VALIDÉ (résolution réelle
+# via get_market_data) avant d'être proposé, et l'application à l'univers
+# actif est une étape SÉPARÉE et EXPLICITE (jamais de remplacement silencieux).
+
+_TABLE_UNIVERS = "opportunites_univers"
+_lock_univers  = threading.Lock()
+_state_univers = {
+    "en_cours":    False,
+    "progression": None,
+    "suggestion":  None,   # liste de tickers proposée, pas encore appliquée
+    "erreur":      None,
+}
+
+
+def get_univers_actif() -> list[str]:
+    """Univers courant : override persisté si présent, sinon UNIVERS_SCAN par défaut."""
+    try:
+        from db import find_one, is_available
+        if is_available():
+            row = find_one(_TABLE_UNIVERS, {"id": 1})
+            if row and row.get("tickers"):
+                return row["tickers"]
+    except Exception as e:
+        print(f"[Screener] lecture univers actif échouée : {e}", flush=True)
+    return UNIVERS_SCAN
+
+
+def get_suggestion_state() -> dict:
+    return dict(_state_univers)
+
+
+def _valider_ticker(ticker: str) -> bool:
+    """Rejette une hallucination du LLM : le ticker doit vraiment répondre."""
+    try:
+        data = get_market_data(ticker)
+        return bool(data and data.get("price"))
+    except Exception:
+        return False
+
+
+def _extraire_tickers(texte: str, limite: int = 30) -> list[str]:
+    """
+    Extrait des symboles ticker plausibles (1-5 lettres majuscules) d'un texte
+    libre, dédoublonnés, en conservant l'ordre d'apparition. Pure — testable
+    sans appel réseau. `limite` est un garde-fou si le LLM déborde du format
+    demandé (texte parasite, numérotation, etc.).
+    """
+    import re
+    vus, candidats = set(), []
+    for m in re.findall(r"\b[A-Z]{1,5}\b", texte):
+        if m not in vus:
+            vus.add(m)
+            candidats.append(m)
+    return candidats[:limite]
+
+
+def suggerer_univers() -> bool:
+    """
+    Lance en thread background : interroge Groq, extrait les tickers,
+    valide chacun (get_market_data réel), stocke la suggestion dans
+    _state_univers — ne touche PAS l'univers actif (appliquer_univers
+    est un appel séparé, déclenché explicitement par l'utilisateur).
+    """
+    if not _lock_univers.acquire(blocking=False):
+        return False
+
+    def _run():
+        try:
+            _state_univers["en_cours"]   = True
+            _state_univers["erreur"]     = None
+            _state_univers["suggestion"] = None
+            _state_univers["progression"] = "Interrogation de l'IA…"
+
+            import requests
+            from config import GROQ_API_KEY, GROQ_MODEL, LLM_TIMEOUT
+
+            if not GROQ_API_KEY or GROQ_API_KEY == "votre_cle_groq":
+                raise ValueError("Clé Groq absente — voir config.py")
+
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type":  "application/json",
+                },
+                json={
+                    "model": GROQ_MODEL,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "Tu es un analyste financier. Tu réponds "
+                                "UNIQUEMENT avec des symboles ticker NASDAQ, "
+                                "séparés par des virgules, sans aucun texte "
+                                "avant, après ou entre — pas de phrase, pas "
+                                "de numérotation, pas d'explication."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                "Liste exactement 20 tickers NASDAQ parmi les "
+                                "plus prometteurs pour un investissement à "
+                                "court terme actuellement."
+                            ),
+                        },
+                    ],
+                    "max_tokens":  150,
+                    "temperature": 0.4,
+                },
+                timeout=LLM_TIMEOUT,
+            )
+            resp.raise_for_status()
+            texte = resp.json()["choices"][0]["message"]["content"]
+            candidats = _extraire_tickers(texte)
+
+            valides = []
+            for i, ticker in enumerate(candidats):
+                _state_univers["progression"] = f"Vérification {i + 1}/{len(candidats)} ({ticker})"
+                if _valider_ticker(ticker):
+                    valides.append(ticker)
+                if len(valides) >= 20:
+                    break
+                if i < len(candidats) - 1:
+                    time.sleep(PAUSE_ETAGE1_S)
+
+            if not valides:
+                raise ValueError("Aucun ticker valide n'a pu être extrait de la réponse IA")
+
+            _state_univers["suggestion"] = valides
+        except Exception as e:
+            _state_univers["erreur"] = str(e)
+            print(f"[Screener] suggestion univers erreur : {e}", flush=True)
+        finally:
+            _state_univers["progression"] = None
+            _state_univers["en_cours"] = False
+            _lock_univers.release()
+
+    threading.Thread(target=_run, daemon=True).start()
+    return True
+
+
+def appliquer_univers(tickers: list[str]):
+    """Remplace l'univers actif (persisté Supabase). Étape explicite, séparée de la suggestion."""
+    tickers = [t.upper().strip() for t in (tickers or []) if t and t.strip()]
+    if not tickers:
+        raise ValueError("Liste de tickers vide")
+
+    from db import update_one, is_available
+    if not is_available():
+        raise RuntimeError("Supabase indisponible — impossible de persister l'univers")
+    update_one(
+        _TABLE_UNIVERS,
+        {"id": 1},
+        {"$set": {"tickers": tickers, "derniere_maj": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    _state_univers["suggestion"] = None   # suggestion consommée

@@ -50,6 +50,32 @@
   La suggestion de quantité (sur les conseils ACHETER) montre ce qui serait possible en mettant
   tout le cash disponible sur ce seul ticker — ce n'est pas une répartition entre les 5.
 </p>
+
+<!-- Univers de scan (collapsible) -->
+<div class="sde-card mt-3">
+  <details id="sde-univers-details">
+    <summary style="cursor:pointer;list-style:none;display:flex;
+                    align-items:center;justify-content:space-between">
+      <h6 class="fw-semibold mb-0" style="font-size:.85rem;color:var(--sde-navy)">
+        <i class="bi bi-list-stars me-1"></i>Univers de scan ({{ univers_actif|length }} tickers)
+      </h6>
+      <span id="sde-univers-arrow" style="color:var(--sde-muted);font-size:.8rem">▼ Afficher</span>
+    </summary>
+    <div style="margin-top:14px">
+      <p class="small text-muted" style="font-size:.75rem">{{ univers_actif|join(", ") }}</p>
+      <p class="small text-muted" style="font-size:.7rem">
+        <i class="bi bi-info-circle me-1"></i>
+        Suggestion IA (Groq, LLaMA — pas d'accès web, rappel de mémoire d'entraînement, pas une
+        donnée de marché) : chaque ticker proposé est vérifié (résolution réelle) avant d'être
+        affiché ci-dessous. Rien n'est appliqué automatiquement.
+      </p>
+      <button class="sde-nav-btn" id="sde-univers-suggerer-btn" onclick="suggererUnivers()">
+        <i class="bi bi-magic me-1"></i>Rafraîchir via IA
+      </button>
+      <div id="sde-univers-suggestion-wrap" class="mt-2"></div>
+    </div>
+  </details>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -218,6 +244,103 @@
       polling = setInterval(poll, 3000);
     } else if (initialState.resultats && initialState.resultats.length) {
       renderResultats(initialState);
+    }
+  });
+
+  /* ── Univers de scan : suggestion IA + application ── */
+  let pollingUnivers = null;
+
+  function renderSuggestionWrap(html) {
+    document.getElementById("sde-univers-suggestion-wrap").innerHTML = html;
+  }
+
+  function renderUniversProgress(state) {
+    renderSuggestionWrap(`
+      <div class="d-flex align-items-center gap-2" style="font-size:.8rem;color:var(--sde-muted)">
+        <span class="spinner-border spinner-border-sm"></span>
+        ${state.progression || "En cours…"}
+      </div>`);
+  }
+
+  function renderSuggestion(tickers) {
+    renderSuggestionWrap(`
+      <div style="background:#F1F5F9;border-radius:8px;padding:10px 12px;margin-top:6px">
+        <p class="small mb-2" style="font-size:.78rem"><strong>Suggestion :</strong> ${tickers.join(", ")}</p>
+        <button class="sde-nav-btn" style="font-size:.75rem;color:#1D9E75" onclick="appliquerUnivers()">
+          <i class="bi bi-check-circle me-1"></i>Appliquer
+        </button>
+        <button class="sde-nav-btn" style="font-size:.75rem" onclick="renderSuggestionWrapPublic('')">
+          Ignorer
+        </button>
+      </div>`);
+    window._suggestionUnivers = tickers;
+  }
+
+  window.renderSuggestionWrapPublic = renderSuggestionWrap;
+
+  function pollUnivers() {
+    fetch("/admin/opportunites/univers/status")
+      .then(r => r.json())
+      .then(state => {
+        if (state.en_cours) {
+          renderUniversProgress(state);
+        } else {
+          clearInterval(pollingUnivers);
+          pollingUnivers = null;
+          document.getElementById("sde-univers-suggerer-btn").disabled = false;
+          if (state.erreur) {
+            renderSuggestionWrap(`<p class="small text-danger" style="font-size:.78rem">Erreur : ${state.erreur}</p>`);
+          } else if (state.suggestion && state.suggestion.length) {
+            renderSuggestion(state.suggestion);
+          }
+        }
+      });
+  }
+
+  window.suggererUnivers = function () {
+    const btn = document.getElementById("sde-univers-suggerer-btn");
+    const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+    btn.disabled = true;
+    renderUniversProgress({progression: "Démarrage…"});
+    fetch("/admin/opportunites/univers/suggerer", {
+      method: "POST",
+      headers: {"X-CSRFToken": CSRF},
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        btn.disabled = false;
+        renderSuggestionWrap(`<p class="small text-danger" style="font-size:.78rem">${data.message}</p>`);
+        return;
+      }
+      if (!pollingUnivers) pollingUnivers = setInterval(pollUnivers, 3000);
+    });
+  };
+
+  window.appliquerUnivers = function () {
+    const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+    fetch("/admin/opportunites/univers/appliquer", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+      body: JSON.stringify({tickers: window._suggestionUnivers || []}),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        renderSuggestionWrap(`<p class="small text-danger" style="font-size:.78rem">${data.error}</p>`);
+        return;
+      }
+      renderSuggestionWrap(`<p class="small" style="font-size:.78rem;color:#1D9E75">✓ Univers mis à jour — rechargez la page pour voir la nouvelle liste.</p>`);
+    });
+  };
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const det   = document.getElementById("sde-univers-details");
+    const arrow = document.getElementById("sde-univers-arrow");
+    if (det) {
+      det.addEventListener("toggle", () => {
+        arrow.textContent = det.open ? "▲ Masquer" : "▼ Afficher";
+      });
     }
   });
 })();

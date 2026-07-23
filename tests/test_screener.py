@@ -91,4 +91,42 @@ assert state["erreur"] is None   # une erreur ticker isolée ne fait pas planter
 assert [r["ticker"] for r in state["resultats"]] == ["OK1"]
 print("✓ résilience : un ticker en échec à l'étage 1 est écarté sans casser le scan")
 
+# ── Extraction de tickers depuis un texte libre (pure, hors réseau) ──
+# La suggestion IA doit dédoublonner, garder l'ordre d'apparition, et ne
+# jamais planter même si le LLM ignore le format demandé.
+texte_propre = "NVDA,AAPL,MSFT,GOOGL"
+assert screener._extraire_tickers(texte_propre) == ["NVDA", "AAPL", "MSFT", "GOOGL"]
+
+texte_bavard = "Voici ma liste : NVDA, AAPL, et aussi MSFT.\n1. GOOGL\n2. NVDA (doublon)"
+extrait = screener._extraire_tickers(texte_bavard)
+assert extrait == ["NVDA", "AAPL", "MSFT", "GOOGL"], extrait   # dédoublonné, ordre conservé
+
+assert screener._extraire_tickers("") == []
+assert screener._extraire_tickers("aucun ticker ici en minuscules") == []
+print("✓ _extraire_tickers : dédoublonne, garde l'ordre, robuste au bruit/texte vide")
+
+
+# ── Validation d'un ticker suggéré (rejette une hallucination du LLM) ──
+screener.get_market_data = lambda t: {"price": 123.45} if t == "REAL" else (_ for _ in ()).throw(ValueError("introuvable"))
+assert screener._valider_ticker("REAL") is True
+assert screener._valider_ticker("FAKE") is False   # get_market_data lève -> rejeté, pas de crash
+
+screener.get_market_data = lambda t: {"price": None}   # réponse sans prix exploitable
+assert screener._valider_ticker("SANSPRIX") is False
+print("✓ _valider_ticker : accepte un ticker qui répond avec un prix, rejette sinon (hors réseau, mocké)")
+
+
+# ── appliquer_univers : validation d'entrée AVANT tout accès réseau/Supabase ──
+try:
+    screener.appliquer_univers([])
+    raise AssertionError("aurait dû lever ValueError")
+except ValueError:
+    pass
+try:
+    screener.appliquer_univers(["  ", ""])
+    raise AssertionError("aurait dû lever ValueError (aucun ticker exploitable)")
+except ValueError:
+    pass
+print("✓ appliquer_univers : liste vide/inexploitable rejetée avant tout accès réseau")
+
 print("\n✓ Tous les tests test_screener.py sont OK (hors réseau)")

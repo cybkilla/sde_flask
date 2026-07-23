@@ -320,12 +320,13 @@ def stats():
 @login_required
 def opportunites():
     _require_admin()
-    from analysis.screener import get_scan_state
+    from analysis.screener import get_scan_state, get_univers_actif
     from portfolio.positions import get_cash_disponible
     return render_template(
         "admin_opportunites.html",
         state=get_scan_state(),
         cash_dispo=get_cash_disponible(current_user.id),
+        univers_actif=get_univers_actif(),
     )
 
 
@@ -345,3 +346,38 @@ def opportunites_status():
     _require_admin()
     from analysis.screener import get_scan_state
     return jsonify(get_scan_state())
+
+
+# ── Univers de scan : suggestion IA + application (23.07.2026) ───────────
+
+@bp.route("/opportunites/univers/suggerer", methods=["POST"])
+@login_required
+def opportunites_univers_suggerer():
+    _require_admin()
+    from analysis.screener import suggerer_univers
+    if not suggerer_univers():
+        return jsonify({"ok": False, "message": "Suggestion déjà en cours"}), 429
+    return jsonify({"ok": True, "message": "Suggestion IA lancée en arrière-plan"}), 202
+
+
+@bp.route("/opportunites/univers/status")
+@login_required
+def opportunites_univers_status():
+    _require_admin()
+    from analysis.screener import get_suggestion_state
+    return jsonify(get_suggestion_state())
+
+
+@bp.route("/opportunites/univers/appliquer", methods=["POST"])
+@login_required
+def opportunites_univers_appliquer():
+    _require_admin()
+    from analysis.screener import appliquer_univers, get_univers_actif
+    tickers = (request.get_json(silent=True) or {}).get("tickers")
+    if not isinstance(tickers, list) or not tickers:
+        return jsonify({"ok": False, "error": "Liste de tickers manquante ou vide."}), 400
+    try:
+        appliquer_univers(tickers)
+        return jsonify({"ok": True, "univers": get_univers_actif()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
