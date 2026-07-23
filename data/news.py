@@ -207,7 +207,8 @@ def _fetch_yfinance_news(ticker: str, max_results: int = MAX_NEWS) -> pd.DataFra
     pas besoin de filtre de pertinence supplémentaire.
     """
     try:
-        items = yf.Ticker(ticker).news or []
+        from utils.net_timeout import with_timeout
+        items = with_timeout(lambda: yf.Ticker(ticker).news, 10) or []
         articles = []
 
         for item in items[:max_results]:

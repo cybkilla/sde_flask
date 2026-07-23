@@ -45,7 +45,8 @@ def _fetch_history(ticker: str, period: str = "2y") -> pd.DataFrame:
     hist = pd.DataFrame()
     try:
         import yfinance as yf
-        hist = yf.Ticker(ticker).history(period=period)
+        from utils.net_timeout import with_timeout
+        hist = with_timeout(lambda: yf.Ticker(ticker).history(period=period), 15)
     except Exception as e:
         print(f"[Backtest] yfinance erreur ({ticker}) : {e}", flush=True)
 

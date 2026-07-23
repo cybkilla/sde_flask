@@ -369,7 +369,8 @@ def get_live_price(ticker: str) -> dict:
 def get_market_data(ticker: str) -> dict:
     ticker = ticker.upper().strip()
     try:
-        return _get_yfinance(ticker)
+        from utils.net_timeout import with_timeout
+        return with_timeout(_get_yfinance, 20, ticker)
     except Exception as e:
         print(f"[Market] yfinance indisponible pour {ticker} ({e}) — bascule Finnhub+TwelveData", flush=True)
     try:

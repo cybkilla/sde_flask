@@ -49,7 +49,8 @@ def _fetch_qqq(sessions: int = 130) -> pd.DataFrame:
     hist = pd.DataFrame()
     try:
         import yfinance as yf
-        hist = yf.Ticker("QQQ").history(period="6mo")
+        from utils.net_timeout import with_timeout
+        hist = with_timeout(lambda: yf.Ticker("QQQ").history(period="6mo"), 15)
     except Exception as e:
         print(f"[Regime] yfinance erreur (QQQ) : {e}", flush=True)
 
