@@ -31,6 +31,7 @@ SCHEMA_ATTENDU = {
     "portfolio_snapshots": ["cash_dispo", "total_compte"],   # métrique compte total
     "position_targets":    [],
     "auth_tokens":         [],
+    "opportunites_scan":   [],   # scan d'opportunités admin 2026-07-22
 }
 
 

@@ -56,6 +56,14 @@ CREATE TABLE ticker_snapshots (
   refreshed_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Dernier Top 5 du scan d'opportunités admin (single-row, id=1 fixe)
+CREATE TABLE opportunites_scan (
+  id           INTEGER PRIMARY KEY DEFAULT 1,
+  resultats    JSONB,
+  derniere_maj TEXT,
+  CHECK (id = 1)
+);
+
 -- Lots d'achat ET de vente par utilisateur (supporte le DCA et les ventes partielles)
 CREATE TABLE positions (
   id           SERIAL PRIMARY KEY,
@@ -140,6 +148,20 @@ nouvelle colonne ajoutée ici.
 ---
 
 ## Migrations sur une installation existante
+
+**Table `opportunites_scan`** (2026-07-22 — persistance du dernier Top 5 du
+scan d'opportunités admin. Sans elle, le résultat ne vit qu'en mémoire
+process et disparaît au recyclage du worker gunicorn (`max_requests=200`,
+cf. section Mémoire & performances) ; single-row, `id=1` fixe, upsert) :
+
+```sql
+CREATE TABLE IF NOT EXISTS opportunites_scan (
+  id           INTEGER PRIMARY KEY DEFAULT 1,
+  resultats    JSONB,
+  derniere_maj TEXT,
+  CHECK (id = 1)
+);
+```
 
 **Colonnes `var_alerte_pct` / `var_alerte_date`** (2026-07-17 — alerte de
 variation QUOTIDIENNE vs clôture de la veille, par paliers de 5% avec

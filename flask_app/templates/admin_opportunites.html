@@ -16,10 +16,16 @@
       {% endif %}
     </div>
   </div>
-  <button class="sde-nav-btn" id="sde-scan-btn" onclick="lancerScan()">
-    <i class="bi bi-search me-1"></i>
-    <span class="hide-xs">Scanner</span>
-  </button>
+  <div class="d-flex gap-2">
+    <button class="sde-nav-btn" onclick="rafraichir()" title="Recharger le dernier résultat (sans relancer un scan)">
+      <i class="bi bi-arrow-clockwise me-1"></i>
+      <span class="hide-xs">Rafraîchir</span>
+    </button>
+    <button class="sde-nav-btn" id="sde-scan-btn" onclick="lancerScan()">
+      <i class="bi bi-search me-1"></i>
+      <span class="hide-xs">Scanner</span>
+    </button>
+  </div>
 </div>
 
 <div class="sde-card mb-3" id="sde-scan-wrap">
@@ -53,14 +59,27 @@
   const cashDispo = {{ (cash_dispo | tojson) if cash_dispo is not none else "null" }};
   let polling = null;
 
+  function qtyAchetable(r) {
+    if (r.recommandation !== "ACHETER" || !cashDispo || !r.prix || r.prix <= 0) return null;
+    return Math.floor(cashDispo / r.prix);
+  }
+
   function suggestionAchat(r, color) {
-    if (r.recommandation !== "ACHETER" || !cashDispo || !r.prix || r.prix <= 0) return "";
-    const nb = Math.floor(cashDispo / r.prix);
+    const nb = qtyAchetable(r);
+    if (nb === null) return "";
     if (nb < 1) return `<div style="font-size:.68rem;color:var(--sde-muted);margin-top:2px">cash insuffisant pour 1 action</div>`;
     const cout = (nb * r.prix).toFixed(2);
     return `<div style="font-size:.7rem;color:${color};margin-top:2px;white-space:nowrap">
       → jusqu'à <strong>${nb}</strong> action${nb > 1 ? "s" : ""} (~$${cout})
     </div>`;
+  }
+
+  function lienAchat(r, nb) {
+    const params = new URLSearchParams({
+      open: "achat", ticker: r.ticker, company: r.company_name || r.ticker,
+      prix: r.prix, qty: nb > 0 ? nb : "",
+    });
+    return "/mes-positions?" + params.toString();
   }
 
   function renderEmpty(msg) {
@@ -121,7 +140,12 @@
                 </td>
                 <td style="padding:8px;text-align:right;font-weight:700">${r.score_global != null ? r.score_global.toFixed(1) : "—"}</td>
                 <td style="padding:8px">
-                  <span style="background:${color}18;color:${color};padding:2px 8px;border-radius:12px;font-weight:600;font-size:.75rem">${r.recommandation || "—"}</span>
+                  ${r.recommandation === "ACHETER"
+                    ? `<a href="${lienAchat(r, qtyAchetable(r))}"
+                          style="background:${color}18;color:${color};padding:2px 8px;border-radius:12px;
+                                 font-weight:600;font-size:.75rem;text-decoration:none;cursor:pointer"
+                          title="Saisir un achat prérempli">${r.recommandation} <i class="bi bi-pencil-square" style="font-size:.68rem;opacity:.8"></i></a>`
+                    : `<span style="background:${color}18;color:${color};padding:2px 8px;border-radius:12px;font-weight:600;font-size:.75rem">${r.recommandation || "—"}</span>`}
                   ${suggestionAchat(r, color)}
                 </td>
                 <td style="padding:8px;text-align:right">${r.prix != null ? "$" + r.prix.toFixed(2) : "—"}</td>
@@ -184,6 +208,8 @@
       if (!polling) polling = setInterval(poll, 3000);
     });
   };
+
+  window.rafraichir = poll;   // recharge /status (mémoire ou Supabase) sans relancer de scan
 
   document.addEventListener("DOMContentLoaded", () => {
     if (initialState.en_cours) {

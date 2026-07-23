@@ -43,10 +43,15 @@ PAUSE_ETAGE1_S     = 3    # espacement entre tickers à l'étage 1 (0 dans les t
 PAUSE_RATTRAPAGE_S  = 65  # pause avant le passage de rattrapage groupé (0 dans les tests)
 
 _lock = threading.Lock()
+_TABLE_SCAN = "opportunites_scan"
 
-# État partagé en mémoire (mono-process, workers=1 sur Render — même
-# pattern que cache.py / backtest._CACHE). Ne survit pas à un redéploiement,
-# ce qui est acceptable : un scan se relance en un clic.
+# État partagé en mémoire (mono-process, workers=1 sur Render — même pattern
+# que cache.py / backtest._CACHE). Complété par un backup Supabase
+# (_persister_resultats / _charger_dernier_scan) : gunicorn recycle le
+# worker toutes les ~200 requêtes (max_requests, cf. mémoire projet) et
+# perdait le Top 5 en mémoire — sans compter la simple navigation qui, elle,
+# ne touche pas _state (mono-process) mais était perçue comme "perdue" par
+# l'utilisateur au premier chargement après un redémarrage.
 _state = {
     "en_cours":     False,
     "progression":  None,   # ex. "Analyse complète 4/15 (NVDA)"
@@ -54,9 +59,44 @@ _state = {
     "resultats":    [],     # liste de dicts, la plus récente, triée décroissant
     "erreur":       None,
 }
+_hydrate_tentee = False   # une seule tentative de rechargement Supabase par process
+
+
+def _persister_resultats():
+    """Sauvegarde le Top N dans Supabase (silencieux si indisponible)."""
+    try:
+        from db import update_one, is_available
+        if not is_available():
+            return
+        update_one(
+            _TABLE_SCAN,
+            {"id": 1},
+            {"$set": {"resultats": _state["resultats"], "derniere_maj": _state["derniere_maj"]}},
+            upsert=True,
+        )
+    except Exception as e:
+        print(f"[Screener] persistance Supabase échouée : {e}", flush=True)
+
+
+def _charger_dernier_scan():
+    """Recharge le dernier Top N depuis Supabase dans l'état mémoire (silencieux si indisponible)."""
+    try:
+        from db import find_one, is_available
+        if not is_available():
+            return
+        row = find_one(_TABLE_SCAN, {"id": 1})
+        if row and row.get("resultats"):
+            _state["resultats"]    = row["resultats"]
+            _state["derniere_maj"] = row.get("derniere_maj")
+    except Exception as e:
+        print(f"[Screener] rechargement Supabase échoué : {e}", flush=True)
 
 
 def get_scan_state() -> dict:
+    global _hydrate_tentee
+    if not _hydrate_tentee and not _state["resultats"] and not _state["en_cours"]:
+        _hydrate_tentee = True   # une seule tentative, même si elle échoue/ne trouve rien
+        _charger_dernier_scan()
     return dict(_state)
 
 
@@ -160,6 +200,7 @@ def lancer_scan(univers: list[str] | None = None) -> bool:
             resultats.sort(key=lambda r: r["score_global"], reverse=True)
             _state["resultats"]    = resultats[:N_TOP]
             _state["derniere_maj"] = datetime.now(timezone.utc).isoformat()
+            _persister_resultats()
         except Exception as e:
             _state["erreur"] = str(e)
             print(f"[Screener] scan erreur : {e}", flush=True)

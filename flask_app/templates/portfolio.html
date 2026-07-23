@@ -812,7 +812,33 @@
   window.suggererObjectifs     = suggererObjectifs;
   window.sauverObjectifs       = sauverObjectifs;
 
-  document.addEventListener("DOMContentLoaded", loadOverview);
+  // Ouverture préremplie depuis le scan d'opportunités (/admin/opportunites) :
+  // ?open=achat&ticker=...&company=...&prix=...&qty=... — cash déjà pris en
+  // compte côté scan (quantité = cash dispo // prix), ticker potentiellement
+  // absent de "Mes positions" (nouvelle position), d'où les params explicites
+  // plutôt qu'une lecture depuis une carte existante.
+  function _ouvrirDepuisURL() {
+    const params = new URLSearchParams(location.search);
+    if (params.get("open") !== "achat") return;
+    const ticker = params.get("ticker");
+    if (!ticker) return;
+    openAddModal(
+      ticker,
+      params.get("company") || ticker,
+      "USD",
+      parseFloat(params.get("prix")) || 0,
+      "achat",
+      parseInt(params.get("qty"), 10) || 0,
+      null,
+      0,
+    );
+    history.replaceState(null, "", location.pathname);   // évite la réouverture au rafraîchissement
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    loadOverview();
+    _ouvrirDepuisURL();
+  });
 })();
 
 /* ── Graphe historique portefeuille ──────────────────────────────────────── */
