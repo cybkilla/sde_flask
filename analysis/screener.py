@@ -363,7 +363,13 @@ def suggerer_univers(prompt: str | None = None) -> bool:
                 },
                 timeout=LLM_TIMEOUT,
             )
-            resp.raise_for_status()
+            # resp.raise_for_status() ne garde que le code HTTP dans le
+            # message ("400 Client Error: Bad Request for url: ...") — le
+            # JSON d'erreur de Google (raison précise : clé invalide, quota,
+            # modèle indisponible...) est perdu. On le récupère nous-mêmes
+            # pour ne pas avoir à reproduire l'appel en local à chaque panne.
+            if not resp.ok:
+                raise ValueError(f"Gemini a répondu {resp.status_code} : {resp.text[:500]}")
             texte = _extraire_texte_gemini(resp.json())
             candidats = _extraire_tickers(texte)
 
