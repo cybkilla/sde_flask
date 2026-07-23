@@ -225,11 +225,18 @@ def lancer_scan(univers: list[str] | None = None) -> bool:
 
 _TABLE_UNIVERS = "opportunites_univers"
 _lock_univers  = threading.Lock()
+
+PROMPT_SUGGESTION_DEFAUT = (
+    "Liste exactement 20 tickers NASDAQ parmi les plus prometteurs pour un "
+    "investissement à court terme actuellement."
+)
+
 _state_univers = {
     "en_cours":    False,
     "progression": None,
-    "suggestion":  None,   # liste de tickers proposée, pas encore appliquée
+    "suggestion":  None,   # liste de dicts {ticker, company_name, prix, var_5d}, pas encore appliquée
     "erreur":      None,
+    "prompt":      PROMPT_SUGGESTION_DEFAUT,   # dernier prompt utilisé (éditable côté UI)
 }
 
 
@@ -250,13 +257,25 @@ def get_suggestion_state() -> dict:
     return dict(_state_univers)
 
 
-def _valider_ticker(ticker: str) -> bool:
-    """Rejette une hallucination du LLM : le ticker doit vraiment répondre."""
+def _valider_ticker(ticker: str) -> dict | None:
+    """
+    Rejette une hallucination du LLM : le ticker doit vraiment répondre.
+    Retourne aussi le nom et la performance récente (var_5d) pour l'affichage
+    UI — demandé pour que la suggestion soit lisible sans devoir cliquer sur
+    chaque ticker séparément.
+    """
     try:
         data = get_market_data(ticker)
-        return bool(data and data.get("price"))
+        if not data or not data.get("price"):
+            return None
+        return {
+            "ticker":       ticker,
+            "company_name": data.get("company_name", ticker),
+            "prix":         data.get("price"),
+            "var_5d":       data.get("var_5d"),
+        }
     except Exception:
-        return False
+        return None
 
 
 def _extraire_tickers(texte: str, limite: int = 30) -> list[str]:
@@ -275,21 +294,26 @@ def _extraire_tickers(texte: str, limite: int = 30) -> list[str]:
     return candidats[:limite]
 
 
-def suggerer_univers() -> bool:
+def suggerer_univers(prompt: str | None = None) -> bool:
     """
-    Lance en thread background : interroge Groq, extrait les tickers,
-    valide chacun (get_market_data réel), stocke la suggestion dans
-    _state_univers — ne touche PAS l'univers actif (appliquer_univers
-    est un appel séparé, déclenché explicitement par l'utilisateur).
+    Lance en thread background : interroge Groq avec `prompt` (ou le prompt
+    par défaut si None/vide — l'utilisateur peut l'éditer côté UI et
+    relancer), extrait les tickers, valide chacun (get_market_data réel,
+    récupère aussi nom + performance récente pour l'affichage), stocke la
+    suggestion dans _state_univers — ne touche PAS l'univers actif
+    (appliquer_univers est un appel séparé, déclenché explicitement).
     """
     if not _lock_univers.acquire(blocking=False):
         return False
+
+    prompt = (prompt or "").strip() or PROMPT_SUGGESTION_DEFAUT
 
     def _run():
         try:
             _state_univers["en_cours"]   = True
             _state_univers["erreur"]     = None
             _state_univers["suggestion"] = None
+            _state_univers["prompt"]     = prompt
             _state_univers["progression"] = "Interrogation de l'IA…"
 
             import requests
@@ -317,14 +341,7 @@ def suggerer_univers() -> bool:
                                 "de numérotation, pas d'explication."
                             ),
                         },
-                        {
-                            "role": "user",
-                            "content": (
-                                "Liste exactement 20 tickers NASDAQ parmi les "
-                                "plus prometteurs pour un investissement à "
-                                "court terme actuellement."
-                            ),
-                        },
+                        {"role": "user", "content": prompt},
                     ],
                     "max_tokens":  150,
                     "temperature": 0.4,
@@ -338,8 +355,9 @@ def suggerer_univers() -> bool:
             valides = []
             for i, ticker in enumerate(candidats):
                 _state_univers["progression"] = f"Vérification {i + 1}/{len(candidats)} ({ticker})"
-                if _valider_ticker(ticker):
-                    valides.append(ticker)
+                detail = _valider_ticker(ticker)
+                if detail:
+                    valides.append(detail)
                 if len(valides) >= 20:
                     break
                 if i < len(candidats) - 1:

@@ -69,6 +69,12 @@
         donnée de marché) : chaque ticker proposé est vérifié (résolution réelle) avant d'être
         affiché ci-dessous. Rien n'est appliqué automatiquement.
       </p>
+
+      <label class="form-label small fw-semibold" for="sde-univers-prompt"
+             style="font-size:.75rem;color:var(--sde-navy)">Prompt envoyé à l'IA</label>
+      <textarea id="sde-univers-prompt" class="form-control form-control-sm mb-2"
+                rows="2" style="font-size:.78rem">{{ suggestion_state.prompt or "" }}</textarea>
+
       <button class="sde-nav-btn" id="sde-univers-suggerer-btn" onclick="suggererUnivers()">
         <i class="bi bi-magic me-1"></i>Rafraîchir via IA
       </button>
@@ -262,18 +268,47 @@
       </div>`);
   }
 
-  function renderSuggestion(tickers) {
+  function renderSuggestion(items) {
+    const rows = items.map(it => {
+      const perfColor = (it.var_5d ?? 0) >= 0 ? "#1D9E75" : "#D85A30";
+      const perfTxt = it.var_5d != null
+        ? `${it.var_5d >= 0 ? "+" : ""}${it.var_5d.toFixed(1)}% (5j)`
+        : "—";
+      return `
+        <tr style="border-bottom:1px solid var(--sde-border)">
+          <td style="padding:5px 8px;font-weight:700">${it.ticker}</td>
+          <td style="padding:5px 8px;color:var(--sde-muted)">${it.company_name || ""}</td>
+          <td style="padding:5px 8px;text-align:right">${it.prix != null ? "$" + it.prix.toFixed(2) : "—"}</td>
+          <td style="padding:5px 8px;text-align:right;color:${perfColor};font-weight:600">${perfTxt}</td>
+        </tr>`;
+    }).join("");
+
     renderSuggestionWrap(`
       <div style="background:#F1F5F9;border-radius:8px;padding:10px 12px;margin-top:6px">
-        <p class="small mb-2" style="font-size:.78rem"><strong>Suggestion :</strong> ${tickers.join(", ")}</p>
-        <button class="sde-nav-btn" style="font-size:.75rem;color:#1D9E75" onclick="appliquerUnivers()">
-          <i class="bi bi-check-circle me-1"></i>Appliquer
-        </button>
-        <button class="sde-nav-btn" style="font-size:.75rem" onclick="renderSuggestionWrapPublic('')">
-          Ignorer
-        </button>
+        <p class="small mb-2" style="font-size:.78rem"><strong>Suggestion (${items.length}) :</strong></p>
+        <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:.78rem">
+          <thead>
+            <tr style="color:var(--sde-muted)">
+              <th style="padding:5px 8px;text-align:left">Ticker</th>
+              <th style="padding:5px 8px;text-align:left">Société</th>
+              <th style="padding:5px 8px;text-align:right">Prix</th>
+              <th style="padding:5px 8px;text-align:right">Perf. récente</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        </div>
+        <div class="mt-2">
+          <button class="sde-nav-btn" style="font-size:.75rem;color:#1D9E75" onclick="appliquerUnivers()">
+            <i class="bi bi-check-circle me-1"></i>Appliquer
+          </button>
+          <button class="sde-nav-btn" style="font-size:.75rem" onclick="renderSuggestionWrapPublic('')">
+            Ignorer
+          </button>
+        </div>
       </div>`);
-    window._suggestionUnivers = tickers;
+    window._suggestionUnivers = items.map(it => it.ticker);
   }
 
   window.renderSuggestionWrapPublic = renderSuggestionWrap;
@@ -300,11 +335,13 @@
   window.suggererUnivers = function () {
     const btn = document.getElementById("sde-univers-suggerer-btn");
     const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+    const prompt = document.getElementById("sde-univers-prompt").value;
     btn.disabled = true;
     renderUniversProgress({progression: "Démarrage…"});
     fetch("/admin/opportunites/univers/suggerer", {
       method: "POST",
-      headers: {"X-CSRFToken": CSRF},
+      headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+      body: JSON.stringify({prompt}),
     })
     .then(r => r.json())
     .then(data => {
@@ -341,6 +378,15 @@
       det.addEventListener("toggle", () => {
         arrow.textContent = det.open ? "▲ Masquer" : "▼ Afficher";
       });
+    }
+
+    const initialSuggestion = {{ suggestion_state | tojson }};
+    if (initialSuggestion.en_cours) {
+      document.getElementById("sde-univers-suggerer-btn").disabled = true;
+      renderUniversProgress(initialSuggestion);
+      pollingUnivers = setInterval(pollUnivers, 3000);
+    } else if (initialSuggestion.suggestion && initialSuggestion.suggestion.length) {
+      renderSuggestion(initialSuggestion.suggestion);
     }
   });
 })();

@@ -107,13 +107,18 @@ print("✓ _extraire_tickers : dédoublonne, garde l'ordre, robuste au bruit/tex
 
 
 # ── Validation d'un ticker suggéré (rejette une hallucination du LLM) ──
-screener.get_market_data = lambda t: {"price": 123.45} if t == "REAL" else (_ for _ in ()).throw(ValueError("introuvable"))
-assert screener._valider_ticker("REAL") is True
-assert screener._valider_ticker("FAKE") is False   # get_market_data lève -> rejeté, pas de crash
+# Retourne aussi nom + performance récente (var_5d), pour l'affichage UI.
+screener.get_market_data = lambda t: (
+    {"price": 123.45, "company_name": "Real Corp", "var_5d": 4.2} if t == "REAL"
+    else (_ for _ in ()).throw(ValueError("introuvable"))
+)
+detail = screener._valider_ticker("REAL")
+assert detail == {"ticker": "REAL", "company_name": "Real Corp", "prix": 123.45, "var_5d": 4.2}
+assert screener._valider_ticker("FAKE") is None   # get_market_data lève -> rejeté, pas de crash
 
 screener.get_market_data = lambda t: {"price": None}   # réponse sans prix exploitable
-assert screener._valider_ticker("SANSPRIX") is False
-print("✓ _valider_ticker : accepte un ticker qui répond avec un prix, rejette sinon (hors réseau, mocké)")
+assert screener._valider_ticker("SANSPRIX") is None
+print("✓ _valider_ticker : renvoie le détail (nom, prix, perf) si valide, None sinon (hors réseau, mocké)")
 
 
 # ── appliquer_univers : validation d'entrée AVANT tout accès réseau/Supabase ──
@@ -128,5 +133,26 @@ try:
 except ValueError:
     pass
 print("✓ appliquer_univers : liste vide/inexploitable rejetée avant tout accès réseau")
+
+
+# ── suggerer_univers(prompt=...) : le prompt personnalisé est bien retenu
+#    dans l'état, même si l'appel échoue ensuite (ex. clé Groq absente) ──
+import config as _config
+_cle_groq_orig = _config.GROQ_API_KEY
+_config.GROQ_API_KEY = ""   # force l'échec avant tout appel réseau réel
+
+ok = screener.suggerer_univers(prompt="mon prompt personnalisé de test")
+assert ok is True
+_t0 = time.time()
+while screener.get_suggestion_state()["en_cours"]:
+    if time.time() - _t0 > 5:
+        raise TimeoutError("suggestion pas terminée à temps")
+    time.sleep(0.01)
+
+state = screener.get_suggestion_state()
+assert state["prompt"] == "mon prompt personnalisé de test"
+assert state["erreur"] is not None   # clé absente -> échoue, mais le prompt a bien été retenu
+_config.GROQ_API_KEY = _cle_groq_orig
+print("✓ suggerer_univers : le prompt personnalisé est retenu dans l'état même en cas d'échec")
 
 print("\n✓ Tous les tests test_screener.py sont OK (hors réseau)")
