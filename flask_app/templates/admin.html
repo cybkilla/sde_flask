@@ -809,6 +809,9 @@
             <button class="sde-nav-btn mb-2" id="sde-univers-copier-btn" onclick="oppCopierPrompt()">
               <i class="bi bi-clipboard me-1"></i>Copier le prompt
             </button>
+            <button class="sde-nav-btn mb-2" id="sde-univers-sauver-btn" onclick="oppSauvegarderPrompt()">
+              <i class="bi bi-save me-1"></i>Sauvegarder le prompt
+            </button>
 
             <label class="form-label small fw-semibold" for="sde-univers-reponse"
                    style="font-size:.75rem;color:var(--sde-navy)">Réponse de l'IA (coller ici)</label>
@@ -1064,6 +1067,27 @@
     navigator.clipboard.writeText(texte).then(() => {
       const original = btn.innerHTML;
       btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copié !';
+      setTimeout(() => { btn.innerHTML = original; }, 1500);
+    });
+  };
+
+  window.oppSauvegarderPrompt = function () {
+    const btn   = document.getElementById("sde-univers-sauver-btn");
+    const CSRF  = document.querySelector('meta[name="csrf-token"]').content;
+    const texte = document.getElementById("sde-univers-prompt").value;
+    const original = btn.innerHTML;
+    fetch("/admin/opportunites/univers/prompt", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+      body: JSON.stringify({prompt: texte}),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Sauvegardé !';
+      } else {
+        btn.innerHTML = '<i class="bi bi-x-circle me-1"></i>' + (data.error || "Erreur");
+      }
       setTimeout(() => { btn.innerHTML = original; }, 1500);
     });
   };

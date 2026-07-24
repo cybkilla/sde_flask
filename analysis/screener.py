@@ -249,6 +249,7 @@ _state_univers = {
     "erreur":      None,
     "prompt":      PROMPT_SUGGESTION_DEFAUT,   # dernier prompt utilisé (éditable côté UI)
 }
+_hydrate_prompt_tentee = False   # une seule tentative de rechargement Supabase par process
 
 
 def get_univers_actif() -> list[str]:
@@ -265,7 +266,46 @@ def get_univers_actif() -> list[str]:
 
 
 def get_suggestion_state() -> dict:
+    # Même pattern que get_scan_state() : le prompt personnalisé vit en
+    # mémoire process (workers=1, donc partagé entre requêtes tant que le
+    # worker vit), mais gunicorn le recycle périodiquement (max_requests) —
+    # sans ce rechargement, un prompt sauvegardé "disparaissait" après un
+    # recyclage silencieux, revenant au défaut sans que rien ne l'indique.
+    global _hydrate_prompt_tentee
+    if not _hydrate_prompt_tentee:
+        _hydrate_prompt_tentee = True
+        try:
+            from db import find_one, is_available
+            if is_available():
+                row = find_one(_TABLE_UNIVERS, {"id": 1})
+                if row and row.get("prompt"):
+                    _state_univers["prompt"] = row["prompt"]
+        except Exception as e:
+            print(f"[Screener] rechargement prompt échoué : {e}", flush=True)
     return dict(_state_univers)
+
+
+def sauvegarder_prompt(prompt: str):
+    """
+    Persiste le prompt édité par l'utilisateur, indépendamment d'un lancement
+    de suggestion — demandé pour ne pas avoir à relancer une analyse juste
+    pour ne pas perdre une modification du texte. Même table que l'univers
+    (id=1, single-row) : un prompt sans univers associé n'a pas de sens.
+    """
+    prompt = (prompt or "").strip()
+    if not prompt:
+        raise ValueError("Prompt vide")
+
+    from db import update_one, is_available
+    if not is_available():
+        raise RuntimeError("Supabase indisponible — impossible de sauvegarder le prompt")
+    update_one(
+        _TABLE_UNIVERS,
+        {"id": 1},
+        {"$set": {"prompt": prompt}},
+        upsert=True,
+    )
+    _state_univers["prompt"] = prompt
 
 
 def _valider_ticker(ticker: str) -> dict | None:

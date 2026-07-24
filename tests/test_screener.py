@@ -214,4 +214,18 @@ assert state["erreur"] is not None   # clé absente -> échoue, mais le prompt a
 _config.GEMINI_API_KEY = _cle_gemini_orig
 print("✓ suggerer_univers : le prompt personnalisé est retenu dans l'état même en cas d'échec")
 
+# ── sauvegarder_prompt : validation AVANT tout accès Supabase (même
+#    ordre que appliquer_univers, pour rester testable hors réseau) ──
+try:
+    screener.sauvegarder_prompt("")
+    raise AssertionError("aurait dû lever ValueError")
+except ValueError:
+    pass
+try:
+    screener.sauvegarder_prompt("   ")
+    raise AssertionError("aurait dû lever ValueError (prompt vide après strip)")
+except ValueError:
+    pass
+print("✓ sauvegarder_prompt : prompt vide rejeté avant tout accès Supabase")
+
 print("\n✓ Tous les tests test_screener.py sont OK (hors réseau)")

@@ -392,6 +392,20 @@ def opportunites_univers_analyser():
     return jsonify({"ok": True, "message": "Analyse lancée en arrière-plan"}), 202
 
 
+@bp.route("/opportunites/univers/prompt", methods=["POST"])
+@login_required
+def opportunites_univers_prompt():
+    """Sauvegarde le prompt édité, sans lancer d'analyse (persisté Supabase)."""
+    _require_admin()
+    from analysis.screener import sauvegarder_prompt
+    prompt = (request.get_json(silent=True) or {}).get("prompt")
+    try:
+        sauvegarder_prompt(prompt)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
 @bp.route("/opportunites/univers/appliquer", methods=["POST"])
 @login_required
 def opportunites_univers_appliquer():

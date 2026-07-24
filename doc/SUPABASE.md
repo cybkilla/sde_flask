@@ -68,6 +68,7 @@ CREATE TABLE opportunites_scan (
 CREATE TABLE opportunites_univers (
   id           INTEGER PRIMARY KEY DEFAULT 1,
   tickers      JSONB,
+  prompt       TEXT,
   derniere_maj TEXT,
   CHECK (id = 1)
 );
@@ -169,6 +170,15 @@ CREATE TABLE IF NOT EXISTS opportunites_univers (
   derniere_maj TEXT,
   CHECK (id = 1)
 );
+```
+
+**Colonne `prompt`** (2026-07-24 — sauvegarde explicite du prompt IA édité
+par l'utilisateur pour la suggestion d'univers, indépendamment d'un
+lancement d'analyse. Sans elle, une modification du textarea était perdue
+au recyclage du worker gunicorn ou à un simple rechargement de page) :
+
+```sql
+ALTER TABLE opportunites_univers ADD COLUMN IF NOT EXISTS prompt TEXT;
 ```
 
 **Table `opportunites_scan`** (2026-07-22 — persistance du dernier Top 5 du
