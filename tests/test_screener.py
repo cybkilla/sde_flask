@@ -13,6 +13,16 @@ from analysis import screener
 screener.PAUSE_ETAGE1_S    = 0   # pas de pause entre tickers dans les tests
 screener.PAUSE_RATTRAPAGE_S = 0  # pas de pause de rattrapage dans les tests
 
+# lancer_scan()/appliquer_univers()/sauvegarder_prompt() écrivent dans
+# Supabase quand la base est joignable (`db.is_available()`) — ce qui
+# arrivait bel et bien en local avec un .env valide, et a réellement
+# écrasé la table opportunites_scan de PROD avec un ticker de test "OK1"
+# le 24.07.2026 (`lancer_scan(univers=["ERR", "OK1"])` ci-dessous). Ce
+# module doit rester HORS RÉSEAU même quand des identifiants Supabase
+# valides sont disponibles dans l'environnement de dev.
+import db
+db.is_available = lambda: False
+
 
 def _attendre_fin_scan(timeout=5):
     t0 = time.time()
