@@ -1,6 +1,22 @@
 {% extends "base.html" %}
 {% block title %}SDE — Admin · Pertinence des conseils{% endblock %}
 
+{% block head %}
+<style>
+  /* Accent pastel par section admin — juste une bordure gauche + un fond
+     très légèrement teinté, pour repérer une section d'un coup d'œil sans
+     surcharger visuellement (pas de couleur vive demandée). Scopé à cette
+     page seule : .sde-card reste blanc partout ailleurs dans l'app. */
+  .sde-card.sde-accent-blue   { border-left: 4px solid #93C5FD; background: #F8FBFF; }
+  .sde-card.sde-accent-green  { border-left: 4px solid #86EFAC; background: #F7FEFA; }
+  .sde-card.sde-accent-purple { border-left: 4px solid #C4B5FD; background: #FAF9FF; }
+  .sde-card.sde-accent-indigo { border-left: 4px solid #A5B4FC; background: #F8F9FF; }
+  .sde-card.sde-accent-coral  { border-left: 4px solid #FCA5A5; background: #FFF9F9; }
+  .sde-card.sde-accent-amber  { border-left: 4px solid #FCD34D; background: #FFFDF5; }
+  .sde-card.sde-accent-pink   { border-left: 4px solid #F9A8D4; background: #FFF9FC; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="sde-ticker-header mb-3">
   <div style="flex:1">
@@ -18,7 +34,7 @@
 </div>
 
 <!-- Résumé global -->
-<div class="sde-card mb-3" id="sde-global-wrap">
+<div class="sde-card sde-accent-blue mb-3" id="sde-global-wrap">
   <div class="text-center py-4">
     <div class="spinner-border" style="color:var(--sde-teal);width:2rem;height:2rem"></div>
     <p class="text-muted mt-3" style="font-size:.85rem">Évaluation en cours…</p>
@@ -26,7 +42,7 @@
 </div>
 
 <!-- Breakdown par action -->
-<div class="sde-card mb-3 d-none" id="sde-action-wrap">
+<div class="sde-card sde-accent-green mb-3 d-none" id="sde-action-wrap">
   <h6 class="fw-semibold mb-3" style="font-size:.85rem;color:var(--sde-navy)">
     <i class="bi bi-grid-3x3-gap me-1"></i>Par type de conseil
   </h6>
@@ -34,7 +50,7 @@
 </div>
 
 <!-- Tableau par ticker -->
-<div class="sde-card d-none" id="sde-ticker-wrap">
+<div class="sde-card sde-accent-purple d-none" id="sde-ticker-wrap">
   <h6 class="fw-semibold mb-3" style="font-size:.85rem;color:var(--sde-navy)">
     <i class="bi bi-list-ul me-1"></i>Par ticker
   </h6>
@@ -42,7 +58,7 @@
 </div>
 
 <!-- Configuration des seuils de conseil (collapsible) -->
-<div class="sde-card mt-3">
+<div class="sde-card sde-accent-indigo mt-3">
   <details id="sde-config-details">
     <summary style="cursor:pointer;list-style:none;display:flex;
                     align-items:center;justify-content:space-between">
@@ -74,7 +90,7 @@
 </div>
 
 <!-- Gestion des données (collapsible) -->
-<div class="sde-card mt-3">
+<div class="sde-card sde-accent-coral mt-3">
   <details id="sde-data-details">
     <summary style="cursor:pointer;list-style:none;display:flex;
                     align-items:center;justify-content:space-between">
@@ -168,7 +184,7 @@
 </div>
 
 <!-- Scan d'opportunités (collapsible) -->
-<div class="sde-card mt-3">
+<div class="sde-card sde-accent-amber mt-3">
   <details id="sde-opp-details">
     <summary style="cursor:pointer;list-style:none;display:flex;
                     align-items:center;justify-content:space-between">
@@ -186,7 +202,7 @@
 </div>
 
 <!-- Présentation utilisateurs -->
-<div class="sde-card mt-3 d-flex align-items-center justify-content-between" style="padding:14px 18px">
+<div class="sde-card sde-accent-pink mt-3 d-flex align-items-center justify-content-between" style="padding:14px 18px">
   <div>
     <span style="font-size:.85rem;font-weight:700;color:var(--sde-navy)">
       <i class="bi bi-easel2 me-2"></i>Présentation SDE
