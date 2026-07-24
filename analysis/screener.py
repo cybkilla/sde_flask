@@ -239,7 +239,13 @@ PROMPT_SUGGESTION_DEFAUT = (
     "Liste exactement 20 tickers NASDAQ qui affichent une dynamique de "
     "performance RÉCENTE POSITIVE (en hausse sur les 5 derniers jours de "
     "bourse), pas simplement des entreprises connues ou de grosse "
-    "capitalisation — vérifie leur cours actuel avant de répondre."
+    "capitalisation — vérifie leur cours actuel avant de répondre.\n\n"
+    "Pour chaque candidat, évalue aussi où il en est dans son mouvement : "
+    "privilégie les tickers dont le potentiel de hausse semble encore "
+    "significatif (catalyseur récent pas encore pleinement intégré au "
+    "cours), et écarte ceux dont la hausse principale semble déjà "
+    "terminée — dans ce cas une consolidation ou un repli devient "
+    "probable, même si la performance sur 5 jours reste positive."
 )
 
 _state_univers = {
