@@ -33,6 +33,15 @@
       <span style="background:#F1F5F9;color:var(--sde-muted);border-radius:5px;
                    padding:2px 8px;font-size:.72rem;font-weight:500">{{ market.sector }}</span>
       {% endif %}
+      {% if res.get('market_regime') and res.market_regime.get('var_1j') is not none %}
+      {% set qv = res.market_regime.var_1j %}
+      <span title="Variation du NASDAQ (QQQ) aujourd'hui"
+            style="background:{{ '#E1F5EE' if qv >= 0 else '#FAECE7' }};
+                   color:{{ '#1D9E75' if qv >= 0 else '#D85A30' }};
+                   border-radius:5px;padding:2px 8px;font-size:.72rem;font-weight:600">
+        Nasdaq {{ '%+.1f'|format(qv) }}%
+      </span>
+      {% endif %}
     </div>
     <div class="sde-ticker-meta mt-1">
       CEO : {{ res.ceo_name or '—' }}

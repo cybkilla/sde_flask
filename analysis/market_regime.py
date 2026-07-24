@@ -84,6 +84,7 @@ def compute_regime(qqq_hist: pd.DataFrame) -> dict:
 
     ma50   = close.rolling(50).mean().iloc[-1]
     dernier = float(close.iloc[-1])
+    var_1j  = float(close.pct_change(1).iloc[-1] * 100)
     var_5j  = float(close.pct_change(5).iloc[-1] * 100)
 
     # Volatilité réalisée : écart-type des rendements quotidiens sur 20j,
@@ -101,6 +102,7 @@ def compute_regime(qqq_hist: pd.DataFrame) -> dict:
     return {
         "regime":      regime,
         "volatil":     vol_ann > SEUIL_VOL_ANNUALISEE,
+        "var_1j":      round(var_1j, 2),   # variation NASDAQ (QQQ) du jour — affichée en en-tête ticker
         "var_5j":      round(var_5j, 2),
         "vs_ma50_pct": round((dernier / float(ma50) - 1) * 100, 2),
         "vol_20j_ann": round(vol_ann, 1),
