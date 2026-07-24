@@ -858,6 +858,13 @@
     return rsi.toFixed(0);
   }
 
+  function oppPerf5jHtml(var_5d) {
+    if (var_5d == null) return `<span style="color:var(--sde-muted)">—</span>`;
+    const color = var_5d >= 0 ? "#1D9E75" : "#D85A30";
+    const txt   = `${var_5d >= 0 ? "+" : ""}${var_5d.toFixed(1)}%`;
+    return `<span style="color:${color};font-weight:600">${txt}</span>`;
+  }
+
   function oppRenderEmpty(msg) {
     document.getElementById("sde-scan-wrap").innerHTML = `
       <div class="text-center py-4">
@@ -892,6 +899,7 @@
             <th style="padding:6px 8px;text-align:right">Score global</th>
             <th style="padding:6px 8px;text-align:left">Conseil</th>
             <th style="padding:6px 8px;text-align:right">RSI</th>
+            <th style="padding:6px 8px;text-align:right">Perf 5j</th>
             <th style="padding:6px 8px;text-align:right">Prix</th>
             <th style="padding:6px 8px"></th>
           </tr>
@@ -921,6 +929,7 @@
                   ${oppSuggestionAchat(r, color)}
                 </td>
                 <td style="padding:8px;text-align:right">${oppRsiBadge(r.rsi)}</td>
+                <td style="padding:8px;text-align:right">${oppPerf5jHtml(r.var_5d)}</td>
                 <td style="padding:8px;text-align:right">${r.prix != null ? "$" + r.prix.toFixed(2) : "—"}</td>
                 <td style="padding:8px;text-align:right">
                   <a href="/analyze/${r.ticker}" data-sde-loading="Analyse de ${r.ticker}…"

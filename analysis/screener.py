@@ -143,6 +143,7 @@ def _scan_complet(ticker: str) -> dict | None:
             # deux (discuté avec l'utilisateur le 23.07.2026 sur le cas ADVB,
             # RSI 79 mais ACHETER car momentum fort par ailleurs).
             "rsi":            res["market"].get("rsi"),
+            "var_5d":         res["market"].get("var_5d"),
         }
     except Exception as e:
         print(f"[Screener] étage 2 échoué pour {ticker} : {e}", flush=True)
