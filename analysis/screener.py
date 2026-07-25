@@ -42,6 +42,14 @@ N_TOP       = 5    # taille du Top affiché
 PAUSE_ETAGE1_S     = 3    # espacement entre tickers à l'étage 1 (0 dans les tests)
 PAUSE_RATTRAPAGE_S  = 65  # pause avant le passage de rattrapage groupé (0 dans les tests)
 
+# RSI > 70 = zone de surachat (même seuil que le signal "rsi_surachat" de
+# analysis/scoring.py) — filtré du Top 5 (24.07.2026) : un ticker déjà en
+# surachat a probablement déjà fait le plus gros de son mouvement, ce n'est
+# plus une opportunité D'ENTRÉE, même si son score technique reste élevé
+# (momentum non pénalisé au niveau du SCORE lui-même, cf. discussion ADVB
+# du 23.07.2026 — le spéculatif n'est pas le problème, le TIMING l'est).
+RSI_SURACHAT_SEUIL = 70
+
 _lock = threading.Lock()
 _TABLE_SCAN = "opportunites_scan"
 
@@ -119,6 +127,7 @@ def _scan_technique(ticker: str) -> dict | None:
             "ticker":       ticker,
             "company_name": data.get("company_name", ticker),
             "score_tech":   tech["score"],
+            "rsi":          data.get("rsi"),
         }
     except Exception as e:
         print(f"[Screener] étage 1 échoué pour {ticker} : {e}", flush=True)
@@ -195,13 +204,23 @@ def lancer_scan(univers: list[str] | None = None) -> bool:
                         time.sleep(PAUSE_ETAGE1_S)
 
             candidats.sort(key=lambda r: r["score_tech"], reverse=True)
+            # Filtre d'ENTRÉE : un ticker déjà en surachat n'est plus une
+            # opportunité, même bien classé techniquement (cf. RSI_SURACHAT_SEUIL
+            # ci-dessus). Peut réduire le nombre de candidats, voire les vider
+            # tous un jour de rallye généralisé — résultat attendu, pas un bug.
+            candidats = [c for c in candidats
+                         if c.get("rsi") is None or c["rsi"] <= RSI_SURACHAT_SEUIL]
             shortlist = candidats[:N_SHORTLIST]
 
             resultats = []
             for i, c in enumerate(shortlist):
                 _state["progression"] = f"Analyse complète {i + 1}/{len(shortlist)} ({c['ticker']})"
                 r = _scan_complet(c["ticker"])
-                if r:
+                # Deuxième passage du même filtre : pipeline.run() peut réutiliser
+                # un snapshot légèrement différent de l'appel étage 1 (cache),
+                # le RSI a pu évoluer entre-temps — garantit qu'aucun ticker
+                # affiché en Top 5 n'est en surachat, même dans ce cas limite.
+                if r and (r.get("rsi") is None or r["rsi"] <= RSI_SURACHAT_SEUIL):
                     resultats.append(r)
 
             resultats.sort(key=lambda r: r["score_global"], reverse=True)

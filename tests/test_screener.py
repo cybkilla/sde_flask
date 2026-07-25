@@ -101,6 +101,34 @@ assert state["erreur"] is None   # une erreur ticker isolée ne fait pas planter
 assert [r["ticker"] for r in state["resultats"]] == ["OK1"]
 print("✓ résilience : un ticker en échec à l'étage 1 est écarté sans casser le scan")
 
+
+# ── Filtre RSI surachat : un ticker déjà en surachat n'est plus une
+#    opportunité d'ENTRÉE, même bien classé techniquement (24.07.2026) ──
+screener._scan_technique = lambda t: {
+    "ticker": t, "company_name": t, "score_tech": 80,
+    "rsi": {"LOW": 40, "HIGH": 85, "SEUIL": 70, "DRIFT": 50}[t],
+}
+screener._scan_complet = lambda t: {
+    "ticker": t, "company_name": t, "score_global": 60, "recommandation": "ACHETER",
+    "prix": 10.0, "divergence": None,
+    # DRIFT : passe l'étage 1 (RSI 50) mais son RSI a "dérivé" au-dessus du
+    # seuil au moment de l'étage 2 (cache différent) -> doit être rattrapé
+    # par le deuxième filtre, pas seulement le premier.
+    "rsi": {"LOW": 40, "SEUIL": 70, "DRIFT": 78}.get(t),
+}
+screener._state["resultats"] = []
+
+ok = screener.lancer_scan(univers=["LOW", "HIGH", "SEUIL", "DRIFT"])
+assert ok is True
+_attendre_fin_scan()
+tickers_finaux = [r["ticker"] for r in screener.get_scan_state()["resultats"]]
+assert "HIGH" not in tickers_finaux    # filtré dès l'étage 1 (RSI 85 > 70)
+assert "DRIFT" not in tickers_finaux   # rattrapé par le filtre étage 2 (RSI 78 > 70)
+assert "LOW" in tickers_finaux
+assert "SEUIL" in tickers_finaux       # RSI exactement 70 -> <= seuil -> accepté (pas < strict)
+print("✓ lancer_scan : filtre le surachat (RSI > 70) à l'étage 1 ET à l'étage 2")
+
+
 # ── Extraction de tickers depuis un texte libre (pure, hors réseau) ──
 # La suggestion IA doit dédoublonner, garder l'ordre d'apparition, et ne
 # jamais planter même si le LLM ignore le format demandé.
