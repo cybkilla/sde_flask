@@ -73,6 +73,31 @@ CREATE TABLE opportunites_univers (
   CHECK (id = 1)
 );
 
+-- Historique du Top 5 opportunités, pour évaluation multi-horizons
+-- (une ligne par ticker par scan, jamais single-row)
+CREATE TABLE opportunites_historique (
+  id             SERIAL PRIMARY KEY,
+  ticker         TEXT NOT NULL,
+  company_name   TEXT,
+  date_scan      DATE NOT NULL,
+  score_global   FLOAT,
+  recommandation TEXT,
+  prix_scan      FLOAT NOT NULL,
+  rsi            FLOAT,
+  var_5d         FLOAT,
+  prix_j1        FLOAT,
+  variation_j1   FLOAT,
+  bon_j1         BOOLEAN,
+  prix_j5        FLOAT,
+  variation_j5   FLOAT,
+  bon_j5         BOOLEAN,
+  prix_j20       FLOAT,
+  variation_j20  FLOAT,
+  bon_j20        BOOLEAN,
+  evaluated_at   TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ DEFAULT now()
+);
+
 -- Lots d'achat ET de vente par utilisateur (supporte le DCA et les ventes partielles)
 CREATE TABLE positions (
   id           SERIAL PRIMARY KEY,
@@ -157,6 +182,41 @@ nouvelle colonne ajoutée ici.
 ---
 
 ## Migrations sur une installation existante
+
+**Table `opportunites_historique`** (2026-07-24 — évaluation multi-horizons
+(J+1/J+5/J+20) du Top 5 du scan d'opportunités : jusqu'ici aucune ligne
+n'était confrontée à la réalité après coup, chaque évaluation se faisait
+"à l'œil" ticker par ticker. Voir analysis/opportunites_evaluator.py —
+même logique que daily_advice, mais jugement simplifié (le Top 5 est
+toujours un pari implicite à la hausse, pas de TENIR/VENDRE à distinguer).
+Une ligne PAR TICKER PAR SCAN, pas single-row) :
+
+```sql
+CREATE TABLE IF NOT EXISTS opportunites_historique (
+  id             SERIAL PRIMARY KEY,
+  ticker         TEXT NOT NULL,
+  company_name   TEXT,
+  date_scan      DATE NOT NULL,
+  score_global   FLOAT,
+  recommandation TEXT,
+  prix_scan      FLOAT NOT NULL,
+  rsi            FLOAT,
+  var_5d         FLOAT,
+  prix_j1        FLOAT,
+  variation_j1   FLOAT,
+  bon_j1         BOOLEAN,
+  prix_j5        FLOAT,
+  variation_j5   FLOAT,
+  bon_j5         BOOLEAN,
+  prix_j20       FLOAT,
+  variation_j20  FLOAT,
+  bon_j20        BOOLEAN,
+  evaluated_at   TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE opportunites_historique ENABLE ROW LEVEL SECURITY;
+```
 
 **Table `opportunites_univers`** (2026-07-23 — override persisté de l'univers
 de scan d'opportunités : par défaut `UNIVERS_SCAN` dans analysis/screener.py,

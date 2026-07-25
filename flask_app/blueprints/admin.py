@@ -328,11 +328,14 @@ def opportunites_bootstrap():
     _require_admin()
     from analysis.screener import get_scan_state, get_univers_actif, get_suggestion_state
     from portfolio.positions import get_cash_disponible
+    from analysis.opportunites_evaluator import evaluate_pending, get_stats
+    evaluate_pending()   # complète les évaluations J+1/J+5/J+20 en attente
     return jsonify({
         "state":            get_scan_state(),
         "suggestion_state": get_suggestion_state(),
         "cash_dispo":       get_cash_disponible(current_user.id),
         "univers_actif":    get_univers_actif(),
+        "historique_stats": get_stats(),
     })
 
 

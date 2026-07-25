@@ -762,6 +762,25 @@
      ══════════════════════════════════════════════════════════════════ */
   let oppPolling = null, oppPollingUnivers = null;
 
+  function _contenuHistoriqueOpp(stats) {
+    if (!stats || !stats.total) {
+      return `<p class="small text-muted mt-2" style="font-size:.72rem">
+        <i class="bi bi-graph-up me-1"></i>Historique : pas encore assez de recul pour évaluer le Top 5
+        (chaque scan s'accumule ; résultats visibles après quelques jours de bourse).
+      </p>`;
+    }
+    const parts = [["j1", "J+1"], ["j5", "J+5"], ["j20", "J+20"]].map(([key, label]) => {
+      const h = stats[key];
+      return (!h || h.evalues === 0) ? `${label} : —` : `${label} : <strong>${h.taux_pct}%</strong> (${h.evalues})`;
+    }).join(" · ");
+    const gain = stats.gain_j20_moyen != null
+      ? ` · gain moyen J+20 : <strong style="color:${stats.gain_j20_moyen >= 0 ? '#1D9E75' : '#D85A30'}">${stats.gain_j20_moyen >= 0 ? "+" : ""}${stats.gain_j20_moyen}%</strong>`
+      : "";
+    return `<p class="small text-muted mt-2" style="font-size:.72rem">
+      <i class="bi bi-graph-up me-1"></i>Historique (${stats.total} pick${stats.total > 1 ? "s" : ""} évalué${stats.total > 1 ? "s" : ""}) — ${parts}${gain}
+    </p>`;
+  }
+
   function _contenuOpportunites(data) {
     const cash = data.cash_dispo;
     return `
@@ -796,6 +815,7 @@
         seulement (budget API). Scan déclenché manuellement, jamais automatique. Quantité suggérée =
         tout le cash sur ce seul ticker, pas une répartition entre les 5.
       </p>
+      ${_contenuHistoriqueOpp(data.historique_stats)}
 
       <div style="border-top:1px solid var(--sde-border);padding-top:14px;margin-top:10px">
         <details id="sde-univers-details">

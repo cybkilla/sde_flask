@@ -446,6 +446,16 @@ def check_all():
     except Exception as e:
         print(f"[Scheduler] evaluate_pending erreur : {e}", flush=True)
 
+    # ── Idem pour le Top 5 du scan d'opportunités (même leçon : ne pas
+    #    dépendre uniquement d'une visite du dashboard admin) ──
+    try:
+        from analysis.opportunites_evaluator import evaluate_pending as evaluate_opportunites
+        r = evaluate_opportunites(days_back=60)
+        if r.get("evaluated"):
+            print(f"[Scheduler] Évaluations opportunités complétées : {r}", flush=True)
+    except Exception as e:
+        print(f"[Scheduler] evaluate_opportunites erreur : {e}", flush=True)
+
     print(f"[Scheduler] Terminé — {len(seen_tickers)} ticker(s) vérifiés", flush=True)
 
 

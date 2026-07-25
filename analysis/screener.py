@@ -208,6 +208,12 @@ def lancer_scan(univers: list[str] | None = None) -> bool:
             _state["resultats"]    = resultats[:N_TOP]
             _state["derniere_maj"] = datetime.now(timezone.utc).isoformat()
             _persister_resultats()
+
+            # Historique pour évaluation future (J+1/J+5/J+20) — voir
+            # analysis/opportunites_evaluator.py. Séparé de _persister_resultats
+            # (qui ne garde que le DERNIER Top 5) : ici chaque scan s'accumule.
+            from analysis.opportunites_evaluator import enregistrer_resultats
+            enregistrer_resultats(_state["resultats"])
         except Exception as e:
             _state["erreur"] = str(e)
             print(f"[Screener] scan erreur : {e}", flush=True)

@@ -33,6 +33,7 @@ SCHEMA_ATTENDU = {
     "auth_tokens":         [],
     "opportunites_scan":   [],   # scan d'opportunités admin 2026-07-22
     "opportunites_univers": ["prompt"],  # override univers de scan (suggestion IA) 2026-07-23, prompt sauvegardé 2026-07-24
+    "opportunites_historique": [],  # évaluation multi-horizons du Top 5 2026-07-24
 }
 
 
