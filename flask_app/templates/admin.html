@@ -790,7 +790,7 @@
           ${cash != null ? `· <strong style="color:var(--sde-teal)">$${cash.toFixed(2)}</strong> de cash disponible` : ""}
         </div>
         <div class="d-flex gap-2">
-          <button class="sde-nav-btn" onclick="oppRafraichir()" title="Recharger le dernier résultat (sans relancer un scan)">
+          <button class="sde-nav-btn" onclick="oppRafraichir(this)" title="Recharger le dernier résultat (sans relancer un scan)">
             <i class="bi bi-arrow-clockwise me-1"></i>Rafraîchir
           </button>
           <button class="sde-nav-btn" id="sde-scan-btn" onclick="oppLancerScan()">
@@ -1028,7 +1028,38 @@
     });
   };
 
-  window.oppRafraichir = oppPoll;
+  window.oppRafraichir = function (btn) {
+    // Bouton séparé de oppPoll (utilisé aussi par l'intervalle de scan
+    // actif, où un spinner toutes les 3s serait du bruit visuel) — ici,
+    // au contraire, il FAUT un retour visible : c'était le problème
+    // signalé ("j'ai l'impression que ça ne fait rien") quand l'état
+    // n'avait pas changé depuis le chargement de la page (cas le plus
+    // fréquent : aucun autre scan lancé entre-temps).
+    const original = btn ? btn.innerHTML : null;
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Actualisation…';
+    }
+    fetch("/admin/opportunites/status")
+      .then(r => r.json())
+      .then(state => {
+        if (state.en_cours) {
+          oppRenderProgress(state);
+          if (!oppPolling) oppPolling = setInterval(oppPoll, 3000);
+        } else if (state.erreur) {
+          oppRenderEmpty(`Erreur pendant le scan : ${state.erreur}`);
+        } else {
+          oppRenderResultats(state);
+        }
+      })
+      .finally(() => {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Actualisé !';
+          setTimeout(() => { btn.innerHTML = original; }, 1200);
+        }
+      });
+  };
 
   function oppRenderSuggestionWrap(html) {
     document.getElementById("sde-univers-suggestion-wrap").innerHTML = html;
