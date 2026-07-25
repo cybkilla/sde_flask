@@ -812,9 +812,11 @@
       <p class="small text-muted mt-2" style="font-size:.72rem">
         <i class="bi bi-info-circle me-1"></i>
         Filtre technique rapide sur tout l'univers, puis pipeline SDE complet sur les 10 meilleurs
-        seulement (budget API). Les tickers déjà en surachat (RSI &gt; 70) sont exclus — le mouvement
-        a probablement déjà eu lieu, ce n'est plus une opportunité d'entrée. Scan déclenché manuellement,
-        jamais automatique. Quantité suggérée = tout le cash sur ce seul ticker, pas une répartition entre les 5.
+        seulement (budget API). Deux filtres d'entrée excluent un ticker : déjà en surachat
+        (RSI &gt; 70, le mouvement a probablement déjà eu lieu) ou en forte chute CE JOUR-LÀ
+        (&gt; 8%, retournement que le RSI lissé sur 14 jours peut ne pas encore montrer).
+        Scan déclenché manuellement, jamais automatique. Quantité suggérée = tout le cash sur
+        ce seul ticker, pas une répartition entre les 5.
       </p>
       ${_contenuHistoriqueOpp(data.historique_stats)}
 

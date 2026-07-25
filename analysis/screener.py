@@ -50,6 +50,14 @@ PAUSE_RATTRAPAGE_S  = 65  # pause avant le passage de rattrapage groupé (0 dans
 # du 23.07.2026 — le spéculatif n'est pas le problème, le TIMING l'est).
 RSI_SURACHAT_SEUIL = 70
 
+# Filtre complémentaire (25.07.2026) : un RSI(14) lissé peut rester sous le
+# seuil de surachat même en pleine séance de retournement brutal — un seul
+# mauvais jour pèse peu dans une moyenne sur 14. Repéré en réel sur NBIS
+# (var_5d +28.6%, RSI 51.6 "sain") qui perdait pourtant -15% CE JOUR-LÀ.
+# var_1d < seuil -> exclu, en plus du RSI : un ticker qui plonge le jour
+# même du scan n'est pas un point d'entrée, peu importe sa tendance récente.
+VAR_1D_CHUTE_SEUIL = -8.0
+
 _lock = threading.Lock()
 _TABLE_SCAN = "opportunites_scan"
 
@@ -108,6 +116,23 @@ def get_scan_state() -> dict:
     return dict(_state)
 
 
+def _passe_filtre_entree(d: dict) -> bool:
+    """
+    Un ticker n'est une opportunité D'ENTRÉE valable que s'il n'est NI en
+    surachat (RSI, extension étalée sur plusieurs jours) NI en train de
+    plonger CE JOUR-LÀ (var_1d, retournement brutal qu'un RSI lissé sur 14
+    jours peut ne pas encore refléter) — deux signaux de timing distincts
+    et complémentaires. Fonction PURE, utilisée aux deux étages du scan.
+    """
+    rsi    = d.get("rsi")
+    var_1d = d.get("var_1d")
+    if rsi is not None and rsi > RSI_SURACHAT_SEUIL:
+        return False
+    if var_1d is not None and var_1d < VAR_1D_CHUTE_SEUIL:
+        return False
+    return True
+
+
 def _scan_technique(ticker: str) -> dict | None:
     """
     Étage 1 : score technique seul, pas de news/LLM. Rapide et peu coûteux —
@@ -128,6 +153,7 @@ def _scan_technique(ticker: str) -> dict | None:
             "company_name": data.get("company_name", ticker),
             "score_tech":   tech["score"],
             "rsi":          data.get("rsi"),
+            "var_1d":       data.get("var_1d"),
         }
     except Exception as e:
         print(f"[Screener] étage 1 échoué pour {ticker} : {e}", flush=True)
@@ -153,6 +179,7 @@ def _scan_complet(ticker: str) -> dict | None:
             # RSI 79 mais ACHETER car momentum fort par ailleurs).
             "rsi":            res["market"].get("rsi"),
             "var_5d":         res["market"].get("var_5d"),
+            "var_1d":         res["market"].get("var_1d"),
         }
     except Exception as e:
         print(f"[Screener] étage 2 échoué pour {ticker} : {e}", flush=True)
@@ -204,12 +231,12 @@ def lancer_scan(univers: list[str] | None = None) -> bool:
                         time.sleep(PAUSE_ETAGE1_S)
 
             candidats.sort(key=lambda r: r["score_tech"], reverse=True)
-            # Filtre d'ENTRÉE : un ticker déjà en surachat n'est plus une
-            # opportunité, même bien classé techniquement (cf. RSI_SURACHAT_SEUIL
-            # ci-dessus). Peut réduire le nombre de candidats, voire les vider
-            # tous un jour de rallye généralisé — résultat attendu, pas un bug.
-            candidats = [c for c in candidats
-                         if c.get("rsi") is None or c["rsi"] <= RSI_SURACHAT_SEUIL]
+            # Filtre d'ENTRÉE (RSI + var_1d, cf. _passe_filtre_entree) : un
+            # ticker en surachat ou en train de plonger aujourd'hui n'est plus
+            # une opportunité, même bien classé techniquement. Peut réduire le
+            # nombre de candidats, voire les vider tous un jour de rallye
+            # généralisé (ou de repli brutal) — résultat attendu, pas un bug.
+            candidats = [c for c in candidats if _passe_filtre_entree(c)]
             shortlist = candidats[:N_SHORTLIST]
 
             resultats = []
@@ -218,9 +245,9 @@ def lancer_scan(univers: list[str] | None = None) -> bool:
                 r = _scan_complet(c["ticker"])
                 # Deuxième passage du même filtre : pipeline.run() peut réutiliser
                 # un snapshot légèrement différent de l'appel étage 1 (cache),
-                # le RSI a pu évoluer entre-temps — garantit qu'aucun ticker
-                # affiché en Top 5 n'est en surachat, même dans ce cas limite.
-                if r and (r.get("rsi") is None or r["rsi"] <= RSI_SURACHAT_SEUIL):
+                # RSI/var_1d ont pu évoluer entre-temps — garantit qu'aucun
+                # ticker affiché en Top 5 ne les enfreint, même en cas limite.
+                if r and _passe_filtre_entree(r):
                     resultats.append(r)
 
             resultats.sort(key=lambda r: r["score_global"], reverse=True)

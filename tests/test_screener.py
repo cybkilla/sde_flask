@@ -102,11 +102,22 @@ assert [r["ticker"] for r in state["resultats"]] == ["OK1"]
 print("✓ résilience : un ticker en échec à l'étage 1 est écarté sans casser le scan")
 
 
-# ── Filtre RSI surachat : un ticker déjà en surachat n'est plus une
-#    opportunité d'ENTRÉE, même bien classé techniquement (24.07.2026) ──
+# ── _passe_filtre_entree : RSI surachat + chute du jour même (24.07 et
+#    25.07.2026) — deux signaux de timing distincts, fonction pure ──
+assert screener._passe_filtre_entree({"rsi": 40, "var_1d": 2.0}) is True
+assert screener._passe_filtre_entree({"rsi": 85, "var_1d": 2.0}) is False    # surachat
+assert screener._passe_filtre_entree({"rsi": 40, "var_1d": -15.0}) is False  # plonge aujourd'hui
+assert screener._passe_filtre_entree({"rsi": 70, "var_1d": -8.0}) is True    # exactement aux seuils -> accepté
+assert screener._passe_filtre_entree({"rsi": None, "var_1d": None}) is True  # données absentes -> pas de blocage
+print("✓ _passe_filtre_entree : surachat (RSI) et chute du jour (var_1d) filtrent indépendamment")
+
+
+# ── lancer_scan applique bien ce filtre aux DEUX étages ──
+screener.N_SHORTLIST = 10   # restauré (mis à 2 par le tout premier test du fichier)
 screener._scan_technique = lambda t: {
     "ticker": t, "company_name": t, "score_tech": 80,
-    "rsi": {"LOW": 40, "HIGH": 85, "SEUIL": 70, "DRIFT": 50}[t],
+    "rsi":    {"LOW": 40, "HIGH": 85, "SEUIL": 70, "DRIFT": 50, "CRASH": 40, "DIP8": 40}[t],
+    "var_1d": {"LOW": 1.0, "HIGH": 1.0, "SEUIL": 1.0, "DRIFT": 1.0, "CRASH": -15.0, "DIP8": -8.0}[t],
 }
 screener._scan_complet = lambda t: {
     "ticker": t, "company_name": t, "score_global": 60, "recommandation": "ACHETER",
@@ -114,19 +125,22 @@ screener._scan_complet = lambda t: {
     # DRIFT : passe l'étage 1 (RSI 50) mais son RSI a "dérivé" au-dessus du
     # seuil au moment de l'étage 2 (cache différent) -> doit être rattrapé
     # par le deuxième filtre, pas seulement le premier.
-    "rsi": {"LOW": 40, "SEUIL": 70, "DRIFT": 78}.get(t),
+    "rsi":    {"LOW": 40, "SEUIL": 70, "DRIFT": 78, "CRASH": 40, "DIP8": 40}.get(t),
+    "var_1d": {"LOW": 1.0, "SEUIL": 1.0, "DRIFT": 1.0, "CRASH": -15.0, "DIP8": -8.0}.get(t),
 }
 screener._state["resultats"] = []
 
-ok = screener.lancer_scan(univers=["LOW", "HIGH", "SEUIL", "DRIFT"])
+ok = screener.lancer_scan(univers=["LOW", "HIGH", "SEUIL", "DRIFT", "CRASH", "DIP8"])
 assert ok is True
 _attendre_fin_scan()
 tickers_finaux = [r["ticker"] for r in screener.get_scan_state()["resultats"]]
 assert "HIGH" not in tickers_finaux    # filtré dès l'étage 1 (RSI 85 > 70)
 assert "DRIFT" not in tickers_finaux   # rattrapé par le filtre étage 2 (RSI 78 > 70)
+assert "CRASH" not in tickers_finaux   # var_1d -15% < -8% -> exclu (plonge aujourd'hui)
 assert "LOW" in tickers_finaux
-assert "SEUIL" in tickers_finaux       # RSI exactement 70 -> <= seuil -> accepté (pas < strict)
-print("✓ lancer_scan : filtre le surachat (RSI > 70) à l'étage 1 ET à l'étage 2")
+assert "SEUIL" in tickers_finaux       # RSI exactement 70 -> accepté (pas < strict)
+assert "DIP8" in tickers_finaux        # var_1d exactement -8% -> accepté (pas < strict)
+print("✓ lancer_scan : filtre surachat (RSI) et chute du jour (var_1d) aux deux étages")
 
 
 # ── Extraction de tickers depuis un texte libre (pure, hors réseau) ──
