@@ -910,6 +910,11 @@
           <input type="text" id="sde-pos-notes" class="form-control form-control-sm"
                  placeholder="ex : Allégement partiel">
         </div>
+        <div id="sde-pos-momentum-warning" class="d-none mb-2"
+             style="font-size:.75rem;color:#92400E;background:#FEF3C7;border-radius:6px;padding:6px 10px">
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>
+          <span id="sde-pos-momentum-text"></span>
+        </div>
         <div id="sde-pos-error" class="text-danger small mb-2 d-none"></div>
         <button class="btn btn-sm w-100 fw-semibold" id="sde-pos-submit-btn"
                 onclick="sdePortfolio.submitAdd()"
@@ -933,10 +938,12 @@
 /* ── Portfolio & Conseil ────────────────────────────────────────────────── */
 {% if current_user.is_authenticated %}
 window.sdePortfolio = (function () {
-  const TICKER     = "{{ ticker }}";
-  const COMPANY    = "{{ res.company_name | e }}";
-  const SYM        = "{{ sym }}";
-  const LIVE_PRICE = {{ market.price | tojson }};
+  const TICKER      = "{{ ticker }}";
+  const COMPANY     = "{{ res.company_name | e }}";
+  const SYM         = "{{ sym }}";
+  const LIVE_PRICE  = {{ market.price | tojson }};
+  const MARKET_VAR_5D = {{ market.var_5d | tojson }};
+  const MARKET_RSI    = {{ market.rsi | tojson }};
 
   const ACTION_COLOR = {
     ACHETER:    "#1D9E75", RENFORCER: "#15803d",
@@ -1209,6 +1216,24 @@ window.sdePortfolio = (function () {
       : isImport
       ? '<i class="bi bi-check-circle me-1"></i>Enregistrer la position importée'
       : '<i class="bi bi-check-circle me-1"></i>Enregistrer';
+
+    // Avertissement "mouvement déjà bien entamé" — uniquement pour un
+    // ACHAT (import/vente ne sont pas des décisions de timing d'entrée).
+    // Seuil +15% sur 5j : repéré en réel sur FCEL (acheté après +35% sur
+    // 5j, -13% le lendemain) — voir memory 24.07.2026.
+    const warnEl  = document.getElementById("sde-pos-momentum-warning");
+    const warnTxt = document.getElementById("sde-pos-momentum-text");
+    const gros5j  = MARKET_VAR_5D != null && MARKET_VAR_5D > 15;
+    const surachat = MARKET_RSI != null && MARKET_RSI > 70;
+    if (!isVente && !isImport && (gros5j || surachat)) {
+      warnTxt.textContent =
+        (gros5j ? `${TICKER} a déjà pris +${MARKET_VAR_5D.toFixed(1)}% sur 5 jours` : `${TICKER} est en zone de surachat (RSI ${MARKET_RSI.toFixed(0)})`) +
+        (gros5j && surachat ? ` (RSI ${MARKET_RSI.toFixed(0)}, surachat)` : "") +
+        " — la hausse est peut-être déjà bien entamée, le risque de repli à court terme est plus élevé qu'à l'entrée.";
+      warnEl.classList.remove("d-none");
+    } else {
+      warnEl.classList.add("d-none");
+    }
   }
 
   let _conseilDate    = null;
