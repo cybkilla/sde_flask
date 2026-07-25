@@ -237,7 +237,16 @@ def lancer_scan(univers: list[str] | None = None) -> bool:
 # actif est une étape SÉPARÉE et EXPLICITE (jamais de remplacement silencieux).
 
 _TABLE_UNIVERS = "opportunites_univers"
-_lock_univers  = threading.Lock()
+
+# Plusieurs IA plutôt qu'une seule (24.07.2026) : chaque IA a ses propres
+# biais de suggestion — un ticker proposé indépendamment par PLUSIEURS
+# sources est un signal de consensus plus fort qu'une suggestion isolée.
+# "gemini" reste la seule à avoir un appel API automatique (grounding
+# Google Search, cf. suggerer_univers) ; gpt/autre sont toujours en
+# collage manuel (aucune IA tierce n'est intégrée par API dans ce projet).
+SOURCES_IA        = ("gemini", "gpt", "autre")
+MAX_UNIVERS_FUSION = 20   # taille visée pour l'univers final, comme UNIVERS_SCAN
+_locks_ia         = {src: threading.Lock() for src in SOURCES_IA}
 
 PROMPT_SUGGESTION_DEFAUT = (
     "Tu es un analyste financier. Réponds UNIQUEMENT avec des symboles "
@@ -256,11 +265,18 @@ PROMPT_SUGGESTION_DEFAUT = (
 )
 
 _state_univers = {
-    "en_cours":    False,
-    "progression": None,
-    "suggestion":  None,   # liste de dicts {ticker, company_name, prix, var_5d}, pas encore appliquée
-    "erreur":      None,
-    "prompt":      PROMPT_SUGGESTION_DEFAUT,   # dernier prompt utilisé (éditable côté UI)
+    "prompt": PROMPT_SUGGESTION_DEFAUT,   # UN SEUL prompt, partagé entre les 3 sources
+                                           # (même question posée à plusieurs IA — sinon
+                                           # le consensus ne veut plus rien dire)
+    "sources": {
+        src: {
+            "en_cours":    False,
+            "progression": None,
+            "suggestion":  None,   # liste de dicts {ticker, company_name, prix, var_5d}
+            "erreur":      None,
+        }
+        for src in SOURCES_IA
+    },
 }
 _hydrate_prompt_tentee = False   # une seule tentative de rechargement Supabase par process
 
@@ -276,6 +292,36 @@ def get_univers_actif() -> list[str]:
     except Exception as e:
         print(f"[Screener] lecture univers actif échouée : {e}", flush=True)
     return UNIVERS_SCAN
+
+
+def _fusionner_sources(sources: dict) -> list[dict]:
+    """
+    Fusionne les suggestions des différentes IA en une seule liste :
+    un ticker proposé par PLUSIEURS sources est priorisé (consensus), le
+    reste est classé par performance récente (var_5d) décroissante — même
+    logique que le tri à source unique, simplement appliquée après fusion.
+    Fonction PURE — testable sans réseau. Robuste par construction si une
+    ou plusieurs sources n'ont encore rien produit (`.get(...) or []`) :
+    aucune source renseignée -> liste vide, pas d'erreur.
+    """
+    par_ticker: dict[str, dict] = {}
+    for src, etat in (sources or {}).items():
+        for item in (etat or {}).get("suggestion") or []:
+            t = item["ticker"]
+            if t not in par_ticker:
+                par_ticker[t] = {**item, "sources": []}
+            if src not in par_ticker[t]["sources"]:
+                par_ticker[t]["sources"].append(src)
+
+    fusion = list(par_ticker.values())
+    # Tri à deux clés, toutes deux décroissantes via reverse=True :
+    # d'abord le nombre de sources en consensus, puis la perf récente.
+    fusion.sort(
+        key=lambda d: (len(d["sources"]),
+                       d["var_5d"] if d["var_5d"] is not None else float("-inf")),
+        reverse=True,
+    )
+    return fusion[:MAX_UNIVERS_FUSION]
 
 
 def get_suggestion_state() -> dict:
@@ -295,7 +341,11 @@ def get_suggestion_state() -> dict:
                     _state_univers["prompt"] = row["prompt"]
         except Exception as e:
             print(f"[Screener] rechargement prompt échoué : {e}", flush=True)
-    return dict(_state_univers)
+    return {
+        "prompt":  _state_univers["prompt"],
+        "sources": {src: dict(etat) for src, etat in _state_univers["sources"].items()},
+        "fusion":  _fusionner_sources(_state_univers["sources"]),
+    }
 
 
 def sauvegarder_prompt(prompt: str):
@@ -375,7 +425,7 @@ def _extraire_tickers(texte: str, limite: int = 30) -> list[str]:
     return candidats[:limite]
 
 
-def _traiter_reponse_ia(texte: str) -> list[dict]:
+def _traiter_reponse_ia(texte: str, etat: dict = None) -> list[dict]:
     """
     Pipeline partagé entre le mode automatique (appel Gemini) et le mode
     collage manuel (copié depuis l'interface web d'une IA, pour contourner
@@ -384,12 +434,16 @@ def _traiter_reponse_ia(texte: str) -> list[dict]:
     tickers, validation réelle (get_market_data), tri par performance
     récente décroissante — la partie qui compte vraiment pour la qualité du
     résultat, peu importe QUI a proposé les candidats.
+
+    `etat` (optionnel) : sous-dict de progression À METTRE À JOUR (une des 3
+    sources IA) — None quand appelé hors contexte d'état partagé (tests).
     """
     candidats = _extraire_tickers(texte)
 
     valides = []
     for i, ticker in enumerate(candidats):
-        _state_univers["progression"] = f"Vérification {i + 1}/{len(candidats)} ({ticker})"
+        if etat is not None:
+            etat["progression"] = f"Vérification {i + 1}/{len(candidats)} ({ticker})"
         detail = _valider_ticker(ticker)
         if detail:
             valides.append(detail)
@@ -412,38 +466,44 @@ def _traiter_reponse_ia(texte: str) -> list[dict]:
     return valides
 
 
-def analyser_texte_univers(texte: str) -> bool:
+def analyser_texte_univers(texte: str, source: str) -> bool:
     """
     Mode manuel : l'utilisateur copie le prompt affiché côté UI dans une IA
-    de son choix (Gemini, ChatGPT...) depuis son propre navigateur — jamais
-    bloqué géographiquement, contrairement à un appel serveur depuis Render
-    EU — puis colle la réponse ici. Même pipeline d'extraction/validation/
-    tri que le mode automatique (_traiter_reponse_ia), sans appel réseau
-    vers une API IA côté serveur.
+    de son choix (Gemini, ChatGPT, autre) depuis son propre navigateur —
+    jamais bloqué géographiquement, contrairement à un appel serveur depuis
+    Render EU — puis colle la réponse dans l'onglet correspondant à CETTE
+    source. Même pipeline d'extraction/validation/tri que le mode
+    automatique (_traiter_reponse_ia), sans appel réseau vers une API IA
+    côté serveur. `source` doit être l'une de SOURCES_IA (un onglet) —
+    permet à plusieurs IA de contribuer en parallèle à la fusion finale.
     """
-    if not _lock_univers.acquire(blocking=False):
+    if source not in SOURCES_IA:
+        raise ValueError(f"Source IA inconnue : {source}")
+    lock = _locks_ia[source]
+    if not lock.acquire(blocking=False):
         return False
 
     texte = (texte or "").strip()
+    etat  = _state_univers["sources"][source]
 
     def _run():
         try:
-            _state_univers["en_cours"]   = True
-            _state_univers["erreur"]     = None
-            _state_univers["suggestion"] = None
-            _state_univers["progression"] = "Analyse du texte collé…"
+            etat["en_cours"]    = True
+            etat["erreur"]      = None
+            etat["suggestion"]  = None
+            etat["progression"] = "Analyse du texte collé…"
 
             if not texte:
                 raise ValueError("Texte collé vide")
 
-            _state_univers["suggestion"] = _traiter_reponse_ia(texte)
+            etat["suggestion"] = _traiter_reponse_ia(texte, etat=etat)
         except Exception as e:
-            _state_univers["erreur"] = str(e)
-            print(f"[Screener] analyse texte collé erreur : {e}", flush=True)
+            etat["erreur"] = str(e)
+            print(f"[Screener] analyse texte collé ({source}) erreur : {e}", flush=True)
         finally:
-            _state_univers["progression"] = None
-            _state_univers["en_cours"] = False
-            _lock_univers.release()
+            etat["progression"] = None
+            etat["en_cours"] = False
+            lock.release()
 
     threading.Thread(target=_run, daemon=True).start()
     return True
@@ -457,22 +517,26 @@ def suggerer_univers(prompt: str | None = None) -> bool:
     sur le marché avant de répondre) avec `prompt` (ou le prompt par défaut
     si None/vide — l'utilisateur peut l'éditer côté UI et relancer), extrait
     les tickers, valide chacun (get_market_data réel, récupère aussi nom +
-    performance récente pour l'affichage), stocke la suggestion dans
-    _state_univers — ne touche PAS l'univers actif (appliquer_univers est
-    un appel séparé, déclenché explicitement).
+    performance récente pour l'affichage), stocke la suggestion dans la
+    source "gemini" de _state_univers (seule IA appelée par API dans ce
+    projet) — ne touche PAS l'univers actif (appliquer_univers est un
+    appel séparé, déclenché explicitement).
     """
-    if not _lock_univers.acquire(blocking=False):
+    source = "gemini"
+    lock = _locks_ia[source]
+    if not lock.acquire(blocking=False):
         return False
 
     prompt = (prompt or "").strip() or PROMPT_SUGGESTION_DEFAUT
+    etat   = _state_univers["sources"][source]
 
     def _run():
         try:
-            _state_univers["en_cours"]   = True
-            _state_univers["erreur"]     = None
-            _state_univers["suggestion"] = None
-            _state_univers["prompt"]     = prompt
-            _state_univers["progression"] = "Interrogation de l'IA (recherche web)…"
+            etat["en_cours"]   = True
+            etat["erreur"]     = None
+            etat["suggestion"] = None
+            _state_univers["prompt"] = prompt   # prompt partagé entre les 3 sources
+            etat["progression"] = "Interrogation de l'IA (recherche web)…"
 
             import requests
             from config import GEMINI_API_KEY, GEMINI_MODEL, LLM_TIMEOUT
@@ -504,14 +568,14 @@ def suggerer_univers(prompt: str | None = None) -> bool:
                 raise ValueError(f"Gemini a répondu {resp.status_code} : {resp.text[:500]}")
             texte = _extraire_texte_gemini(resp.json())
 
-            _state_univers["suggestion"] = _traiter_reponse_ia(texte)
+            etat["suggestion"] = _traiter_reponse_ia(texte, etat=etat)
         except Exception as e:
-            _state_univers["erreur"] = str(e)
+            etat["erreur"] = str(e)
             print(f"[Screener] suggestion univers erreur : {e}", flush=True)
         finally:
-            _state_univers["progression"] = None
-            _state_univers["en_cours"] = False
-            _lock_univers.release()
+            etat["progression"] = None
+            etat["en_cours"] = False
+            lock.release()
 
     threading.Thread(target=_run, daemon=True).start()
     return True

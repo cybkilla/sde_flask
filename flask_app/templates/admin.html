@@ -830,16 +830,17 @@
             <p class="small text-muted" style="font-size:.75rem">${data.univers_actif.join(", ")}</p>
             <p class="small text-muted" style="font-size:.7rem">
               <i class="bi bi-info-circle me-1"></i>
-              Copie le prompt ci-dessous dans Gemini (ou une autre IA avec accès web), colle sa réponse
-              plus bas — chaque ticker proposé est vérifié (données de marché réelles) et trié par
-              performance récente avant affichage. Rien n'est appliqué automatiquement.
+              Copie le prompt ci-dessous dans une ou plusieurs IA avec accès web, colle chaque réponse
+              dans l'onglet correspondant — chaque ticker proposé est vérifié (données de marché réelles).
+              Un ticker proposé par PLUSIEURS IA est mis en avant (consensus) dans la liste fusionnée.
+              Rien n'est appliqué automatiquement.
               <br>Pourquoi coller à la main plutôt qu'un bouton automatique : l'appel direct depuis le
               serveur (hébergé en Europe) est bloqué géographiquement par Google pour cette
               fonctionnalité — ton propre navigateur, lui, ne l'est pas.
             </p>
 
             <label class="form-label small fw-semibold" for="sde-univers-prompt"
-                   style="font-size:.75rem;color:var(--sde-navy)">Prompt à copier-coller dans l'IA</label>
+                   style="font-size:.75rem;color:var(--sde-navy)">Prompt à copier-coller (le même dans chaque IA)</label>
             <textarea id="sde-univers-prompt" class="form-control form-control-sm mb-1"
                       rows="3" style="font-size:.78rem">${data.suggestion_state.prompt || ""}</textarea>
             <button class="sde-nav-btn mb-2" id="sde-univers-copier-btn" onclick="oppCopierPrompt()">
@@ -849,18 +850,36 @@
               <i class="bi bi-save me-1"></i>Sauvegarder le prompt
             </button>
 
-            <label class="form-label small fw-semibold" for="sde-univers-reponse"
-                   style="font-size:.75rem;color:var(--sde-navy)">Réponse de l'IA (coller ici)</label>
-            <textarea id="sde-univers-reponse" class="form-control form-control-sm mb-2"
-                      rows="3" style="font-size:.78rem" placeholder="Colle ici ce que l'IA a répondu…"></textarea>
-
-            <button class="sde-nav-btn" id="sde-univers-analyser-btn" onclick="oppAnalyserTexteUnivers()">
-              <i class="bi bi-search me-1"></i>Analyser le texte collé
-            </button>
-            <div id="sde-univers-suggestion-wrap" class="mt-2"></div>
+            ${oppUniversTabsHtml()}
+            <div id="sde-univers-fusion-wrap" class="mt-3"></div>
           </div>
         </details>
       </div>`;
+  }
+
+  const SOURCES_IA = [["gemini", "Gemini"], ["gpt", "GPT"], ["autre", "Autre IA"]];
+
+  function oppUniversTabsHtml() {
+    const tabs = SOURCES_IA.map(([src, label], i) => `
+      <button type="button" id="sde-univers-tab-${src}" onclick="oppSwitchTabUnivers('${src}')"
+              class="sde-nav-btn" style="font-size:.75rem;${i === 0 ? "font-weight:700" : ""}">
+        ${label}
+      </button>`).join("");
+
+    const panels = SOURCES_IA.map(([src, label], i) => `
+      <div id="sde-univers-panel-${src}" style="${i === 0 ? "" : "display:none"}">
+        <label class="form-label small fw-semibold" style="font-size:.75rem;color:var(--sde-navy)">
+          Réponse de ${label} (coller ici)
+        </label>
+        <textarea id="sde-univers-reponse-${src}" class="form-control form-control-sm mb-2"
+                  rows="3" style="font-size:.78rem" placeholder="Colle ici ce que ${label} a répondu…"></textarea>
+        <button class="sde-nav-btn" id="sde-univers-analyser-btn-${src}" onclick="oppAnalyserTexteUnivers('${src}')">
+          <i class="bi bi-search me-1"></i>Analyser
+        </button>
+        <div id="sde-univers-source-wrap-${src}" class="mt-2"></div>
+      </div>`).join("");
+
+    return `<div class="d-flex gap-2 mb-2">${tabs}</div>${panels}`;
   }
 
   function oppQtyAchetable(r) {
@@ -1061,36 +1080,56 @@
       });
   };
 
-  function oppRenderSuggestionWrap(html) {
-    document.getElementById("sde-univers-suggestion-wrap").innerHTML = html;
+  window.oppSwitchTabUnivers = function (src) {
+    SOURCES_IA.forEach(([s]) => {
+      document.getElementById(`sde-univers-panel-${s}`).style.display = (s === src) ? "" : "none";
+      document.getElementById(`sde-univers-tab-${s}`).style.fontWeight = (s === src) ? "700" : "";
+    });
+  };
+
+  function oppRenderSourceWrap(source, html) {
+    const el = document.getElementById(`sde-univers-source-wrap-${source}`);
+    if (el) el.innerHTML = html;
   }
 
-  function oppRenderUniversProgress(state) {
-    oppRenderSuggestionWrap(`
+  function oppRenderUniversProgress(source, state) {
+    oppRenderSourceWrap(source, `
       <div class="d-flex align-items-center gap-2" style="font-size:.8rem;color:var(--sde-muted)">
         <span class="spinner-border spinner-border-sm"></span>
         ${state.progression || "En cours…"}
       </div>`);
   }
 
-  function oppRenderSuggestion(items) {
+  function oppRenderFusionUnivers(items) {
+    const wrap = document.getElementById("sde-univers-fusion-wrap");
+    if (!wrap) return;
+    if (!items || !items.length) {
+      wrap.innerHTML = "";
+      window._oppSuggestionUnivers = [];
+      return;
+    }
     const rows = items.map(it => {
-      const perfColor = (it.var_5d ?? 0) >= 0 ? "#1D9E75" : "#D85A30";
-      const perfTxt = it.var_5d != null
-        ? `${it.var_5d >= 0 ? "+" : ""}${it.var_5d.toFixed(1)}% (5j)`
-        : "—";
+      const perfColor  = (it.var_5d ?? 0) >= 0 ? "#1D9E75" : "#D85A30";
+      const perfTxt    = it.var_5d != null ? `${it.var_5d >= 0 ? "+" : ""}${it.var_5d.toFixed(1)}% (5j)` : "—";
+      const consensus  = it.sources.length > 1;
       return `
-        <tr style="border-bottom:1px solid var(--sde-border)">
-          <td style="padding:5px 8px;font-weight:700">${it.ticker}</td>
+        <tr style="border-bottom:1px solid var(--sde-border);${consensus ? "background:#FEF9E7" : ""}">
+          <td style="padding:5px 8px;font-weight:700">
+            ${it.ticker}
+            ${consensus ? `<span title="Proposé par ${it.sources.length} sources IA" style="margin-left:4px;background:#F59E0B;color:#fff;border-radius:10px;padding:0 6px;font-size:.65rem;font-weight:700">★ ${it.sources.length}</span>` : ""}
+          </td>
           <td style="padding:5px 8px;color:var(--sde-muted)">${it.company_name || ""}</td>
           <td style="padding:5px 8px;text-align:right">${it.prix != null ? "$" + it.prix.toFixed(2) : "—"}</td>
           <td style="padding:5px 8px;text-align:right;color:${perfColor};font-weight:600">${perfTxt}</td>
         </tr>`;
     }).join("");
 
-    oppRenderSuggestionWrap(`
+    wrap.innerHTML = `
       <div style="background:#F1F5F9;border-radius:8px;padding:10px 12px;margin-top:6px">
-        <p class="small mb-2" style="font-size:.78rem"><strong>Suggestion (${items.length}) :</strong></p>
+        <p class="small mb-2" style="font-size:.78rem">
+          <strong>Liste fusionnée (${items.length}) :</strong>
+          <span style="color:var(--sde-muted);font-weight:400">★ = proposé par plusieurs IA (consensus, priorisé)</span>
+        </p>
         <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:.78rem">
           <thead>
@@ -1108,31 +1147,46 @@
           <button class="sde-nav-btn" style="font-size:.75rem;color:#1D9E75" onclick="oppAppliquerUnivers()">
             <i class="bi bi-check-circle me-1"></i>Appliquer
           </button>
-          <button class="sde-nav-btn" style="font-size:.75rem" onclick="oppRenderSuggestionWrapPublic('')">
-            Ignorer
-          </button>
         </div>
-      </div>`);
+      </div>`;
     window._oppSuggestionUnivers = items.map(it => it.ticker);
   }
 
-  window.oppRenderSuggestionWrapPublic = oppRenderSuggestionWrap;
+  function oppInitSourceWrap(source, s) {
+    // Rendu initial (chargement de page) d'une source, à partir de son état —
+    // même logique que oppPollUnivers mais sans dépendre d'un cycle de poll.
+    if (s.en_cours) {
+      oppRenderUniversProgress(source, s);
+    } else if (s.erreur) {
+      oppRenderSourceWrap(source, `<p class="small text-danger" style="font-size:.78rem">Erreur : ${s.erreur}</p>`);
+    } else if (s.suggestion && s.suggestion.length) {
+      oppRenderSourceWrap(source, `<p class="small" style="font-size:.75rem;color:#1D9E75">✓ ${s.suggestion.length} ticker(s) validé(s)</p>`);
+    }
+  }
 
   function oppPollUnivers() {
     fetch("/admin/opportunites/univers/status")
       .then(r => r.json())
       .then(state => {
-        if (state.en_cours) {
-          oppRenderUniversProgress(state);
-        } else {
+        let anyEnCours = false;
+        Object.entries(state.sources || {}).forEach(([source, s]) => {
+          const btn = document.getElementById(`sde-univers-analyser-btn-${source}`);
+          if (s.en_cours) {
+            anyEnCours = true;
+            oppRenderUniversProgress(source, s);
+          } else {
+            if (btn) btn.disabled = false;
+            if (s.erreur) {
+              oppRenderSourceWrap(source, `<p class="small text-danger" style="font-size:.78rem">Erreur : ${s.erreur}</p>`);
+            } else if (s.suggestion && s.suggestion.length) {
+              oppRenderSourceWrap(source, `<p class="small" style="font-size:.75rem;color:#1D9E75">✓ ${s.suggestion.length} ticker(s) validé(s)</p>`);
+            }
+          }
+        });
+        oppRenderFusionUnivers(state.fusion);
+        if (!anyEnCours) {
           clearInterval(oppPollingUnivers);
           oppPollingUnivers = null;
-          document.getElementById("sde-univers-analyser-btn").disabled = false;
-          if (state.erreur) {
-            oppRenderSuggestionWrap(`<p class="small text-danger" style="font-size:.78rem">Erreur : ${state.erreur}</p>`);
-          } else if (state.suggestion && state.suggestion.length) {
-            oppRenderSuggestion(state.suggestion);
-          }
         }
       });
   }
@@ -1168,26 +1222,26 @@
     });
   };
 
-  window.oppAnalyserTexteUnivers = function () {
-    const btn   = document.getElementById("sde-univers-analyser-btn");
+  window.oppAnalyserTexteUnivers = function (source) {
+    const btn   = document.getElementById(`sde-univers-analyser-btn-${source}`);
     const CSRF  = document.querySelector('meta[name="csrf-token"]').content;
-    const texte = document.getElementById("sde-univers-reponse").value;
+    const texte = document.getElementById(`sde-univers-reponse-${source}`).value;
     if (!texte.trim()) {
-      oppRenderSuggestionWrap(`<p class="small text-danger" style="font-size:.78rem">Colle d'abord la réponse de l'IA ci-dessus.</p>`);
+      oppRenderSourceWrap(source, `<p class="small text-danger" style="font-size:.78rem">Colle d'abord la réponse de l'IA ci-dessus.</p>`);
       return;
     }
     btn.disabled = true;
-    oppRenderUniversProgress({progression: "Démarrage…"});
+    oppRenderUniversProgress(source, {progression: "Démarrage…"});
     fetch("/admin/opportunites/univers/analyser", {
       method: "POST",
       headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
-      body: JSON.stringify({texte}),
+      body: JSON.stringify({texte, source}),
     })
     .then(r => r.json())
     .then(data => {
       if (!data.ok) {
         btn.disabled = false;
-        oppRenderSuggestionWrap(`<p class="small text-danger" style="font-size:.78rem">${data.message}</p>`);
+        oppRenderSourceWrap(source, `<p class="small text-danger" style="font-size:.78rem">${data.message}</p>`);
         return;
       }
       if (!oppPollingUnivers) oppPollingUnivers = setInterval(oppPollUnivers, 3000);
@@ -1203,11 +1257,12 @@
     })
     .then(r => r.json())
     .then(data => {
+      const wrap = document.getElementById("sde-univers-fusion-wrap");
       if (!data.ok) {
-        oppRenderSuggestionWrap(`<p class="small text-danger" style="font-size:.78rem">${data.error}</p>`);
+        wrap.innerHTML = `<p class="small text-danger" style="font-size:.78rem">${data.error}</p>`;
         return;
       }
-      oppRenderSuggestionWrap(`<p class="small" style="font-size:.78rem;color:#1D9E75">✓ Univers mis à jour — rechargez la page pour voir la nouvelle liste.</p>`);
+      wrap.innerHTML = `<p class="small" style="font-size:.78rem;color:#1D9E75">✓ Univers mis à jour — rechargez la page pour voir la nouvelle liste.</p>`;
     });
   };
 
@@ -1234,13 +1289,16 @@
           });
         }
 
-        if (data.suggestion_state.en_cours) {
-          document.getElementById("sde-univers-analyser-btn").disabled = true;
-          oppRenderUniversProgress(data.suggestion_state);
-          oppPollingUnivers = setInterval(oppPollUnivers, 3000);
-        } else if (data.suggestion_state.suggestion && data.suggestion_state.suggestion.length) {
-          oppRenderSuggestion(data.suggestion_state.suggestion);
-        }
+        let anyEnCours = false;
+        Object.entries(data.suggestion_state.sources || {}).forEach(([source, s]) => {
+          if (s.en_cours) {
+            anyEnCours = true;
+            document.getElementById(`sde-univers-analyser-btn-${source}`).disabled = true;
+          }
+          oppInitSourceWrap(source, s);
+        });
+        oppRenderFusionUnivers(data.suggestion_state.fusion);
+        if (anyEnCours) oppPollingUnivers = setInterval(oppPollUnivers, 3000);
       });
   }
 

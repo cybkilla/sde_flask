@@ -146,34 +146,71 @@ print("✓ appliquer_univers : liste vide/inexploitable rejetée avant tout acc�
 
 
 # ── analyser_texte_univers : mode collage manuel (contourne le blocage
-#    géographique Gemini sur Render EU), même pipeline que le mode auto ──
+#    géographique Gemini sur Render EU), même pipeline que le mode auto —
+#    désormais par SOURCE (Gemini/GPT/Autre), pour permettre la fusion
+#    multi-IA demandée le 24.07.2026 ──
 screener.get_market_data = lambda t: (
     {"price": 50.0, "company_name": t + " Inc.", "var_5d": {"AAA": -2.0, "BBB": 6.0}[t]}
     if t in ("AAA", "BBB") else (_ for _ in ()).throw(ValueError("introuvable"))
 )
-ok = screener.analyser_texte_univers("Voici ma liste : AAA, BBB (copié depuis Gemini)")
-assert ok is True
-_t0 = time.time()
-while screener.get_suggestion_state()["en_cours"]:
-    if time.time() - _t0 > 5:
-        raise TimeoutError("analyse pas terminée à temps")
-    time.sleep(0.01)
-state = screener.get_suggestion_state()
-assert state["erreur"] is None
-assert [d["ticker"] for d in state["suggestion"]] == ["BBB", "AAA"]   # trié par var_5d décroissant
-print("✓ analyser_texte_univers : extrait, valide et trie le texte collé manuellement")
 
-# Texte vide -> erreur claire, pas de crash
-screener._state_univers["suggestion"] = None
-ok = screener.analyser_texte_univers("   ")
+
+def _attendre_fin_univers(source, timeout=5):
+    t0 = time.time()
+    while screener.get_suggestion_state()["sources"][source]["en_cours"]:
+        if time.time() - t0 > timeout:
+            raise TimeoutError("analyse univers pas terminée à temps")
+        time.sleep(0.01)
+
+
+try:
+    screener.analyser_texte_univers("AAA, BBB", source="inconnue")
+    raise AssertionError("aurait dû lever ValueError sur une source IA inconnue")
+except ValueError:
+    pass
+print("✓ analyser_texte_univers : source IA inconnue rejetée")
+
+ok = screener.analyser_texte_univers("Voici ma liste : AAA, BBB (copié depuis Gemini)", source="gemini")
 assert ok is True
-_t0 = time.time()
-while screener.get_suggestion_state()["en_cours"]:
-    if time.time() - _t0 > 5:
-        raise TimeoutError("analyse pas terminée à temps")
-    time.sleep(0.01)
-assert screener.get_suggestion_state()["erreur"] is not None
-print("✓ analyser_texte_univers : texte vide rejeté proprement")
+_attendre_fin_univers("gemini")
+state = screener.get_suggestion_state()
+assert state["sources"]["gemini"]["erreur"] is None
+assert [d["ticker"] for d in state["sources"]["gemini"]["suggestion"]] == ["BBB", "AAA"]   # trié par var_5d décroissant
+print("✓ analyser_texte_univers : extrait, valide et trie le texte collé manuellement (par source)")
+
+# Texte vide -> erreur claire, pas de crash, isolée à SA source (gpt), pas gemini
+screener._state_univers["sources"]["gpt"]["suggestion"] = None
+ok = screener.analyser_texte_univers("   ", source="gpt")
+assert ok is True
+_attendre_fin_univers("gpt")
+state = screener.get_suggestion_state()
+assert state["sources"]["gpt"]["erreur"] is not None
+assert state["sources"]["gemini"]["suggestion"] is not None   # source gemini non affectée
+print("✓ analyser_texte_univers : texte vide rejeté proprement, sans affecter les autres sources")
+
+
+# ── _fusionner_sources : consensus priorisé, robuste si sources vides ──
+sources_test = {
+    "gemini": {"suggestion": [
+        {"ticker": "AAA", "company_name": "AAA Inc.", "prix": 10.0, "var_5d": 2.0},
+        {"ticker": "CCC", "company_name": "CCC Inc.", "prix": 30.0, "var_5d": 8.0},
+    ]},
+    "gpt": {"suggestion": [
+        {"ticker": "AAA", "company_name": "AAA Inc.", "prix": 10.0, "var_5d": 2.0},
+        {"ticker": "BBB", "company_name": "BBB Inc.", "prix": 20.0, "var_5d": 12.0},
+    ]},
+    "autre": {"suggestion": None},   # onglet jamais renseigné -> ne doit pas planter
+}
+fusion = screener._fusionner_sources(sources_test)
+# AAA : consensus (2 sources) -> priorisé même si var_5d plus faible que BBB/CCC (1 seule source)
+assert fusion[0]["ticker"] == "AAA"
+assert fusion[0]["sources"] == ["gemini", "gpt"]
+assert [d["ticker"] for d in fusion[1:]] == ["BBB", "CCC"]   # reste trié par var_5d décroissant
+print("✓ _fusionner_sources : tickers en consensus priorisés, reste trié par performance récente")
+
+assert screener._fusionner_sources({}) == []
+assert screener._fusionner_sources({"gemini": {"suggestion": None}, "gpt": {}}) == []
+print("✓ _fusionner_sources : robuste si aucune (ou une seule) source n'a été renseignée")
 
 
 # ── Tri par performance récente décroissante (même clé que suggerer_univers) ──
@@ -212,15 +249,11 @@ _config.GEMINI_API_KEY = ""   # force l'échec avant tout appel réseau réel
 
 ok = screener.suggerer_univers(prompt="mon prompt personnalisé de test")
 assert ok is True
-_t0 = time.time()
-while screener.get_suggestion_state()["en_cours"]:
-    if time.time() - _t0 > 5:
-        raise TimeoutError("suggestion pas terminée à temps")
-    time.sleep(0.01)
+_attendre_fin_univers("gemini")
 
 state = screener.get_suggestion_state()
 assert state["prompt"] == "mon prompt personnalisé de test"
-assert state["erreur"] is not None   # clé absente -> échoue, mais le prompt a bien été retenu
+assert state["sources"]["gemini"]["erreur"] is not None   # clé absente -> échoue, mais le prompt a bien été retenu
 _config.GEMINI_API_KEY = _cle_gemini_orig
 print("✓ suggerer_univers : le prompt personnalisé est retenu dans l'état même en cas d'échec")
 
