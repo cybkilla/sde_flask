@@ -247,7 +247,14 @@ def lancer_scan(univers: list[str] | None = None) -> bool:
                 # un snapshot légèrement différent de l'appel étage 1 (cache),
                 # RSI/var_1d ont pu évoluer entre-temps — garantit qu'aucun
                 # ticker affiché en Top 5 ne les enfreint, même en cas limite.
-                if r and _passe_filtre_entree(r):
+                # + recommandation ACHETER exigée (25.07.2026) : le score_tech
+                # (étage 1, momentum seul) et le score_global (étage 2, agrège
+                # aussi fondamental/média/régime/hystérésis) sont deux
+                # évaluations différentes — un ticker peut passer les filtres
+                # de TIMING (RSI, var_1d) sans que le pipeline complet le juge
+                # globalement bon. Une liste d'"opportunités d'achat" n'a pas
+                # de sens si elle peut afficher un NEUTRE, voire un VENDRE.
+                if r and _passe_filtre_entree(r) and r.get("recommandation") == "ACHETER":
                     resultats.append(r)
 
             resultats.sort(key=lambda r: r["score_global"], reverse=True)

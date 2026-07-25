@@ -90,7 +90,7 @@ print("✓ verrou : deuxième lancement refusé pendant qu'un scan tourne")
 # côté orchestration : un retour None ne doit pas entrer dans les résultats
 # ni faire planter le reste du scan)
 screener._scan_technique = lambda t: None if t == "ERR" else {"ticker": t, "company_name": t, "score_tech": 60}
-screener._scan_complet   = lambda t: {"ticker": t, "company_name": t, "score_global": 50, "recommandation": "TENIR", "prix": 1.0, "divergence": None}
+screener._scan_complet   = lambda t: {"ticker": t, "company_name": t, "score_global": 50, "recommandation": "ACHETER", "prix": 1.0, "divergence": None}
 screener._state["resultats"] = []
 
 ok = screener.lancer_scan(univers=["ERR", "OK1"])
@@ -141,6 +141,25 @@ assert "LOW" in tickers_finaux
 assert "SEUIL" in tickers_finaux       # RSI exactement 70 -> accepté (pas < strict)
 assert "DIP8" in tickers_finaux        # var_1d exactement -8% -> accepté (pas < strict)
 print("✓ lancer_scan : filtre surachat (RSI) et chute du jour (var_1d) aux deux étages")
+
+
+# ── recommandation ACHETER exigée : un ticker qui passe les filtres de
+#    TIMING (RSI, var_1d) mais que le pipeline complet juge NEUTRE/VENDRE
+#    n'a pas sa place dans une liste d'opportunités D'ACHAT (25.07.2026) ──
+screener._scan_technique = lambda t: {"ticker": t, "company_name": t, "score_tech": 80, "rsi": 40, "var_1d": 1.0}
+screener._scan_complet = lambda t: {
+    "ticker": t, "company_name": t, "score_global": 60, "prix": 10.0, "divergence": None,
+    "rsi": 40, "var_1d": 1.0,
+    "recommandation": {"BUY_OK": "ACHETER", "NEUTRE_TICKER": "NEUTRE", "SELL_TICKER": "VENDRE"}[t],
+}
+screener._state["resultats"] = []
+
+ok = screener.lancer_scan(univers=["BUY_OK", "NEUTRE_TICKER", "SELL_TICKER"])
+assert ok is True
+_attendre_fin_scan()
+tickers_finaux = [r["ticker"] for r in screener.get_scan_state()["resultats"]]
+assert tickers_finaux == ["BUY_OK"]   # seul le ACHETER passe, malgré des filtres RSI/var_1d identiques
+print("✓ lancer_scan : seule la recommandation ACHETER entre dans le Top 5")
 
 
 # ── Extraction de tickers depuis un texte libre (pure, hors réseau) ──
