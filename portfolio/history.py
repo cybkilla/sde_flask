@@ -117,6 +117,55 @@ def save_daily_snapshot(username: str, positions: list) -> bool:
         return False
 
 
+def snapshot_si_du(username: str) -> bool:
+    """
+    Crée le snapshot quotidien si les conditions sont réunies : marché
+    clôturé aujourd'hui (après 22h Paris, jour de semaine) et pas encore
+    de snapshot ce jour. Autonome : recalcule la valeur des positions
+    depuis les lots + prix live, sans passer par la route
+    /portfolio/overview.
+
+    Pourquoi (28.07.2026) : le snapshot n'était déclenché QUE par une
+    visite de la page portefeuille après 22h Paris — aucun point du 24 au
+    28.07, graphe "Évolution du portefeuille" figé au 23.07. Même leçon
+    que les évaluations de conseils : ne jamais dépendre d'une visite de
+    page pour une tâche quotidienne — c'est le rôle du scheduler.
+    """
+    if not _market_closed_today() or snapshot_exists_today(username):
+        return False
+    try:
+        from portfolio.positions import get_positions, get_portfolio_summary
+        from data.market import get_live_price
+
+        lots = get_positions(username)
+        if not lots:
+            return False
+
+        tickers   = list(dict.fromkeys(l["ticker"] for l in lots))
+        positions = []
+        for t in tickers:
+            live = get_live_price(t) or {}
+            prix = live.get("price") or 0
+            s    = get_portfolio_summary(username, t, prix)
+            if not s:
+                continue
+            # Prix indisponible sur une position OUVERTE : on n'enregistre
+            # RIEN plutôt qu'un faux point (valeur 0 = plongeon fictif sur
+            # le graphe, bien pire qu'un jour manquant).
+            if not s.get("position_fermee") and not prix:
+                print(f"[History] prix indisponible pour {t} — snapshot "
+                      f"du jour abandonné (pas de faux point)", flush=True)
+                return False
+            positions.append({"currency": s.get("currency", "USD"), "summary": s})
+
+        if not positions:
+            return False
+        return save_daily_snapshot(username, positions)
+    except Exception as e:
+        print(f"[History] snapshot_si_du erreur : {e}", flush=True)
+        return False
+
+
 def get_history(username: str, days: int = 90) -> list:
     """Retourne les snapshots des N derniers jours, les plus récents en dernier."""
     if not _db_ok():

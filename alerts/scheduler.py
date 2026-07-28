@@ -440,6 +440,19 @@ def _check_all():
             except Exception as e:
                 print(f"  [Advice] Erreur conseils positions {username} : {e}", flush=True)
 
+        # ── Snapshot quotidien du portefeuille (après clôture NASDAQ) ──
+        # Avant : déclenché uniquement par une visite de /portfolio après
+        # 22h Paris — le graphe "Évolution du portefeuille" restait figé
+        # des jours entiers si personne n'ouvrait la page ce soir-là (vécu
+        # 24-28.07.2026). Même leçon que les évaluations J+1/J+5/J+20 :
+        # une tâche quotidienne ne doit jamais dépendre d'une visite de page.
+        try:
+            from portfolio.history import snapshot_si_du
+            if snapshot_si_du(username):
+                print(f"  [History] Snapshot du jour créé pour {username}", flush=True)
+        except Exception as e:
+            print(f"  [History] Erreur snapshot {username} : {e}", flush=True)
+
         # ── Rapport hebdomadaire (dimanche ≥ 8h Paris) ───────────
         # Déclenché même si la watchlist est vide (le rapport inclut le portefeuille)
         if email:
