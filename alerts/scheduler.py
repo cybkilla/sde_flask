@@ -385,6 +385,25 @@ def _check_position_advice(username: str, email: str) -> None:
 
 
 def check_all():
+    """
+    Un passage complet, avec groupage des emails : les alertes détectées
+    pendant le passage (paliers de variation, changements de conseil,
+    TP/SL) s'accumulent par destinataire et partent en UN email de
+    synthèse à la fin — un jour de forte baisse en envoyait jusqu'à 8
+    séparément (vécu 28.07.2026), perçus comme contradictoires faute de
+    contexte commun. Une alerte isolée part comme avant. Le flush est dans
+    un finally : un plantage en cours de passage n'avale pas les alertes
+    déjà détectées.
+    """
+    from alerts.mailer import demarrer_groupage, envoyer_groupes
+    demarrer_groupage()
+    try:
+        _check_all()
+    finally:
+        envoyer_groupes()
+
+
+def _check_all():
     """Parcourt toutes les watchlists et vérifie chaque ticker."""
     from watchlist.watchlist import get_watchlist
 

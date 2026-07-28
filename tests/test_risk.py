@@ -343,13 +343,18 @@ assert adv_score_bas["action"] == "ALLÉGER"
 print("✓ double confirmation : porteur+score OK → TENIR ; régime baissier ou score <45 → ALLÉGER")
 
 
-# ── Fraîcheur du pattern : un chandelier de > 3 jours n'escalade plus ──
-# L'Étoile du soir du 13.07 déclenchait ALLÉGER tous les jours suivants
+# ── Fraîcheur du pattern : un chandelier trop vieux n'escalade plus ──
+# L'Étoile du soir du 13.07 déclenchait ALLÉGER tous les jours suivants.
+# 7 jours calendaires (pas 4) : l'advisor décompte en SÉANCES et retire le
+# week-end d'un pattern daté du vendredi — avec today-4, le test cassait
+# chaque mardi/mercredi (vécu 28.07.2026 : vendredi -4j = 2 séances = encore
+# frais, comportement CORRECT de l'advisor). 7 jours reste périmé quel que
+# soit le jour de la semaine où le test tourne.
 _candle_vieux = {**_candle_bear,
-                 "date": (_date.today() - __import__("datetime").timedelta(days=4)).strftime("%d.%m.%Y")}
+                 "date": (_date.today() - __import__("datetime").timedelta(days=7)).strftime("%d.%m.%Y")}
 adv_vieux = generate_advice(_s_tmc, _m_calme, _snap_tmc, candle_info=_candle_vieux)
 assert adv_vieux["action"] == "TENIR", \
-    f"pattern de 4 jours ne doit plus escalader, obtenu {adv_vieux['action']}"
+    f"pattern de 7 jours ne doit plus escalader, obtenu {adv_vieux['action']}"
 assert "signal périmé" in adv_vieux["raisonnement"]
 # Pattern d'il y a 2 jours : escalade normale
 _candle_frais = {**_candle_bear,

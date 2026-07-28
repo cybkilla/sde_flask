@@ -1,9 +1,101 @@
 # alerts/mailer.py — envoi d'emails via Resend (HTTP, port 443 — fonctionne sur Render)
 import os
-import resend
 
 
 SDE_BASE_URL = "https://sde-flask.onrender.com"
+
+# ── Groupage par passage du scheduler (28.07.2026) ────────────────────────
+# Un jour de forte baisse déclenche TOUS les mécanismes en même temps
+# (paliers de variation, changements de conseil position, TP/SL) et chaque
+# alerte partait en email séparé — 8 emails reçus le 28.07, perçus comme
+# contradictoires faute de contexte commun (ex. "chute -5%" puis
+# "RENFORCER" sur le même ticker, sans lien entre les deux).
+# Quand le groupage est actif (activé par check_all() du scheduler), les
+# alertes s'accumulent PAR DESTINATAIRE et partent en UN email de synthèse
+# à la fin du passage. Une alerte isolée part exactement comme avant (même
+# sujet, même corps). Hors groupage (ex. route de test /cron/test-email),
+# envoi immédiat inchangé.
+_groupage = {"actif": False, "par_dest": {}}
+
+
+def demarrer_groupage():
+    """Active la mise en attente des alertes (début de passage scheduler)."""
+    _groupage["actif"] = True
+    _groupage["par_dest"] = {}
+
+
+def envoyer_groupes():
+    """
+    Envoie tout ce qui a été mis en attente, puis désactive le groupage.
+    À appeler dans un finally : même si le passage du scheduler plante en
+    cours de route, les alertes déjà détectées doivent partir.
+    """
+    _groupage["actif"] = False
+    par_dest, _groupage["par_dest"] = _groupage["par_dest"], {}
+    for dest, alertes in par_dest.items():
+        try:
+            if len(alertes) == 1:
+                a = alertes[0]
+                _envoyer(dest, a["subject"], a["html"], a["resume"])
+            else:
+                sujet = (f"[StockDecisionEngine] {len(alertes)} alertes — "
+                         + ", ".join(a["resume"] for a in alertes))
+                if len(sujet) > 120:
+                    sujet = sujet[:117] + "…"
+                _envoyer(dest, sujet, _email_synthese(alertes),
+                         f"synthèse de {len(alertes)} alertes")
+        except Exception as e:
+            print(f"[Mailer] envoi groupé échoué pour {dest} : {e}", flush=True)
+
+
+def _email_synthese(alertes: list) -> str:
+    """Corps de l'email de synthèse : sommaire, puis chaque alerte complète."""
+    lignes = "".join(f'<li style="margin:2px 0">{a["resume"]}</li>' for a in alertes)
+    sections = '<hr style="border:none;border-top:2px solid #e5e7eb;margin:24px 0">'.join(
+        a["html"] for a in alertes)
+    return f"""
+    <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:20px">
+      <div style="background:#EEF2FF;border-left:4px solid #6366F1;border-radius:6px;
+                  padding:12px 16px;margin-bottom:8px">
+        <span style="font-size:14px;font-weight:700;color:#3730A3">
+          📬 {len(alertes)} alertes sur ce passage — synthèse
+        </span>
+        <ul style="margin:8px 0 0;padding-left:18px;font-size:13px;color:#374151">
+          {lignes}
+        </ul>
+      </div>
+      {sections}
+    </div>"""
+
+
+def _emettre(to_email: str, subject: str, html: str, resume: str):
+    """Envoie immédiatement, ou met en attente si le groupage est actif."""
+    if _groupage["actif"]:
+        _groupage["par_dest"].setdefault(to_email, []).append(
+            {"subject": subject, "html": html, "resume": resume})
+        print(f"[Mailer] Alerte mise en attente de groupage ({resume})", flush=True)
+        return
+    _envoyer(to_email, subject, html, resume)
+
+
+def _envoyer(to_email: str, subject: str, html: str, note: str = ""):
+    """Envoi effectif via Resend (point de sortie unique des alertes)."""
+    # Import paresseux : resend n'est installé que sur Render (comme dans
+    # weekly_report.py) — permet d'importer/tester ce module hors réseau.
+    import resend
+    api_key   = os.getenv("RESEND_API_KEY", "")
+    from_addr = os.getenv("RESEND_FROM", "SDE StockDecisionEngine <onboarding@resend.dev>")
+    if not api_key:
+        print(f"[Mailer] RESEND_API_KEY manquante — email non envoyé à {to_email}", flush=True)
+        return
+    resend.api_key = api_key
+    resend.Emails.send({
+        "from":    from_addr,
+        "to":      [to_email],
+        "subject": subject,
+        "html":    html,
+    })
+    print(f"[Mailer] Email envoyé à {to_email} ({note})", flush=True)
 
 
 def send_alert(to_email: str, username: str,
@@ -150,21 +242,13 @@ def send_alert(to_email: str, username: str,
     </div>
     """
 
-    api_key   = os.getenv("RESEND_API_KEY", "")
-    from_addr = os.getenv("RESEND_FROM", "SDE StockDecisionEngine <onboarding@resend.dev>")
-
-    if not api_key:
-        print(f"[Mailer] RESEND_API_KEY manquante — email non envoyé à {to_email}", flush=True)
-        return
-
-    resend.api_key = api_key
-    resend.Emails.send({
-        "from":    from_addr,
-        "to":      [to_email],
-        "subject": subject,
-        "html":    body,
-    })
-    print(f"[Mailer] Email envoyé à {to_email} ({ticker})", flush=True)
+    if reco_changed and var_triggered:
+        resume = f"{ticker} {old_reco}→{new_reco} ({variation:+.1f}%)"
+    elif reco_changed:
+        resume = f"{ticker} {old_reco}→{new_reco}"
+    else:
+        resume = f"{ticker} {variation:+.1f}%"
+    _emettre(to_email, subject, body, resume)
 
 
 def send_tp_sl_alert(to_email: str, username: str,
@@ -232,22 +316,8 @@ def send_tp_sl_alert(to_email: str, username: str,
     </div>
     """
 
-    api_key   = os.getenv("RESEND_API_KEY", "")
-    from_addr = os.getenv("RESEND_FROM", "SDE StockDecisionEngine <onboarding@resend.dev>")
-
-    if not api_key:
-        print(f"[Mailer] RESEND_API_KEY manquante — TP/SL email non envoyé", flush=True)
-        return
-
-    resend.api_key = api_key
-    resend.Emails.send({
-        "from":    from_addr,
-        "to":      [to_email],
-        "subject": subject,
-        "html":    body,
-    })
-    print(f"[Mailer] TP/SL email envoyé à {to_email} ({ticker} {label})", flush=True)
-    print(f"[Mailer] Email envoyé à {to_email} ({ticker})", flush=True)
+    _emettre(to_email, subject, body,
+             f"{ticker} {'TP' if is_tp else 'SL'} atteint ({var_str})")
 
 
 def send_advice_change_alert(to_email: str, username: str,
@@ -342,17 +412,5 @@ def send_advice_change_alert(to_email: str, username: str,
     </div>
     """
 
-    api_key   = os.getenv("RESEND_API_KEY", "")
-    from_addr = os.getenv("RESEND_FROM", "SDE StockDecisionEngine <onboarding@resend.dev>")
-    if not api_key:
-        print(f"[Mailer] RESEND_API_KEY manquante — email non envoyé à {to_email}", flush=True)
-        return
-    resend.api_key = api_key
-    resend.Emails.send({
-        "from":    from_addr,
-        "to":      [to_email],
-        "subject": subject,
-        "html":    body,
-    })
-    print(f"[Mailer] Conseil position email envoyé à {to_email} "
-          f"({ticker} {old_action}→{new_action})", flush=True)
+    _emettre(to_email, subject, body,
+             f"{ticker} conseil {old_action}→{new_action}")
