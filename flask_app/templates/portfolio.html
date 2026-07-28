@@ -644,6 +644,19 @@
         // un cash sous-estimé qu'un total compte faussé)
         Object.values(byCur).forEach(g => { if (g.cash < 0) g.cash = 0; });
 
+        // data.cash_dispo (portfolio.positions.get_cash_disponible) inclut
+        // une éventuelle correction admin (positions.py::corriger_cash) —
+        // le calcul ci-dessus, purement côté client à partir des lots
+        // bruts, l'ignorait totalement (le cash affiché restait à
+        // l'ancienne valeur même après correction, signalé 28.07.2026).
+        // get_cash_disponible() n'est PAS ventilé par devise (agrège tout) :
+        // on ne peut l'appliquer proprement que s'il n'y a qu'une seule
+        // devise — cas réel de ce déploiement.
+        const curKeys = Object.keys(byCur);
+        if (curKeys.length === 1 && data.cash_dispo != null) {
+          byCur[curKeys[0]].cash = data.cash_dispo;
+        }
+
         const _fmtV = (sym, v, plus=false) => {
           const sign = plus ? (v > 0.005 ? "+" : v < -0.005 ? "−" : "") : (v < -0.005 ? "−" : "");
           return `${sign}${sym}${Math.abs(v).toFixed(2)}`;

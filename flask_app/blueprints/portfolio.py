@@ -197,7 +197,9 @@ def get_overview():
         except Exception:
             pass
 
-        resp = jsonify({"ok": True, "positions": result, "labels": ACTION_LABELS})
+        from portfolio.positions import get_cash_disponible
+        resp = jsonify({"ok": True, "positions": result, "labels": ACTION_LABELS,
+                        "cash_dispo": get_cash_disponible(current_user.id)})
         resp.headers["Cache-Control"] = "no-store"
         return resp
 
