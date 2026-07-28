@@ -172,6 +172,40 @@ def data_reset_password():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@bp.route("/data/cash-correction", methods=["POST"])
+@login_required
+def data_cash_correction():
+    """
+    Corrige le cash disponible AFFICHÉ pour un utilisateur — rattrape du
+    cash externe non suivi (dépôt, retrait, frais) que get_cash_disponible()
+    ne peut pas deviner seul à partir des seuls lots achat/vente.
+    """
+    _require_admin()
+    data = request.get_json(silent=True) or {}
+    if not _check_data_password(data.get("password", "")):
+        return jsonify({"ok": False, "error": "Mot de passe incorrect"}), 403
+
+    username = data.get("username", "").strip()
+    if not username or username == "__all__":
+        return jsonify({"ok": False, "error": "Sélectionnez un utilisateur précis"}), 400
+
+    try:
+        montant = float(data.get("montant"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Montant invalide"}), 400
+    if montant < 0:
+        return jsonify({"ok": False, "error": "Le montant ne peut pas être négatif"}), 400
+
+    try:
+        from portfolio.positions import corriger_cash, get_cash_disponible
+        ajustement = corriger_cash(username, montant, note=data.get("note", ""))
+        print(f"[Admin] Cash corrigé pour {username} : {montant}$ "
+              f"(ajustement {ajustement:+.2f}$) par {current_user.id}", flush=True)
+        return jsonify({"ok": True, "cash_dispo": get_cash_disponible(username)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @bp.route("/data/delete", methods=["POST"])
 @login_required
 def data_delete():

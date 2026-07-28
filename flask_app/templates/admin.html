@@ -129,6 +129,33 @@
         </button>
       </div>
 
+      <!-- Correction du cash disponible -->
+      <div style="border-top:1px solid #E2E8F0;padding-top:14px;margin-top:6px;margin-bottom:14px">
+        <span class="small fw-semibold" style="color:var(--sde-navy)">
+          <i class="bi bi-cash-coin me-1"></i>Corriger le cash disponible
+        </span>
+        <p class="small text-muted mb-2" style="font-size:.72rem">
+          Fixe le cash affiché à la valeur réelle (dépôt/retrait externe non suivi par l'app).
+          S'applique à l'utilisateur sélectionné ci-dessus.
+        </p>
+        <div class="d-flex gap-2 align-items-end flex-wrap">
+          <div>
+            <label class="form-label small fw-semibold" style="font-size:.72rem">Cash réel ($)</label>
+            <input type="number" id="sde-cash-montant" class="form-control form-control-sm"
+                   style="width:130px" step="0.01" min="0" placeholder="ex : 500.00">
+          </div>
+          <div style="flex:1;min-width:160px">
+            <label class="form-label small fw-semibold" style="font-size:.72rem">Note (optionnel)</label>
+            <input type="text" id="sde-cash-note" class="form-control form-control-sm"
+                   placeholder="ex : dépôt externe">
+          </div>
+          <button onclick="openDataModal('cash')"
+                  class="sde-nav-btn" style="color:#6366F1;font-size:.8rem;white-space:nowrap">
+            <i class="bi bi-check-circle me-1"></i>Corriger
+          </button>
+        </div>
+      </div>
+
       <!-- Suppression de position par ticker -->
       <div style="border-top:1px solid #E2E8F0;padding-top:14px;margin-top:6px">
         <div class="d-flex align-items-center justify-content-between mb-2">
@@ -556,6 +583,20 @@
       desc.innerHTML = `Efface positions, conseils, watchlist, historique et config de <strong>${scope}</strong>.<br>Les comptes sont conservés.`;
       btn.style.background = "#D85A30";
       btn.textContent = "Réinitialiser";
+    } else if (action === "cash") {
+      if (!username || username === "__all__") {
+        showFeedback("Sélectionnez un utilisateur précis.", false);
+        return;
+      }
+      const montant = document.getElementById("sde-cash-montant").value;
+      if (montant === "" || parseFloat(montant) < 0) {
+        showFeedback("Entrez un montant valide (≥ 0).", false);
+        return;
+      }
+      title.textContent = "Corriger le cash disponible";
+      desc.innerHTML = `Fixe le cash de <strong>${username}</strong> à <strong>$${parseFloat(montant).toFixed(2)}</strong>.`;
+      btn.style.background = "#6366F1";
+      btn.textContent = "Corriger";
     } else if (action === "delete-position") {
       _deletePosTicket = ticker;
       if (!username || username === "__all__") {
@@ -602,15 +643,21 @@
     btn.textContent = "…";
 
     const isDelPos = _dataAction === "delete-position";
+    const isCash   = _dataAction === "cash";
     const url  = _dataAction === "reset-pwd"      ? "/admin/data/reset-password"
                : _dataAction === "reset"           ? "/admin/data/reset"
                : isDelPos                          ? "/admin/data/delete-position"
+               : isCash                            ? "/admin/data/cash-correction"
                :                                     "/admin/data/delete";
     const body = _dataAction === "reset"
       ? { target: username, password: pwd }
       : isDelPos
       ? { username, ticker: _deletePosTicket, password: pwd,
           delete_related: document.getElementById("sde-modal-delete-related").checked }
+      : isCash
+      ? { username, password: pwd,
+          montant: parseFloat(document.getElementById("sde-cash-montant").value),
+          note: document.getElementById("sde-cash-note").value }
       : { username, password: pwd };
 
     fetch(url, {
@@ -621,7 +668,9 @@
     .then(r => r.json())
     .then(data => {
       btn.disabled = false;
-      btn.textContent = _dataAction === "reset" ? "Réinitialiser" : "Supprimer";
+      btn.textContent = _dataAction === "reset" ? "Réinitialiser"
+                       : _dataAction === "cash"  ? "Corriger"
+                       :                           "Supprimer";
       if (!data.ok) {
         err.textContent = data.error || "Erreur.";
         err.classList.remove("d-none");
@@ -642,6 +691,10 @@
         ].filter(Boolean).join(", ");
         showFeedback(`✓ ${data.ticker} supprimé pour ${data.username} (${detail}).`, true);
         loadPositions();
+      } else if (data.cash_dispo !== undefined) {
+        showFeedback(`✓ Cash disponible fixé à $${data.cash_dispo.toFixed(2)} pour ${username}.`, true);
+        document.getElementById("sde-cash-montant").value = "";
+        document.getElementById("sde-cash-note").value = "";
       } else {
         showFeedback(`✓ Données réinitialisées pour : ${data.scope}.`, true);
       }

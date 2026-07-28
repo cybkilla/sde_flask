@@ -156,26 +156,89 @@ def delete_position(position_id: int, username: str) -> bool:
     return len(data) < avant
 
 
+def _solde_suivi_brut(username: str) -> float:
+    """
+    Cash suivi BRUT (ventes − achats), sans la correction manuelle admin —
+    séparé de get_cash_disponible() pour que corriger_cash() puisse
+    calculer l'écart à stocker sans se corriger elle-même.
+    """
+    lots = get_positions(username)
+    achats = sum(float(l["quantite"]) * float(l["prix_achat"])
+                 for l in lots if l.get("type", "achat") == "achat")
+    ventes = sum(float(l["quantite"]) * float(l["prix_achat"])
+                 for l in lots if l.get("type") == "vente")
+    return round(ventes - achats, 2)
+
+
+def get_ajustement_cash(username: str) -> float:
+    """
+    Correction manuelle du cash suivi, définie par un admin (cf.
+    corriger_cash). 0 si aucune. Stockée sur `users` (colonnes
+    cash_ajustement/cash_ajustement_note) : attribut SCALAIRE unique par
+    utilisateur, comme email/password — pas une table séparée, contrairement
+    à positions/daily_advice/watchlist qui sont un-à-plusieurs.
+    """
+    try:
+        from db import find_one, is_available
+        if is_available():
+            row = find_one("users", {"username": username})
+            if row:
+                return float(row.get("cash_ajustement") or 0)
+    except Exception as e:
+        print(f"[Portfolio] lecture ajustement cash échouée : {e}", flush=True)
+    return 0.0
+
+
+def corriger_cash(username: str, montant_reel: float, note: str = "") -> float:
+    """
+    Admin uniquement (28.07.2026) : fixe le cash disponible AFFICHÉ à
+    `montant_reel`, pour rattraper du cash externe non suivi (dépôt,
+    retrait, frais) que get_cash_disponible() ne peut deviner seul — cf.
+    son docstring, "on ne peut alors RIEN affirmer sur la trésorerie réelle".
+
+    Stocké comme un ÉCART par rapport au solde suivi brut, pas une valeur
+    figée : les achats/ventes suivants continuent de faire varier le cash
+    à partir de cette base corrigée, au lieu de devenir faux au prochain
+    lot enregistré. Retourne l'ajustement stocké.
+
+    UPDATE (pas upsert) : la ligne `users` existe déjà (créée à
+    l'inscription) — un upsert créerait silencieusement un compte fantôme
+    en cas de faute de frappe sur le username.
+    """
+    from db import update_one, is_available
+    if not is_available():
+        raise RuntimeError("Supabase indisponible — impossible de sauvegarder la correction")
+    ajustement = round(float(montant_reel) - _solde_suivi_brut(username), 2)
+    update_one(
+        "users",
+        {"username": username},
+        {"$set": {"cash_ajustement": ajustement, "cash_ajustement_note": (note or "").strip()[:200]}},
+    )
+    return ajustement
+
+
 def get_cash_disponible(username: str):
     """
     Trésorerie SUIVIE de l'utilisateur, tous tickers confondus :
-    somme des ventes enregistrées − somme des achats enregistrés.
+    somme des ventes enregistrées − somme des achats enregistrés, plus une
+    éventuelle correction manuelle admin (corriger_cash, ci-dessus).
 
     Les lots 'import' sont exclus : ils représentent des titres acquis
     AVANT le suivi SDE, payés avec de l'argent que l'app n'a jamais vu.
 
-    Retourne None si le solde est négatif : cela signifie que des achats
-    ont été financés par du cash externe non tracké — on ne peut alors
-    RIEN affirmer sur la trésorerie réelle, et l'appelant ne doit pas
-    contraindre les conseils (mieux vaut pas d'info qu'une info fausse).
+    Sans correction et solde négatif -> None : cela signifie que des
+    achats ont été financés par du cash externe non tracké — on ne peut
+    alors RIEN affirmer sur la trésorerie réelle, et l'appelant ne doit
+    pas contraindre les conseils (mieux vaut pas d'info qu'une info
+    fausse). AVEC une correction admin, ce None est résolu : l'admin a
+    explicitement acté connaître la trésorerie réelle — solde plancher à
+    0 plutôt que négatif (même convention que etat_compte()).
     """
     try:
-        lots = get_positions(username)
-        achats = sum(float(l["quantite"]) * float(l["prix_achat"])
-                     for l in lots if l.get("type", "achat") == "achat")
-        ventes = sum(float(l["quantite"]) * float(l["prix_achat"])
-                     for l in lots if l.get("type") == "vente")
-        solde = round(ventes - achats, 2)
+        solde      = _solde_suivi_brut(username)
+        ajustement = get_ajustement_cash(username)
+        if ajustement:
+            return max(round(solde + ajustement, 2), 0.0)
         return solde if solde >= 0 else None
     except Exception as e:
         print(f"[Portfolio] get_cash_disponible erreur : {e}", flush=True)

@@ -19,10 +19,12 @@ Supabase est le backend de persistance principal. Il expose une API REST sur HTT
 ```sql
 -- Comptes utilisateurs
 CREATE TABLE users (
-  username TEXT PRIMARY KEY,
-  name     TEXT NOT NULL,
-  email    TEXT DEFAULT '',
-  password TEXT NOT NULL
+  username             TEXT PRIMARY KEY,
+  name                 TEXT NOT NULL,
+  email                TEXT DEFAULT '',
+  password             TEXT NOT NULL,
+  cash_ajustement      FLOAT DEFAULT 0,   -- correction admin du cash suivi (écart, pas valeur figée)
+  cash_ajustement_note TEXT
 );
 
 -- Tickers suivis par utilisateur
@@ -182,6 +184,21 @@ nouvelle colonne ajoutée ici.
 ---
 
 ## Migrations sur une installation existante
+
+**Colonnes `cash_ajustement` / `cash_ajustement_note`** (2026-07-28 —
+correction manuelle admin du cash disponible : `get_cash_disponible()` ne
+peut pas deviner du cash externe non suivi (dépôt, retrait, frais) ; un
+admin peut désormais fixer la valeur réelle via le bandeau "Gestion des
+données". Sur `users`, pas une table séparée : attribut scalaire unique
+par utilisateur (comme email/password), pas un historique un-à-plusieurs.
+Stocké comme un ÉCART par rapport au solde suivi brut, pas une valeur
+figée — voir portfolio/positions.py::corriger_cash()) :
+
+```sql
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS cash_ajustement      FLOAT DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS cash_ajustement_note TEXT;
+```
 
 **Table `opportunites_historique`** (2026-07-24 — évaluation multi-horizons
 (J+1/J+5/J+20) du Top 5 du scan d'opportunités : jusqu'ici aucune ligne
