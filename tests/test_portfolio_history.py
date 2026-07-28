@@ -8,9 +8,43 @@
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
+import db
 from portfolio import history
 import portfolio.positions as positions_mod
 import data.market as market_mod
+
+_real_save_daily_snapshot = history.save_daily_snapshot   # gardé avant l'override ci-dessous
+
+
+# ── save_daily_snapshot : le cash affiché doit inclure la correction admin,
+#    pas seulement le calcul par lots — même bug que sur portfolio.html
+#    (28.07.2026) : un cash corrigé à 10$ restait affiché à l'ancienne
+#    valeur, ici la logique de recalcul par lots ignorait totalement
+#    positions.py::get_cash_disponible() ──
+db._init = lambda: None
+db.is_available = lambda: True
+upserts = []
+db._client = type("FakeClient", (), {
+    "table": lambda self, name: type("FakeTable", (), {
+        "upsert": lambda self, rows, on_conflict=None: (upserts.append(rows) or self),
+        "execute": lambda self: None,
+    })()
+})()
+
+positions_mod.get_positions   = lambda u: [{"ticker": "AAA", "type": "achat", "quantite": 1,
+                                            "prix_achat": 10.0, "currency": "USD"}]  # solde brut = -10
+positions_mod.get_ajustement_cash = lambda u: 60.0   # correction admin : +60 -> cash réel 50
+
+positions_fake = [{"currency": "USD", "summary": {
+    "position_fermee": False, "valeur_actuelle": 100.0, "pnl_euros": 0,
+    "lots": [{"type": "achat", "quantite": 1, "prix_achat": 10.0}],
+}}]
+assert _real_save_daily_snapshot("admin", positions_fake) is True
+assert len(upserts) == 1
+row = upserts[0][0]
+assert row["cash_dispo"] == 50.0, f"attendu 50.0 (corrigé), obtenu {row['cash_dispo']}"
+print("✓ save_daily_snapshot : le cash inclut la correction admin (get_cash_disponible), pas juste les lots")
+
 
 sauvegardes = []
 history.save_daily_snapshot = lambda username, positions: (

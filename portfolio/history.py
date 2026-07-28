@@ -85,6 +85,19 @@ def save_daily_snapshot(username: str, positions: list) -> bool:
                     g["cash_dispo"] -= montant
             g["pnl_cumul"] += float(s.get("pnl_euros") or 0)
 
+        # Cash affiché = get_cash_disponible() (inclut une éventuelle
+        # correction admin, cf. positions.py::corriger_cash) — remplace le
+        # calcul par lots ci-dessus, qui l'ignorait totalement. Même bug
+        # que celui trouvé sur portfolio.html le 28.07.2026 : une correction
+        # ne se propageait nulle part tant que chaque affichage recalculait
+        # le cash lui-même au lieu d'appeler la fonction corrigée.
+        # Pas ventilée par devise -> appliquée seulement en mono-devise.
+        if len(by_cur) == 1:
+            from portfolio.positions import get_cash_disponible
+            cash_corrige = get_cash_disponible(username)
+            if cash_corrige is not None:
+                next(iter(by_cur.values()))["cash_dispo"] = cash_corrige
+
         rows = []
         for cur, g in by_cur.items():
             # Convention respectée → jamais négatif ; si ça arrive quand
