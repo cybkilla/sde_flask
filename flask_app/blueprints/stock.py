@@ -1,5 +1,6 @@
 # flask_app/blueprints/stock.py
 
+import threading
 from flask import Blueprint, render_template, request, redirect, url_for, jsonify, flash
 from flask_login import current_user, login_required
 
@@ -9,6 +10,45 @@ _CURRENCY_SYM = {
     "USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥",
     "CHF": "Fr", "CAD": "CA$", "AUD": "A$", "HKD": "HK$",
 }
+
+# ── Rafraîchissement auto en arrière-plan (28.07.2026) ─────────────────────
+# Signalé : "il faut cliquer sur rafraîchir" — le cache snapshot dure
+# jusqu'à 24h (snapshot.py::MAX_AGE_HOURS, choisi pour le budget API) et
+# rien ne le rafraîchissait avant cette échéance sans clic manuel. Plutôt
+# que raccourcir le TTL global (ce qui ralentirait la page elle-même en
+# forçant un pipeline complet synchrone ~10-18s sur la visite qui dépasse
+# le seuil), un ticker consulté au-delà de SEUIL_RAFRAICHISSEMENT_MIN
+# déclenche un pipeline complet en THREAD DÉTACHÉ : la page continue de
+# s'afficher immédiatement avec les données en cache (+ prix live comme
+# avant), et la PROCHAINE visite trouve un snapshot déjà à jour. Même
+# pattern déjà utilisé pour /scheduler/run et lancer_scan() (thread
+# daemon, retour immédiat) — confirmé compatible avec gunicorn sync
+# single-worker : le thread de fond ne bloque pas le worker principal.
+SEUIL_RAFRAICHISSEMENT_MIN = 90
+
+_refresh_en_cours: set = set()
+_refresh_lock = threading.Lock()
+
+
+def _lancer_refresh_arriere_plan(ticker: str):
+    """Rafraîchit un ticker en tâche de fond — au plus UN refresh à la fois par ticker."""
+    with _refresh_lock:
+        if ticker in _refresh_en_cours:
+            return
+        _refresh_en_cours.add(ticker)
+
+    def _run():
+        try:
+            from pipeline import run
+            run(ticker, use_cache=False)
+            print(f"[Analyze] {ticker} rafraîchi en arrière-plan (snapshot périmé)", flush=True)
+        except Exception as e:
+            print(f"[Analyze] rafraîchissement arrière-plan {ticker} échoué : {e}", flush=True)
+        finally:
+            with _refresh_lock:
+                _refresh_en_cours.discard(ticker)
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 # ── Home ──────────────────────────────────────────────────────────────────────
@@ -67,6 +107,13 @@ def analyze(ticker: str):
     # Méta snapshot : âge en minutes (présent seulement si résultat depuis Supabase)
     snapshot_age_min = res.pop("_sde_snapshot_age_min", None)
     snapshot_ts      = res.pop("_sde_snapshot_ts",      None)
+
+    # Snapshot trop vieux -> rafraîchissement complet en tâche de fond,
+    # sans ralentir CETTE visite (cf. commentaire SEUIL_RAFRAICHISSEMENT_MIN
+    # en haut du fichier). nocache=1 ne repasse jamais ici : snapshot_age_min
+    # est None sur un pipeline frais.
+    if snapshot_age_min is not None and snapshot_age_min > SEUIL_RAFRAICHISSEMENT_MIN:
+        _lancer_refresh_arriere_plan(ticker)
 
     # Prix live : Finnhub quote systématique sur tout hit cache (in-memory ou Supabase).
     # Sur un pipeline frais le prix est déjà current ; l'appel est négligeable (~100 ms).
