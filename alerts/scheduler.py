@@ -291,11 +291,23 @@ def _check_position_advice(username: str, email: str) -> None:
             atr_t  = atr_pct(snap_t.get("market", {}).get("history")) if snap_t else None
 
             # ── Gap overnight (pré-marché uniquement) ─────────────────
-            gap_pct = None
-            if premarche and live.get("prev_close"):
-                gap = live.get("var_1d")     # prix pré-marché vs clôture veille
-                if gap_significatif(gap, atr_t):
-                    gap_pct = gap
+            # get_live_price()["var_1d"] reste figé sur la clôture de la
+            # veille hors séance sur Finnhub/Twelve Data — vérifié en réel
+            # le 31.07.2026 (même sur AAPL/NVDA/MSFT). get_premarket_gap()
+            # (data/market.py) tente un vrai prix ET un vrai gap pré-marché
+            # via yfinance (best effort, bloqué sur Render la plupart du
+            # temps -> None). Sans donnée dispo, cette réévaluation
+            # pré-marché est simplement ignorée cette fois-ci — les
+            # réévaluations en séance/post-ouverture plus bas restent
+            # inchangées (Finnhub redevient fiable une fois le marché ouvert).
+            gap_pct  = None
+            prix_gap = None
+            if premarche:
+                from data.market import get_premarket_gap
+                pm = get_premarket_gap(ticker)
+                if pm and gap_significatif(pm["gap_pct"], atr_t):
+                    gap_pct  = pm["gap_pct"]
+                    prix_gap = pm["prix"]
 
             # Conseil du jour déjà généré + gap significatif + pas encore
             # réévalué aujourd'hui → invalider et régénérer avec le gap
@@ -351,7 +363,12 @@ def _check_position_advice(username: str, email: str) -> None:
                     print(f"  [Advice] {ticker} : point de contrôle "
                           f"post-ouverture — conseil réévalué", flush=True)
 
-            advice, created = ensure_today_advice(username, ticker, prix_live,
+            # Le conseil se base sur le vrai prix pré-marché (prix_gap)
+            # quand on l'a — pas seulement le gap affiché en texte, mais
+            # le P&L et les seuils ATR eux-mêmes en dépendent (market["price"]
+            # dans ensure_today_advice). Sinon, prix_live comme avant.
+            prix_conseil = prix_gap if prix_gap is not None else prix_live
+            advice, created = ensure_today_advice(username, ticker, prix_conseil,
                                                   gap_pct=gap_pct,
                                                   var_1d=live.get("var_1d"),
                                                   intraday_pct=intraday_pct,
