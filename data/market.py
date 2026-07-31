@@ -363,6 +363,43 @@ def get_live_price(ticker: str) -> dict:
         return {}
 
 
+def get_premarket_gap(ticker: str) -> dict | None:
+    """
+    Vrai gap pré-marché (prix pré-marché vs clôture de la veille) —
+    PAS get_live_price()["var_1d"], qui reste figé sur la clôture de la
+    veille hors séance : vérifié en réel le 31.07.2026 sur Finnhub, Twelve
+    Data ET Alpha Vantage (offres gratuites) — les trois renvoient la
+    même clôture de la veille tant que le marché n'a pas rouvert, même
+    sur AAPL/NVDA/MSFT. Aucune des trois n'expose de prix pré-marché sur
+    leur plan gratuit (Alpha Vantage le confirme explicitement : son
+    endpoint extended_hours est "premium only").
+
+    Seul yfinance (`.info["preMarketPrice"]`) a la vraie donnée — mais
+    yfinance est bloqué au niveau réseau depuis Render (cf. net_timeout.py).
+    Cette fonction est donc un BEST EFFORT : timeout court, retourne None
+    si indisponible plutôt qu'une fausse donnée. En prod, s'attendre à
+    None la plupart du temps — c'est le compromis assumé (pas d'info vaut
+    mieux qu'une info fausse, même convention que get_cash_disponible()).
+    """
+    try:
+        import yfinance as yf
+        from utils.net_timeout import with_timeout
+        info = with_timeout(lambda: yf.Ticker(ticker.upper()).info, 8)
+        pm_price = info.get("preMarketPrice") if info else None
+        pm_pct   = info.get("preMarketChangePercent") if info else None
+        if pm_price is None or pm_pct is None:
+            return None
+        prev = info.get("regularMarketPreviousClose")
+        return {
+            "prix":       round(float(pm_price), 4),
+            "gap_pct":    round(float(pm_pct), 2),
+            "prev_close": round(float(prev), 4) if prev else None,
+        }
+    except Exception as e:
+        print(f"[Market] get_premarket_gap({ticker}) indisponible : {e}", flush=True)
+        return None
+
+
 # ══════════════════════════════════════════════════════════
 # POINT D'ENTRÉE — essaie yfinance, bascule sur Finnhub+TD
 # ══════════════════════════════════════════════════════════

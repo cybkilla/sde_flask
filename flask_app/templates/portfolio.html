@@ -24,17 +24,6 @@
   </button>
 </div>
 
-<!-- Pré-marché (visible seulement 10h00-15h25 Paris, avant l'ouverture NASDAQ) -->
-<div class="sde-card mb-3" id="sde-premarche-card" style="display:none">
-  <span class="sde-section-title mb-0" style="font-size:.8rem">
-    <i class="bi bi-sunrise me-1"></i>Pré-marché
-  </span>
-  <p class="text-muted mb-2" style="font-size:.7rem">
-    État de vos positions avant l'ouverture NASDAQ (15h30 Paris) — se préparer à la séance à venir.
-  </p>
-  <div id="sde-premarche-body"></div>
-</div>
-
 <!-- Graphe historique portefeuille -->
 <div class="sde-card mb-3" id="sde-history-card" style="display:none">
   <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
@@ -54,6 +43,17 @@
   <p id="sde-history-note" class="text-muted" style="font-size:.68rem;margin:4px 0 0;display:none">
     Snapshot enregistré chaque soir après la clôture du NASDAQ (22h00 Paris).
   </p>
+</div>
+
+<!-- Pré-marché (visible seulement 10h00-15h25 Paris, avant l'ouverture NASDAQ) -->
+<div class="sde-card mb-3" id="sde-premarche-card" style="display:none">
+  <span class="sde-section-title mb-0" style="font-size:.8rem">
+    <i class="bi bi-sunrise me-1"></i>Pré-marché
+  </span>
+  <p class="text-muted mb-2" style="font-size:.7rem">
+    État de vos positions avant l'ouverture NASDAQ (15h30 Paris) — se préparer à la séance à venir.
+  </p>
+  <div id="sde-premarche-body"></div>
 </div>
 
 <div id="sde-overview-wrap">
@@ -962,12 +962,24 @@
       .then(r => r.json())
       .then(data => {
         const card = document.getElementById("sde-premarche-card");
-        if (!data.ok || !data.en_fenetre || !data.positions || !data.positions.length) {
-          // Hors fenêtre pré-marché (10h00-15h25 Paris), ou rien à montrer
+        if (!data.ok || !data.en_fenetre) {
+          // Hors fenêtre pré-marché (10h00-15h25 Paris) : rien à montrer
           card.style.display = "none";
           return;
         }
         card.style.display = "";
+
+        if (!data.positions || !data.positions.length) {
+          // Fenêtre active mais aucune donnée pré-marché disponible — le cas le
+          // plus fréquent en prod (seul yfinance a un vrai prix pré-marché, et
+          // il est bloqué depuis Render) : le dire plutôt que masquer la carte
+          // ou afficher un chiffre faux.
+          document.getElementById("sde-premarche-body").innerHTML = `
+            <p class="text-muted mb-0" style="font-size:.78rem">
+              Pas de donnée pré-marché disponible pour l'instant sur vos positions.
+            </p>`;
+          return;
+        }
 
         const rows = data.positions.map(p => {
           const gap   = p.gap_pct;

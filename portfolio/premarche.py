@@ -14,14 +14,19 @@ from datetime import date
 
 def etat_premarche(username: str) -> list[dict]:
     """
-    Pour chaque position OUVERTE : prix pré-marché (get_live_price reflète
-    le dernier print, y compris hors séance), gap vs clôture de la veille,
-    et si ce gap est notable au sens de gap_significatif() (seuil adapté
-    à l'ATR du titre — même règle que la réévaluation de conseil).
-    Trié par |gap| décroissant (le plus notable en premier).
+    Pour chaque position OUVERTE : vrai gap pré-marché (data.market.
+    get_premarket_gap — PAS get_live_price()["var_1d"], qui reste figé
+    sur la clôture de la veille hors séance sur les sources gratuites,
+    cf. son docstring), et si ce gap est notable au sens de
+    gap_significatif() (seuil adapté à l'ATR du titre — même règle que
+    la réévaluation de conseil). Trié par |gap| décroissant.
+
+    Un ticker sans donnée pré-marché disponible (le cas le plus fréquent
+    en prod — yfinance, seule source à l'avoir, est bloqué depuis Render)
+    est simplement absent du résultat plutôt que d'afficher un gap faux.
     """
     from portfolio.positions import get_positions, get_portfolio_summary
-    from data.market import get_live_price
+    from data.market import get_premarket_gap
     from portfolio.risk import gap_significatif, atr_pct
     from snapshot import get_snapshot, MAX_AGE_HOURS
 
@@ -31,25 +36,23 @@ def etat_premarche(username: str) -> list[dict]:
     etats = []
     for t in tickers:
         try:
-            live = get_live_price(t) or {}
-            prix = live.get("price")
-            if not prix:
-                continue
-            s = get_portfolio_summary(username, t, prix)
+            pm = get_premarket_gap(t)
+            if not pm:
+                continue   # pas de donnée pré-marché disponible pour ce titre
+            s = get_portfolio_summary(username, t, pm["prix"])
             if not s or s.get("position_fermee"):
                 continue
             snap = get_snapshot(t, max_age_hours=MAX_AGE_HOURS)
             atr  = atr_pct((snap or {}).get("market", {}).get("history")) if snap else None
-            gap  = live.get("var_1d")
             company = next((l["company"] for l in lots
                             if l["ticker"] == t and l.get("company")), t)
             etats.append({
                 "ticker":     t,
                 "company":    company,
-                "prix":       prix,
-                "prev_close": live.get("prev_close"),
-                "gap_pct":    gap,
-                "notable":    gap_significatif(gap, atr),
+                "prix":       pm["prix"],
+                "prev_close": pm["prev_close"],
+                "gap_pct":    pm["gap_pct"],
+                "notable":    gap_significatif(pm["gap_pct"], atr),
                 "pnl_pct":    s["pnl_pct"],
             })
         except Exception as e:

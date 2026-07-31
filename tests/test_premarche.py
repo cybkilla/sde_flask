@@ -24,10 +24,10 @@ positions_mod.get_positions = lambda u: [
      "currency": "USD", "company": "CCC Ltd."},
 ]
 snapshot_mod.get_snapshot = lambda t, max_age_hours=24: None   # pas d'ATR -> seuil fixe 3%
-market_mod.get_live_price = lambda t: {
-    "AAA": {"price": 5.5, "prev_close": 5.0, "var_1d": 10.0},   # gap notable (>3%)
-    "BBB": {"price": 20.2, "prev_close": 20.0, "var_1d": 1.0},  # gap dans le bruit
-    "CCC": {"price": None},                                     # prix indisponible -> ignoré
+market_mod.get_premarket_gap = lambda t: {
+    "AAA": {"prix": 5.5, "prev_close": 5.0, "gap_pct": 10.0},   # gap notable (>3%)
+    "BBB": {"prix": 20.2, "prev_close": 20.0, "gap_pct": 1.0},  # gap dans le bruit
+    "CCC": None,   # pas de donnée pré-marché (cas fréquent, yfinance bloqué sur Render) -> ignoré
 }[t]
 positions_mod.get_portfolio_summary = lambda u, t, prix: (
     None if prix is None else
@@ -36,9 +36,9 @@ positions_mod.get_portfolio_summary = lambda u, t, prix: (
 
 etats = premarche.etat_premarche("admin")
 
-# CCC ignoré (prix indisponible)
+# CCC ignoré (pas de donnée pré-marché disponible)
 assert [e["ticker"] for e in etats] == ["AAA", "BBB"], etats
-print("✓ etat_premarche : position sans prix disponible ignorée")
+print("✓ etat_premarche : ticker sans donnée pré-marché disponible ignoré")
 
 # Trié par |gap| décroissant -> AAA (10%) avant BBB (1%)
 assert etats[0]["ticker"] == "AAA"
