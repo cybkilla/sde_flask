@@ -59,16 +59,17 @@ assert etats[1]["ticker"] == "BBB"
 assert etats[1]["notable"] is False   # 1% < 3%
 print("✓ etat_premarche : trié par |gap| décroissant, notable = gap_significatif()")
 
-# CCC : gap_pct=None explicite (jamais un gap inventé), notable toujours False.
-# prev_close aussi None (pas 9.9) : le prev_close de get_live_price() n'est
-# PAS fiable comme clôture de référence (écart Finnhub/yfinance constaté en
-# réel) — mieux vaut "—" qu'une clôture fausse à côté d'un prix réel.
+# CCC : prix ET prev_close affichés (même donnée que le reste de la page,
+# get_live_price) — mais gap_pct=None : les deux nombres ne forment pas
+# une paire fiable pour calculer un vrai gap pré-marché, donc pas de %
+# calculé entre eux (afficher les nombres bruts reste honnête, en
+# déduire un pourcentage ne le serait pas).
 ccc = next(e for e in etats if e["ticker"] == "CCC")
 assert ccc["gap_pct"] is None
 assert ccc["notable"] is False
 assert ccc["prix"] == 9.1
-assert ccc["prev_close"] is None
-print("✓ etat_premarche : sans vraie donnée pré-marché -> gap_pct=None ET prev_close=None, jamais inventés")
+assert ccc["prev_close"] == 9.9
+print("✓ etat_premarche : sans vraie donnée pré-marché -> prix/clôture affichés, gap_pct=None (jamais calculé sur une paire non garantie)")
 
 
 # ── Position fermée -> exclue ──

@@ -15,21 +15,25 @@ from datetime import date
 def _donnees_brutes(t: str) -> tuple:
     """
     (prix, prev_close, gap_pct) pour un ticker. Source primaire :
-    get_premarket_gap() (vrai pré-marché, yfinance). Repli : get_live_price()
-    (Finnhub) pour au moins un dernier prix connu — mais SON prev_close
-    n'est PAS fiable comme référence de clôture (vérifié en réel le
-    31.07.2026 sur TMC : Finnhub renvoyait 3.66$ pendant que la vraie
-    clôture de la veille, via yfinance, était 3.45$ — un écart de plus
-    d'une séance, pas un simple arrondi). On ne l'affiche donc PAS sous
-    "Clôture veille" : mieux vaut "—" qu'une clôture fausse à côté d'un
-    prix qui, lui, est réel.
+    get_premarket_gap() (vrai pré-marché, yfinance) — prix ET clôture
+    veille viennent alors de la MÊME source, cohérents entre eux.
+
+    Repli : get_live_price() (Finnhub) — affiché comme ailleurs sur la
+    page (cartes positions, même source), pour ne pas cacher une donnée
+    qu'on sait par ailleurs. Mais gap_pct reste None dans ce cas : le
+    prix Finnhub (potentiellement figé sur la clôture) et son prev_close
+    ne forment pas une paire fiable pour calculer un VRAI gap pré-marché
+    (écart réel constaté le 31.07.2026 sur TMC entre le prev_close
+    Finnhub et la vraie clôture veille via yfinance) — afficher les deux
+    nombres bruts reste honnête, en calculer un pourcentage entre eux
+    ne le serait pas.
     """
     from data.market import get_premarket_gap, get_live_price
     pm = get_premarket_gap(t)
     if pm:
         return pm["prix"], pm["prev_close"], pm["gap_pct"]
     live = get_live_price(t) or {}
-    return live.get("price"), None, None
+    return live.get("price"), live.get("prev_close"), None
 
 
 def etat_premarche(username: str) -> list[dict]:

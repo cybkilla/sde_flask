@@ -318,46 +318,63 @@ def _get_finnhub_fallback(ticker: str) -> dict:
 # ══════════════════════════════════════════════════════════
 # PRIX LIVE — appel léger Finnhub (pour rafraîchir un snapshot)
 # ══════════════════════════════════════════════════════════
+def _quote_finnhub(ticker: str) -> dict:
+    fh    = _fh()
+    quote = fh.quote(ticker.upper()) or {}
+    price = _safe(quote.get("c"))
+    prev  = _safe(quote.get("pc"))
+    if price and prev and float(prev) > 0:
+        var_1d = round((float(price) - float(prev)) / float(prev) * 100, 2)
+    else:
+        var_1d = 0.0
+    return {
+        "price":      round(float(price), 2) if price else None,
+        "prev_close": round(float(prev),  2) if prev  else None,
+        "var_1d":     var_1d,
+    }
+
+
+def _quote_yfinance(ticker: str) -> dict:
+    import yfinance as yf
+    fi    = yf.Ticker(ticker.upper()).fast_info
+    price = getattr(fi, "last_price", None)
+    prev  = getattr(fi, "previous_close", None)
+    if price and prev and float(prev) > 0:
+        var_1d = round((float(price) - float(prev)) / float(prev) * 100, 2)
+    else:
+        var_1d = 0.0
+    return {
+        "price":      round(float(price), 2) if price else None,
+        "prev_close": round(float(prev),  2) if prev  else None,
+        "var_1d":     var_1d,
+    }
+
+
 def get_live_price(ticker: str) -> dict:
     """
     Retourne le prix actuel et la variation du jour.
-    Primaire : Finnhub /quote (léger).
+    Primaire : Finnhub /quote (léger, normalement < 1s).
     Fallback  : yfinance fast_info si Finnhub indisponible (502, timeout…).
     Retourne {} si les deux sources échouent.
+
+    Les deux appels sont protégés par un timeout (with_timeout) — un
+    /quote normalement instantané peut dégrader à plusieurs secondes
+    (vécu en réel le 31.07.2026 : 12.5s sur Finnhub, aucune protection
+    avant ce correctif). Même famille de risque que l'incident de
+    mi-juillet qui avait rendu tout le site inaccessible
+    (utils/net_timeout.py, alors appliqué aux appels yfinance seulement).
     """
+    from utils.net_timeout import with_timeout
+
     # ── Tentative Finnhub ─────────────────────────────────
     try:
-        fh    = _fh()
-        quote = fh.quote(ticker.upper()) or {}
-        price = _safe(quote.get("c"))
-        prev  = _safe(quote.get("pc"))
-        if price and prev and float(prev) > 0:
-            var_1d = round((float(price) - float(prev)) / float(prev) * 100, 2)
-        else:
-            var_1d = 0.0
-        return {
-            "price":      round(float(price), 2) if price else None,
-            "prev_close": round(float(prev),  2) if prev  else None,
-            "var_1d":     var_1d,
-        }
+        return with_timeout(_quote_finnhub, 6, ticker)
     except Exception as e:
         print(f"[Market] Finnhub indisponible ({ticker}) : {type(e).__name__} — fallback yfinance", flush=True)
 
     # ── Fallback yfinance fast_info ───────────────────────
     try:
-        import yfinance as yf
-        fi    = yf.Ticker(ticker.upper()).fast_info
-        price = getattr(fi, "last_price", None)
-        prev  = getattr(fi, "previous_close", None)
-        if price and prev and float(prev) > 0:
-            var_1d = round((float(price) - float(prev)) / float(prev) * 100, 2)
-        else:
-            var_1d = 0.0
-        return {
-            "price":      round(float(price), 2) if price else None,
-            "prev_close": round(float(prev),  2) if prev  else None,
-            "var_1d":     var_1d,
-        }
+        return with_timeout(_quote_yfinance, 8, ticker)
     except Exception as e2:
         print(f"[Market] get_live_price({ticker}) tous les fallbacks ont échoué : {e2}", flush=True)
         return {}
