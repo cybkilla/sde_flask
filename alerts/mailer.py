@@ -429,16 +429,20 @@ def send_premarche_digest(to_email: str, username: str, etats: list):
                f"{len(notables)} mouvement(s) notable(s)")
 
     def _ligne(e):
-        gap   = e["gap_pct"] or 0.0
-        color = "#1D9E75" if gap >= 0 else "#D85A30"
+        gap = e["gap_pct"]
+        color   = ("#1D9E75" if gap >= 0 else "#D85A30") if gap is not None else "#6b7280"
+        gap_txt = f"{gap:+.1f}%" if gap is not None else "Pas de donnée"
         badge = (' <span style="color:#BA7517;font-weight:700" title="Mouvement notable">⚠</span>'
                  if e["notable"] else "")
+        prev = e.get("prev_close")
+        prev_txt = f"${prev:.2f}" if prev is not None else "—"
         return (f'<tr style="border-bottom:1px solid #e5e7eb">'
                 f'<td style="padding:6px 8px;font-weight:700">{e["ticker"]}{badge}'
                 f'<div style="font-weight:400;color:#6b7280;font-size:11px">{e["company"]}</div></td>'
+                f'<td style="padding:6px 8px;text-align:right;color:#6b7280">{prev_txt}</td>'
+                f'<td style="padding:6px 8px;text-align:right;font-weight:600">${e["prix"]:.2f}</td>'
                 f'<td style="padding:6px 8px;text-align:right;color:{color};font-weight:700">'
-                f'{gap:+.1f}%</td>'
-                f'<td style="padding:6px 8px;text-align:right">${e["prix"]:.2f}</td></tr>')
+                f'{gap_txt}</td></tr>')
 
     rows = "".join(_ligne(e) for e in etats)
     body = f"""
@@ -452,8 +456,9 @@ def send_premarche_digest(to_email: str, username: str, etats: list):
         <thead>
           <tr style="color:#6b7280">
             <th style="text-align:left;padding:6px 8px">Position</th>
+            <th style="text-align:right;padding:6px 8px">Clôture veille</th>
+            <th style="text-align:right;padding:6px 8px">Prix pré-marché</th>
             <th style="text-align:right;padding:6px 8px">Variation</th>
-            <th style="text-align:right;padding:6px 8px">Prix</th>
           </tr>
         </thead>
         <tbody>{rows}</tbody>

@@ -19,14 +19,18 @@ def etat_premarche(username: str) -> list[dict]:
     sur la clôture de la veille hors séance sur les sources gratuites,
     cf. son docstring), et si ce gap est notable au sens de
     gap_significatif() (seuil adapté à l'ATR du titre — même règle que
-    la réévaluation de conseil). Trié par |gap| décroissant.
+    la réévaluation de conseil). Trié par |gap| décroissant (les tickers
+    sans donnée, gap_pct=None, se retrouvent en fin de liste).
 
-    Un ticker sans donnée pré-marché disponible (le cas le plus fréquent
-    en prod — yfinance, seule source à l'avoir, est bloqué depuis Render)
-    est simplement absent du résultat plutôt que d'afficher un gap faux.
+    Un ticker sans vraie donnée pré-marché (le cas le plus fréquent en
+    prod — yfinance, seule source à l'avoir, est bloqué depuis Render)
+    reste dans le résultat avec ce qu'on sait par ailleurs (dernier prix
+    connu via get_live_price) et gap_pct=None — jamais un gap inventé,
+    mais jamais silencieusement absent non plus (demande utilisateur du
+    31.07.2026 : afficher le ticker quand même, avec "pas de donnée").
     """
     from portfolio.positions import get_positions, get_portfolio_summary
-    from data.market import get_premarket_gap
+    from data.market import get_premarket_gap, get_live_price
     from portfolio.risk import gap_significatif, atr_pct
     from snapshot import get_snapshot, MAX_AGE_HOURS
 
@@ -37,9 +41,14 @@ def etat_premarche(username: str) -> list[dict]:
     for t in tickers:
         try:
             pm = get_premarket_gap(t)
-            if not pm:
-                continue   # pas de donnée pré-marché disponible pour ce titre
-            s = get_portfolio_summary(username, t, pm["prix"])
+            if pm:
+                prix, prev_close, gap = pm["prix"], pm["prev_close"], pm["gap_pct"]
+            else:
+                live = get_live_price(t) or {}
+                prix, prev_close, gap = live.get("price"), live.get("prev_close"), None
+            if not prix:
+                continue   # aucune donnée du tout, même de secours -> rien à montrer
+            s = get_portfolio_summary(username, t, prix)
             if not s or s.get("position_fermee"):
                 continue
             snap = get_snapshot(t, max_age_hours=MAX_AGE_HOURS)
@@ -49,10 +58,10 @@ def etat_premarche(username: str) -> list[dict]:
             etats.append({
                 "ticker":     t,
                 "company":    company,
-                "prix":       pm["prix"],
-                "prev_close": pm["prev_close"],
-                "gap_pct":    pm["gap_pct"],
-                "notable":    gap_significatif(pm["gap_pct"], atr),
+                "prix":       prix,
+                "prev_close": prev_close,
+                "gap_pct":    gap,
+                "notable":    gap_significatif(gap, atr) if gap is not None else False,
                 "pnl_pct":    s["pnl_pct"],
             })
         except Exception as e:

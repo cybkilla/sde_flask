@@ -22,13 +22,20 @@ positions_mod.get_positions = lambda u: [
      "currency": "USD", "company": "BBB Corp."},
     {"ticker": "CCC", "type": "achat", "quantite": 3,  "prix_achat": 9.0,
      "currency": "USD", "company": "CCC Ltd."},
+    {"ticker": "DDD", "type": "achat", "quantite": 1,  "prix_achat": 1.0,
+     "currency": "USD", "company": "DDD SA"},
 ]
 snapshot_mod.get_snapshot = lambda t, max_age_hours=24: None   # pas d'ATR -> seuil fixe 3%
 market_mod.get_premarket_gap = lambda t: {
     "AAA": {"prix": 5.5, "prev_close": 5.0, "gap_pct": 10.0},   # gap notable (>3%)
     "BBB": {"prix": 20.2, "prev_close": 20.0, "gap_pct": 1.0},  # gap dans le bruit
-    "CCC": None,   # pas de donnée pré-marché (cas fréquent, yfinance bloqué sur Render) -> ignoré
+    "CCC": None,   # pas de vraie donnée pré-marché (cas fréquent, yfinance bloqué sur Render)
+    "DDD": None,   # idem, ET pas de prix de secours -> vraiment rien à montrer
 }[t]
+market_mod.get_live_price = lambda t: {
+    "CCC": {"price": 9.1, "prev_close": 9.0},   # prix de secours -> affiché quand même
+    "DDD": {},                                   # rien du tout -> exclu
+}.get(t, {})
 positions_mod.get_portfolio_summary = lambda u, t, prix: (
     None if prix is None else
     {"currency": "USD", "position_fermee": False, "pnl_pct": 5.0}
@@ -36,16 +43,24 @@ positions_mod.get_portfolio_summary = lambda u, t, prix: (
 
 etats = premarche.etat_premarche("admin")
 
-# CCC ignoré (pas de donnée pré-marché disponible)
-assert [e["ticker"] for e in etats] == ["AAA", "BBB"], etats
-print("✓ etat_premarche : ticker sans donnée pré-marché disponible ignoré")
+# DDD exclu (aucune donnée, même de secours) ; CCC présent malgré l'absence
+# de vraie donnée pré-marché (demande utilisateur du 31.07.2026)
+assert [e["ticker"] for e in etats] == ["AAA", "BBB", "CCC"], etats
+print("✓ etat_premarche : ticker sans AUCUNE donnée exclu, mais affiché s'il y a un prix de secours")
 
-# Trié par |gap| décroissant -> AAA (10%) avant BBB (1%)
+# Trié par |gap| décroissant -> AAA (10%) avant BBB (1%) avant CCC (inconnu, traité comme 0)
 assert etats[0]["ticker"] == "AAA"
 assert etats[0]["notable"] is True    # 10% > seuil fixe 3% (pas d'ATR)
 assert etats[1]["ticker"] == "BBB"
 assert etats[1]["notable"] is False   # 1% < 3%
 print("✓ etat_premarche : trié par |gap| décroissant, notable = gap_significatif()")
+
+# CCC : gap_pct=None explicite (jamais un gap inventé), notable toujours False
+ccc = next(e for e in etats if e["ticker"] == "CCC")
+assert ccc["gap_pct"] is None
+assert ccc["notable"] is False
+assert ccc["prix"] == 9.1 and ccc["prev_close"] == 9.0
+print("✓ etat_premarche : sans vraie donnée pré-marché -> gap_pct=None, jamais inventé")
 
 
 # ── Position fermée -> exclue ──
