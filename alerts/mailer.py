@@ -430,23 +430,19 @@ def send_premarche_digest(to_email: str, username: str, etats: list):
 
     def _ligne(e):
         gap = e["gap_pct"]
-        if gap is None:
-            color, gap_txt = "#6b7280", "Pas de donnée"
-        elif not e.get("confirme", True):
-            # Calculé mais pas confirmé pré-marché (repli Finnhub — peut
-            # refléter la clôture précédente plutôt qu'un vrai tick pré-marché)
-            color, gap_txt = "#6b7280", f"{gap:+.1f}% *"
-        else:
-            color, gap_txt = ("#1D9E75" if gap >= 0 else "#D85A30"), f"{gap:+.1f}%"
+        color   = ("#1D9E75" if gap >= 0 else "#D85A30") if gap is not None else "#6b7280"
+        gap_txt = f"{gap:+.1f}%" if gap is not None else "Pas de donnée"
         badge = (' <span style="color:#BA7517;font-weight:700" title="Mouvement notable">⚠</span>'
                  if e["notable"] else "")
         prev = e.get("prev_close")
         prev_txt = f"${prev:.2f}" if prev is not None else "—"
+        prix = e.get("prix")
+        prix_txt = f"${prix:.2f}" if prix is not None else "—"
         return (f'<tr style="border-bottom:1px solid #e5e7eb">'
                 f'<td style="padding:6px 8px;font-weight:700">{e["ticker"]}{badge}'
                 f'<div style="font-weight:400;color:#6b7280;font-size:11px">{e["company"]}</div></td>'
                 f'<td style="padding:6px 8px;text-align:right;color:#6b7280">{prev_txt}</td>'
-                f'<td style="padding:6px 8px;text-align:right;font-weight:600">${e["prix"]:.2f}</td>'
+                f'<td style="padding:6px 8px;text-align:right;font-weight:600">{prix_txt}</td>'
                 f'<td style="padding:6px 8px;text-align:right;color:{color};font-weight:700">'
                 f'{gap_txt}</td></tr>')
 
@@ -470,8 +466,7 @@ def send_premarche_digest(to_email: str, username: str, etats: list):
         <tbody>{rows}</tbody>
       </table>
       <p style="font-size:12px;color:#9ca3af;margin-top:16px">
-        ⚠ = mouvement au-delà du bruit habituel de ce titre (seuil adapté à sa volatilité).<br>
-        * = non confirmé comme un vrai tick pré-marché (peut refléter la clôture précédente).
+        ⚠ = mouvement au-delà du bruit habituel de ce titre (seuil adapté à sa volatilité).
       </p>
       <div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:12px">
         <a href="{SDE_BASE_URL}/mes-positions"

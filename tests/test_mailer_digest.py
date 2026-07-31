@@ -87,19 +87,16 @@ etats = [
      "gap_pct": 10.0, "confirme": True, "notable": True},
     {"ticker": "BBB", "company": "BBB Corp.", "prix": 20.2, "prev_close": 20.0,
      "gap_pct": 1.0, "confirme": True, "notable": False},
-    {"ticker": "CCC", "company": "CCC Ltd.", "prix": 9.1, "prev_close": 9.9,
-     "gap_pct": -8.08, "confirme": False, "notable": False},   # calculé, pas confirmé
-    {"ticker": "DDD", "company": "DDD SA", "prix": 1.0, "prev_close": None,
-     "gap_pct": None, "confirme": False, "notable": False},    # vraiment aucune donnée
+    {"ticker": "CCC", "company": "CCC Ltd.", "prix": None, "prev_close": 9.1,
+     "gap_pct": None, "confirme": False, "notable": False},   # pas de prix pré-marché
 ]
 mailer.send_premarche_digest("a@b.c", "admin", etats)
 assert len(envois) == 1
 dest, sujet, html = envois[0]
 assert "1 mouvement(s) notable(s)" in sujet
-assert all(t in html for t in ("AAA", "BBB", "CCC", "DDD"))
+assert all(t in html for t in ("AAA", "BBB", "CCC"))
 assert "⚠" in html               # badge notable présent pour AAA
-assert "Pas de donnée" in html   # DDD (gap_pct=None) affiché sans gap inventé
-assert "-8.1% *" in html         # CCC : gap calculé mais marqué non confirmé
-print("✓ send_premarche_digest : gap notable, calculé-non-confirmé (*) et inconnu tous distingués")
+assert "Pas de donnée" in html   # CCC (gap_pct=None, prix=None) affiché sans rien inventer
+print("✓ send_premarche_digest : gap notable distingué, 'Pas de donnée' si pas de prix pré-marché")
 
 print("\n✓ Tous les tests test_mailer_digest.py sont OK (hors réseau)")

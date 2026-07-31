@@ -14,30 +14,31 @@ from datetime import date
 
 def _donnees_brutes(t: str) -> tuple:
     """
-    (prix, prev_close, gap_pct, confirme) pour un ticker.
+    (prix_premarche, clot_veille, gap_pct, confirme) pour un ticker.
 
-    confirme=True  : get_premarket_gap() a réussi (yfinance) — prix ET
-    clôture veille viennent de la MÊME source, gap_pct = vrai gap
-    pré-marché.
+    confirme=True : get_premarket_gap() a réussi (yfinance) — prix
+    pré-marché ET clôture veille viennent de la MÊME source, gap_pct =
+    vrai gap pré-marché.
 
-    confirme=False : repli get_live_price() (Finnhub). Les deux prix
-    affichés sont bien connus (comme partout ailleurs sur la page) donc
-    le % entre eux est calculé et montré — mais CE gap n'est pas garanti
-    être le vrai gap pré-marché : hors séance, Finnhub peut renvoyer un
-    "prix actuel" figé sur la clôture de la veille, auquel cas ce %
-    reflète en fait la variation de la clôture PRÉCÉDENTE, pas d'un tick
-    pré-marché réel (vérifié en réel le 31.07.2026 sur TMC). Signalé côté
-    UI/email par confirme=False plutôt que caché — la donnée existe, sa
-    provenance précise, elle, n'est pas garantie pré-marché.
+    confirme=False : repli get_live_price() (Finnhub), hors séance.
+    ERREUR CORRIGÉE le 31.07.2026 (signalée par l'utilisateur, décalage
+    d'un jour repéré à l'œil) : Finnhub hors séance fige son "prix actuel"
+    (c) sur la clôture RÉELLE de la veille (J-1) — PAS un prix pré-marché
+    — et son "prev_close" (pc) est alors la clôture d'AVANT (J-2), pas
+    "la veille". Vérifié en réel sur ITG : timestamp du quote = clôture
+    du 30.07 (J-1), pc = clôture du 29.07 (J-2). On affiche donc live["price"]
+    comme clôture veille (c'est ce qu'il EST réellement), jamais comme
+    "prix pré-marché" — et aucun prix pré-marché n'est renvoyé dans ce
+    cas (on n'en a pas), donc pas de gap calculable non plus (calculer un
+    % entre J-1 et J-2 serait exactement l'ancien bug : la variation de
+    la veille, pas un gap pré-marché).
     """
     from data.market import get_premarket_gap, get_live_price
     pm = get_premarket_gap(t)
     if pm:
         return pm["prix"], pm["prev_close"], pm["gap_pct"], True
     live = get_live_price(t) or {}
-    prix, prev = live.get("price"), live.get("prev_close")
-    gap = round((prix - prev) / prev * 100, 2) if prix and prev and prev > 0 else None
-    return prix, prev, gap, False
+    return None, live.get("price"), None, False
 
 
 def etat_premarche(username: str) -> list[dict]:
@@ -50,14 +51,12 @@ def etat_premarche(username: str) -> list[dict]:
     la réévaluation de conseil). Trié par |gap| décroissant (les tickers
     sans donnée, gap_pct=None, se retrouvent en fin de liste).
 
-    Un ticker sans vraie donnée pré-marché (le cas le plus fréquent en
-    prod — yfinance, seule source à l'avoir, est bloqué depuis Render)
-    reste dans le résultat avec ce qu'on sait par ailleurs (dernier prix
-    connu via get_live_price, gap calculé entre les deux valeurs
-    affichées) — mais `confirme=False` : `notable` (qui déclenche l'email
-    digest) reste toujours calculé UNIQUEMENT sur un gap confirmé
-    pré-marché, pour ne jamais alerter sur une variation qui ne serait en
-    fait que celle de la clôture précédente.
+    Un ticker sans vrai prix pré-marché (le cas le plus fréquent en prod
+    — yfinance, seule source à l'avoir, est bloqué depuis Render) reste
+    dans le résultat avec sa clôture de la veille (correcte, cf.
+    _donnees_brutes) mais `prix=None`, `gap_pct=None` — jamais de prix
+    pré-marché ni de gap inventés. Le prix utilisé pour le P&L retombe
+    alors sur la clôture veille, seule valeur fiable disponible.
 
     Récupération EN PARALLÈLE (pas séquentielle) : chaque appel réseau
     peut prendre jusqu'à 8-12s (timeout yfinance, ou Finnhub ralenti) —
@@ -91,9 +90,10 @@ def etat_premarche(username: str) -> list[dict]:
     for t in tickers:
         try:
             prix, prev_close, gap, confirme = donnees.get(t, (None, None, None, False))
-            if not prix:
+            prix_ref = prix if prix is not None else prev_close   # meilleur prix connu pour le P&L
+            if prix_ref is None:
                 continue   # aucune donnée du tout, même de secours -> rien à montrer
-            s = get_portfolio_summary(username, t, prix)
+            s = get_portfolio_summary(username, t, prix_ref)
             if not s or s.get("position_fermee"):
                 continue
             snap = get_snapshot(t, max_age_hours=MAX_AGE_HOURS)

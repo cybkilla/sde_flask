@@ -33,11 +33,13 @@ market_mod.get_premarket_gap = lambda t: {
     "DDD": None,   # idem, ET pas de prix de secours -> vraiment rien à montrer
 }[t]
 market_mod.get_live_price = lambda t: {
-    # prev_close volontairement DIFFÉRENT de get_premarket_gap (9.9 ici,
-    # jamais 9.0) : simule le vrai écart Finnhub/yfinance constaté en
-    # réel (TMC : 3.66 vs 3.45) — confirme que ce prev_close-là n'est
-    # justement PAS repris (cf. _donnees_brutes).
-    "CCC": {"price": 9.1, "prev_close": 9.9},   # prix de secours -> affiché quand même
+    # Finnhub hors séance : "price" (c) EST la vraie clôture de la veille
+    # (J-1), "prev_close" (pc) est la clôture d'AVANT (J-2) — vérifié en
+    # réel le 31.07.2026 sur ITG (timestamp du quote = clôture de la
+    # veille). _donnees_brutes ne doit reprendre QUE "price" comme
+    # clôture veille, jamais "prev_close" (ce serait J-2) ni l'utiliser
+    # comme un "prix pré-marché" (ça n'en est pas un).
+    "CCC": {"price": 9.1, "prev_close": 9.9},   # 9.1 = vraie clôture veille ; 9.9 = J-2, ignoré
     "DDD": {},                                   # rien du tout -> exclu
 }.get(t, {})
 positions_mod.get_portfolio_summary = lambda u, t, prix: (
@@ -48,32 +50,31 @@ positions_mod.get_portfolio_summary = lambda u, t, prix: (
 etats = premarche.etat_premarche("admin")
 
 # DDD exclu (aucune donnée, même de secours) ; CCC présent malgré l'absence
-# de vraie donnée pré-marché (demande utilisateur du 31.07.2026), avec un
-# gap CALCULÉ (9.1 vs 9.9 -> -8.08%) puisque les deux prix sont connus
-assert [e["ticker"] for e in etats] == ["AAA", "CCC", "BBB"], etats
-print("✓ etat_premarche : ticker sans AUCUNE donnée exclu, mais affiché (gap calculé) s'il y a un prix de secours")
+# de vrai prix pré-marché (demande utilisateur du 31.07.2026)
+assert [e["ticker"] for e in etats] == ["AAA", "BBB", "CCC"], etats
+print("✓ etat_premarche : ticker sans AUCUNE donnée exclu, mais affiché (clôture veille) s'il y a un prix de secours")
 
-# Trié par |gap| décroissant -> AAA (10%, confirmé) avant CCC (8.08%, PAS
-# confirmé) avant BBB (1%, confirmé)
+# Trié par |gap| décroissant -> AAA (10%) avant BBB (1%) avant CCC (pas de gap)
 assert etats[0]["ticker"] == "AAA"
 assert etats[0]["notable"] is True    # 10% confirmé > seuil fixe 3% (pas d'ATR)
 assert etats[0]["confirme"] is True
-assert etats[2]["ticker"] == "BBB"
-assert etats[2]["notable"] is False   # 1% < 3%
-print("✓ etat_premarche : trié par |gap| décroissant (confirmé ou non), notable = gap_significatif() si confirmé")
+assert etats[1]["ticker"] == "BBB"
+assert etats[1]["notable"] is False   # 1% < 3%
+print("✓ etat_premarche : trié par |gap| décroissant, notable = gap_significatif() si confirmé")
 
-# CCC : gap CALCULÉ entre les deux prix connus (comme demandé — ne pas
-# cacher un % quand les deux prix sont affichés), mais confirme=False et
-# notable TOUJOURS False : ce gap peut refléter la clôture précédente
-# plutôt qu'un vrai tick pré-marché (repli Finnhub, pas yfinance) — jamais
-# de quoi déclencher l'email digest sur une donnée non confirmée.
+# CCC : PAS de prix pré-marché (prix=None, jamais inventé), clôture veille
+# = "price" de get_live_price (9.1, la vraie clôture J-1) — PAS
+# "prev_close" (9.9, qui serait J-2). Pas de gap calculable sans un vrai
+# prix pré-marché à comparer (calculer un % entre J-1 et J-2 serait
+# justement l'ancien bug : la variation de la veille, pas un gap
+# pré-marché) — jamais notable, donc jamais de quoi déclencher l'email.
 ccc = next(e for e in etats if e["ticker"] == "CCC")
-assert ccc["gap_pct"] == -8.08
+assert ccc["prix"] is None
+assert ccc["prev_close"] == 9.1
+assert ccc["gap_pct"] is None
 assert ccc["confirme"] is False
 assert ccc["notable"] is False
-assert ccc["prix"] == 9.1
-assert ccc["prev_close"] == 9.9
-print("✓ etat_premarche : sans vraie donnée pré-marché -> gap calculé mais confirme=False, jamais notable")
+print("✓ etat_premarche : sans vrai prix pré-marché -> clôture veille correcte (J-1), pas de gap inventé")
 
 
 # ── Position fermée -> exclue ──
