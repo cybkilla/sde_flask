@@ -33,7 +33,11 @@ market_mod.get_premarket_gap = lambda t: {
     "DDD": None,   # idem, ET pas de prix de secours -> vraiment rien à montrer
 }[t]
 market_mod.get_live_price = lambda t: {
-    "CCC": {"price": 9.1, "prev_close": 9.0},   # prix de secours -> affiché quand même
+    # prev_close volontairement DIFFÉRENT de get_premarket_gap (9.9 ici,
+    # jamais 9.0) : simule le vrai écart Finnhub/yfinance constaté en
+    # réel (TMC : 3.66 vs 3.45) — confirme que ce prev_close-là n'est
+    # justement PAS repris (cf. _donnees_brutes).
+    "CCC": {"price": 9.1, "prev_close": 9.9},   # prix de secours -> affiché quand même
     "DDD": {},                                   # rien du tout -> exclu
 }.get(t, {})
 positions_mod.get_portfolio_summary = lambda u, t, prix: (
@@ -55,12 +59,16 @@ assert etats[1]["ticker"] == "BBB"
 assert etats[1]["notable"] is False   # 1% < 3%
 print("✓ etat_premarche : trié par |gap| décroissant, notable = gap_significatif()")
 
-# CCC : gap_pct=None explicite (jamais un gap inventé), notable toujours False
+# CCC : gap_pct=None explicite (jamais un gap inventé), notable toujours False.
+# prev_close aussi None (pas 9.9) : le prev_close de get_live_price() n'est
+# PAS fiable comme clôture de référence (écart Finnhub/yfinance constaté en
+# réel) — mieux vaut "—" qu'une clôture fausse à côté d'un prix réel.
 ccc = next(e for e in etats if e["ticker"] == "CCC")
 assert ccc["gap_pct"] is None
 assert ccc["notable"] is False
-assert ccc["prix"] == 9.1 and ccc["prev_close"] == 9.0
-print("✓ etat_premarche : sans vraie donnée pré-marché -> gap_pct=None, jamais inventé")
+assert ccc["prix"] == 9.1
+assert ccc["prev_close"] is None
+print("✓ etat_premarche : sans vraie donnée pré-marché -> gap_pct=None ET prev_close=None, jamais inventés")
 
 
 # ── Position fermée -> exclue ──
@@ -93,5 +101,38 @@ premarche.marquer_envoye("admin")
 assert sauvegardes == [("users", {"username": "admin"},
                         {"$set": {"premarche_digest_date": str(date.today())}})]
 print("✓ deja_envoye_aujourdhui / marquer_envoye : anti-doublon 1x/jour sur users")
+
+# ── Récupération EN PARALLÈLE, pas séquentielle ──
+# Signalé 31.07.2026 : "Chargement des positions" resté bloqué longtemps —
+# cause réelle : chaque appel réseau peut prendre plusieurs secondes, et en
+# séquence sur N positions ça bloquait le seul worker gunicorn (sync,
+# mono-worker) jusqu'à N fois ce délai. Vérifié ici avec un faux appel
+# lent (0.3s) sur 5 tickers : en séquence ça ferait ~1.5s, en parallèle
+# ~0.3-0.6s — la marge (< 1s) suffit à distinguer les deux sans rendre le
+# test fragile sur une machine chargée.
+import time
+positions_mod.get_positions = lambda u: [
+    {"ticker": f"T{i}", "type": "achat", "quantite": 1, "prix_achat": 1.0,
+     "currency": "USD", "company": f"T{i} Inc."}
+    for i in range(5)
+]
+
+
+def _gap_lent(t):
+    time.sleep(0.3)
+    return {"prix": 10.0, "prev_close": 9.5, "gap_pct": 5.0}
+
+
+market_mod.get_premarket_gap = _gap_lent
+positions_mod.get_portfolio_summary = lambda u, t, prix: (
+    {"currency": "USD", "position_fermee": False, "pnl_pct": 0.0}
+)
+
+t0 = time.time()
+etats_par = premarche.etat_premarche("admin")
+duree = time.time() - t0
+assert len(etats_par) == 5
+assert duree < 1.0, f"attendu < 1s en parallèle (5 x 0.3s), obtenu {duree:.2f}s"
+print(f"✓ etat_premarche : 5 tickers à 0.3s chacun récupérés en {duree:.2f}s (parallèle, pas 1.5s en séquence)")
 
 print("\n✓ Tous les tests test_premarche.py sont OK (hors réseau)")

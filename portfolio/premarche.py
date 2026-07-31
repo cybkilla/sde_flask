@@ -12,6 +12,26 @@
 from datetime import date
 
 
+def _donnees_brutes(t: str) -> tuple:
+    """
+    (prix, prev_close, gap_pct) pour un ticker. Source primaire :
+    get_premarket_gap() (vrai pré-marché, yfinance). Repli : get_live_price()
+    (Finnhub) pour au moins un dernier prix connu — mais SON prev_close
+    n'est PAS fiable comme référence de clôture (vérifié en réel le
+    31.07.2026 sur TMC : Finnhub renvoyait 3.66$ pendant que la vraie
+    clôture de la veille, via yfinance, était 3.45$ — un écart de plus
+    d'une séance, pas un simple arrondi). On ne l'affiche donc PAS sous
+    "Clôture veille" : mieux vaut "—" qu'une clôture fausse à côté d'un
+    prix qui, lui, est réel.
+    """
+    from data.market import get_premarket_gap, get_live_price
+    pm = get_premarket_gap(t)
+    if pm:
+        return pm["prix"], pm["prev_close"], pm["gap_pct"]
+    live = get_live_price(t) or {}
+    return live.get("price"), None, None
+
+
 def etat_premarche(username: str) -> list[dict]:
     """
     Pour chaque position OUVERTE : vrai gap pré-marché (data.market.
@@ -28,24 +48,39 @@ def etat_premarche(username: str) -> list[dict]:
     connu via get_live_price) et gap_pct=None — jamais un gap inventé,
     mais jamais silencieusement absent non plus (demande utilisateur du
     31.07.2026 : afficher le ticker quand même, avec "pas de donnée").
+
+    Récupération EN PARALLÈLE (pas séquentielle) : chaque appel réseau
+    peut prendre jusqu'à 8-12s (timeout yfinance, ou Finnhub ralenti) —
+    en séquence sur N positions, ça bloquait le SEUL worker gunicorn
+    (sync, mono-worker) jusqu'à N fois ce délai, gelant AUSSI
+    /portfolio/overview et le reste du site pendant ce temps (vécu
+    31.07.2026 : "Chargement des positions" resté bloqué). Même
+    raisonnement que pipeline.py pour les mêmes raisons.
     """
+    import concurrent.futures
     from portfolio.positions import get_positions, get_portfolio_summary
-    from data.market import get_premarket_gap, get_live_price
     from portfolio.risk import gap_significatif, atr_pct
     from snapshot import get_snapshot, MAX_AGE_HOURS
 
     lots = get_positions(username)
     tickers = list(dict.fromkeys(l["ticker"] for l in lots))
+    if not tickers:
+        return []
+
+    donnees = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(tickers)) as ex:
+        futs = {ex.submit(_donnees_brutes, t): t for t in tickers}
+        for fut in concurrent.futures.as_completed(futs):
+            t = futs[fut]
+            try:
+                donnees[t] = fut.result()
+            except Exception as e:
+                print(f"[Premarche] {t} ignoré : {e}", flush=True)
 
     etats = []
     for t in tickers:
         try:
-            pm = get_premarket_gap(t)
-            if pm:
-                prix, prev_close, gap = pm["prix"], pm["prev_close"], pm["gap_pct"]
-            else:
-                live = get_live_price(t) or {}
-                prix, prev_close, gap = live.get("price"), live.get("prev_close"), None
+            prix, prev_close, gap = donnees.get(t, (None, None, None))
             if not prix:
                 continue   # aucune donnée du tout, même de secours -> rien à montrer
             s = get_portfolio_summary(username, t, prix)
