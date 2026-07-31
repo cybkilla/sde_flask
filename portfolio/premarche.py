@@ -14,26 +14,30 @@ from datetime import date
 
 def _donnees_brutes(t: str) -> tuple:
     """
-    (prix, prev_close, gap_pct) pour un ticker. Source primaire :
-    get_premarket_gap() (vrai pré-marché, yfinance) — prix ET clôture
-    veille viennent alors de la MÊME source, cohérents entre eux.
+    (prix, prev_close, gap_pct, confirme) pour un ticker.
 
-    Repli : get_live_price() (Finnhub) — affiché comme ailleurs sur la
-    page (cartes positions, même source), pour ne pas cacher une donnée
-    qu'on sait par ailleurs. Mais gap_pct reste None dans ce cas : le
-    prix Finnhub (potentiellement figé sur la clôture) et son prev_close
-    ne forment pas une paire fiable pour calculer un VRAI gap pré-marché
-    (écart réel constaté le 31.07.2026 sur TMC entre le prev_close
-    Finnhub et la vraie clôture veille via yfinance) — afficher les deux
-    nombres bruts reste honnête, en calculer un pourcentage entre eux
-    ne le serait pas.
+    confirme=True  : get_premarket_gap() a réussi (yfinance) — prix ET
+    clôture veille viennent de la MÊME source, gap_pct = vrai gap
+    pré-marché.
+
+    confirme=False : repli get_live_price() (Finnhub). Les deux prix
+    affichés sont bien connus (comme partout ailleurs sur la page) donc
+    le % entre eux est calculé et montré — mais CE gap n'est pas garanti
+    être le vrai gap pré-marché : hors séance, Finnhub peut renvoyer un
+    "prix actuel" figé sur la clôture de la veille, auquel cas ce %
+    reflète en fait la variation de la clôture PRÉCÉDENTE, pas d'un tick
+    pré-marché réel (vérifié en réel le 31.07.2026 sur TMC). Signalé côté
+    UI/email par confirme=False plutôt que caché — la donnée existe, sa
+    provenance précise, elle, n'est pas garantie pré-marché.
     """
     from data.market import get_premarket_gap, get_live_price
     pm = get_premarket_gap(t)
     if pm:
-        return pm["prix"], pm["prev_close"], pm["gap_pct"]
+        return pm["prix"], pm["prev_close"], pm["gap_pct"], True
     live = get_live_price(t) or {}
-    return live.get("price"), live.get("prev_close"), None
+    prix, prev = live.get("price"), live.get("prev_close")
+    gap = round((prix - prev) / prev * 100, 2) if prix and prev and prev > 0 else None
+    return prix, prev, gap, False
 
 
 def etat_premarche(username: str) -> list[dict]:
@@ -49,9 +53,11 @@ def etat_premarche(username: str) -> list[dict]:
     Un ticker sans vraie donnée pré-marché (le cas le plus fréquent en
     prod — yfinance, seule source à l'avoir, est bloqué depuis Render)
     reste dans le résultat avec ce qu'on sait par ailleurs (dernier prix
-    connu via get_live_price) et gap_pct=None — jamais un gap inventé,
-    mais jamais silencieusement absent non plus (demande utilisateur du
-    31.07.2026 : afficher le ticker quand même, avec "pas de donnée").
+    connu via get_live_price, gap calculé entre les deux valeurs
+    affichées) — mais `confirme=False` : `notable` (qui déclenche l'email
+    digest) reste toujours calculé UNIQUEMENT sur un gap confirmé
+    pré-marché, pour ne jamais alerter sur une variation qui ne serait en
+    fait que celle de la clôture précédente.
 
     Récupération EN PARALLÈLE (pas séquentielle) : chaque appel réseau
     peut prendre jusqu'à 8-12s (timeout yfinance, ou Finnhub ralenti) —
@@ -84,7 +90,7 @@ def etat_premarche(username: str) -> list[dict]:
     etats = []
     for t in tickers:
         try:
-            prix, prev_close, gap = donnees.get(t, (None, None, None))
+            prix, prev_close, gap, confirme = donnees.get(t, (None, None, None, False))
             if not prix:
                 continue   # aucune donnée du tout, même de secours -> rien à montrer
             s = get_portfolio_summary(username, t, prix)
@@ -100,7 +106,8 @@ def etat_premarche(username: str) -> list[dict]:
                 "prix":       prix,
                 "prev_close": prev_close,
                 "gap_pct":    gap,
-                "notable":    gap_significatif(gap, atr) if gap is not None else False,
+                "confirme":   confirme,
+                "notable":    gap_significatif(gap, atr) if (confirme and gap is not None) else False,
                 "pnl_pct":    s["pnl_pct"],
             })
         except Exception as e:

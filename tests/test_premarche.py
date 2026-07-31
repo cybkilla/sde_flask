@@ -48,28 +48,32 @@ positions_mod.get_portfolio_summary = lambda u, t, prix: (
 etats = premarche.etat_premarche("admin")
 
 # DDD exclu (aucune donnée, même de secours) ; CCC présent malgré l'absence
-# de vraie donnée pré-marché (demande utilisateur du 31.07.2026)
-assert [e["ticker"] for e in etats] == ["AAA", "BBB", "CCC"], etats
-print("✓ etat_premarche : ticker sans AUCUNE donnée exclu, mais affiché s'il y a un prix de secours")
+# de vraie donnée pré-marché (demande utilisateur du 31.07.2026), avec un
+# gap CALCULÉ (9.1 vs 9.9 -> -8.08%) puisque les deux prix sont connus
+assert [e["ticker"] for e in etats] == ["AAA", "CCC", "BBB"], etats
+print("✓ etat_premarche : ticker sans AUCUNE donnée exclu, mais affiché (gap calculé) s'il y a un prix de secours")
 
-# Trié par |gap| décroissant -> AAA (10%) avant BBB (1%) avant CCC (inconnu, traité comme 0)
+# Trié par |gap| décroissant -> AAA (10%, confirmé) avant CCC (8.08%, PAS
+# confirmé) avant BBB (1%, confirmé)
 assert etats[0]["ticker"] == "AAA"
-assert etats[0]["notable"] is True    # 10% > seuil fixe 3% (pas d'ATR)
-assert etats[1]["ticker"] == "BBB"
-assert etats[1]["notable"] is False   # 1% < 3%
-print("✓ etat_premarche : trié par |gap| décroissant, notable = gap_significatif()")
+assert etats[0]["notable"] is True    # 10% confirmé > seuil fixe 3% (pas d'ATR)
+assert etats[0]["confirme"] is True
+assert etats[2]["ticker"] == "BBB"
+assert etats[2]["notable"] is False   # 1% < 3%
+print("✓ etat_premarche : trié par |gap| décroissant (confirmé ou non), notable = gap_significatif() si confirmé")
 
-# CCC : prix ET prev_close affichés (même donnée que le reste de la page,
-# get_live_price) — mais gap_pct=None : les deux nombres ne forment pas
-# une paire fiable pour calculer un vrai gap pré-marché, donc pas de %
-# calculé entre eux (afficher les nombres bruts reste honnête, en
-# déduire un pourcentage ne le serait pas).
+# CCC : gap CALCULÉ entre les deux prix connus (comme demandé — ne pas
+# cacher un % quand les deux prix sont affichés), mais confirme=False et
+# notable TOUJOURS False : ce gap peut refléter la clôture précédente
+# plutôt qu'un vrai tick pré-marché (repli Finnhub, pas yfinance) — jamais
+# de quoi déclencher l'email digest sur une donnée non confirmée.
 ccc = next(e for e in etats if e["ticker"] == "CCC")
-assert ccc["gap_pct"] is None
+assert ccc["gap_pct"] == -8.08
+assert ccc["confirme"] is False
 assert ccc["notable"] is False
 assert ccc["prix"] == 9.1
 assert ccc["prev_close"] == 9.9
-print("✓ etat_premarche : sans vraie donnée pré-marché -> prix/clôture affichés, gap_pct=None (jamais calculé sur une paire non garantie)")
+print("✓ etat_premarche : sans vraie donnée pré-marché -> gap calculé mais confirme=False, jamais notable")
 
 
 # ── Position fermée -> exclue ──

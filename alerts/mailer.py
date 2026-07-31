@@ -430,8 +430,14 @@ def send_premarche_digest(to_email: str, username: str, etats: list):
 
     def _ligne(e):
         gap = e["gap_pct"]
-        color   = ("#1D9E75" if gap >= 0 else "#D85A30") if gap is not None else "#6b7280"
-        gap_txt = f"{gap:+.1f}%" if gap is not None else "Pas de donnée"
+        if gap is None:
+            color, gap_txt = "#6b7280", "Pas de donnée"
+        elif not e.get("confirme", True):
+            # Calculé mais pas confirmé pré-marché (repli Finnhub — peut
+            # refléter la clôture précédente plutôt qu'un vrai tick pré-marché)
+            color, gap_txt = "#6b7280", f"{gap:+.1f}% *"
+        else:
+            color, gap_txt = ("#1D9E75" if gap >= 0 else "#D85A30"), f"{gap:+.1f}%"
         badge = (' <span style="color:#BA7517;font-weight:700" title="Mouvement notable">⚠</span>'
                  if e["notable"] else "")
         prev = e.get("prev_close")
@@ -464,7 +470,8 @@ def send_premarche_digest(to_email: str, username: str, etats: list):
         <tbody>{rows}</tbody>
       </table>
       <p style="font-size:12px;color:#9ca3af;margin-top:16px">
-        ⚠ = mouvement au-delà du bruit habituel de ce titre (seuil adapté à sa volatilité).
+        ⚠ = mouvement au-delà du bruit habituel de ce titre (seuil adapté à sa volatilité).<br>
+        * = non confirmé comme un vrai tick pré-marché (peut refléter la clôture précédente).
       </p>
       <div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:12px">
         <a href="{SDE_BASE_URL}/mes-positions"

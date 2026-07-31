@@ -982,9 +982,22 @@
         }
 
         const rows = data.positions.map(p => {
-          const gap   = p.gap_pct;
-          const color = gap != null ? ((gap >= 0) ? "#1D9E75" : "#D85A30") : "var(--sde-muted)";
-          const gapTxt = gap != null ? `${gap >= 0 ? "+" : ""}${gap.toFixed(1)}%` : "Pas de donnée";
+          const gap = p.gap_pct;
+          let color, gapTxt;
+          if (gap == null) {
+            color  = "var(--sde-muted)";
+            gapTxt = "Pas de donnée";
+          } else {
+            color  = gap >= 0 ? "#1D9E75" : "#D85A30";
+            gapTxt = `${gap >= 0 ? "+" : ""}${gap.toFixed(1)}%`;
+            if (!p.confirme) {
+              // Calculé, mais pas confirmé comme un vrai gap pré-marché
+              // (repli Finnhub — peut refléter la clôture précédente
+              // plutôt qu'un tick pré-marché réel, cf. portfolio/premarche.py)
+              color  = "var(--sde-muted)";
+              gapTxt += " *";
+            }
+          }
           const badge = p.notable
             ? `<span title="Mouvement notable (au-delà du bruit habituel du titre)"
                      style="margin-left:5px;color:#BA7517;font-weight:700">⚠</span>`
@@ -998,9 +1011,12 @@
               </td>
               <td style="padding:6px 8px;text-align:right;color:var(--sde-muted)">${p.prev_close != null ? "$" + p.prev_close.toFixed(2) : "—"}</td>
               <td style="padding:6px 8px;text-align:right;font-weight:600">$${p.prix.toFixed(2)}</td>
-              <td style="padding:6px 8px;text-align:right;color:${color};font-weight:700">${gapTxt}</td>
+              <td style="padding:6px 8px;text-align:right;color:${color};font-weight:700"
+                  ${!p.confirme && gap != null ? `title="Non confirmé pré-marché — peut refléter la clôture précédente plutôt qu'un vrai tick pré-marché"` : ""}>${gapTxt}</td>
             </tr>`;
         }).join("");
+
+        const uneNonConfirmee = data.positions.some(p => p.gap_pct != null && !p.confirme);
 
         document.getElementById("sde-premarche-body").innerHTML = `
           <div style="overflow-x:auto">
@@ -1015,7 +1031,10 @@
             </thead>
             <tbody>${rows}</tbody>
           </table>
-          </div>`;
+          </div>
+          ${uneNonConfirmee ? `<p class="text-muted mt-2 mb-0" style="font-size:.68rem">
+            * non confirmé comme un vrai tick pré-marché (peut refléter la clôture précédente).
+          </p>` : ""}`;
       })
       .catch(() => {});
   }

@@ -83,17 +83,23 @@ print("✓ après envoyer_groupes : envoi immédiat restauré, flush à vide ino
 # ── send_premarche_digest : sujet reflète le nombre de gaps notables ──
 envois.clear()
 etats = [
-    {"ticker": "AAA", "company": "AAA Inc.", "prix": 5.5, "prev_close": 5.0, "gap_pct": 10.0, "notable": True},
-    {"ticker": "BBB", "company": "BBB Corp.", "prix": 20.2, "prev_close": 20.0, "gap_pct": 1.0, "notable": False},
-    {"ticker": "CCC", "company": "CCC Ltd.", "prix": 9.1, "prev_close": 9.0, "gap_pct": None, "notable": False},
+    {"ticker": "AAA", "company": "AAA Inc.", "prix": 5.5, "prev_close": 5.0,
+     "gap_pct": 10.0, "confirme": True, "notable": True},
+    {"ticker": "BBB", "company": "BBB Corp.", "prix": 20.2, "prev_close": 20.0,
+     "gap_pct": 1.0, "confirme": True, "notable": False},
+    {"ticker": "CCC", "company": "CCC Ltd.", "prix": 9.1, "prev_close": 9.9,
+     "gap_pct": -8.08, "confirme": False, "notable": False},   # calculé, pas confirmé
+    {"ticker": "DDD", "company": "DDD SA", "prix": 1.0, "prev_close": None,
+     "gap_pct": None, "confirme": False, "notable": False},    # vraiment aucune donnée
 ]
 mailer.send_premarche_digest("a@b.c", "admin", etats)
 assert len(envois) == 1
 dest, sujet, html = envois[0]
 assert "1 mouvement(s) notable(s)" in sujet
-assert "AAA" in html and "BBB" in html and "CCC" in html
-assert "⚠" in html          # badge notable présent pour AAA
-assert "Pas de donnée" in html   # CCC (gap_pct=None) affiché sans gap inventé
-print("✓ send_premarche_digest : sujet et corps reflètent les gaps notables, 'Pas de donnée' si gap inconnu")
+assert all(t in html for t in ("AAA", "BBB", "CCC", "DDD"))
+assert "⚠" in html               # badge notable présent pour AAA
+assert "Pas de donnée" in html   # DDD (gap_pct=None) affiché sans gap inventé
+assert "-8.1% *" in html         # CCC : gap calculé mais marqué non confirmé
+print("✓ send_premarche_digest : gap notable, calculé-non-confirmé (*) et inconnu tous distingués")
 
 print("\n✓ Tous les tests test_mailer_digest.py sont OK (hors réseau)")
