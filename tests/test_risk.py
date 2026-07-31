@@ -273,12 +273,14 @@ assert "Position clôturée" in adv_faible["raisonnement"]
 print("✓ ré-entrée : clôturée+signal fort → ACHETER, le même jour → SURVEILLER, faible → SURVEILLER")
 
 
-# ── Trésorerie : ACHETER/RENFORCER contraints par le cash suivi ──
+# ── Trésorerie : la note change, jamais l'action (31.07.2026 — un manque
+#    de cash suivi n'empêche plus le conseil, l'utilisateur peut décider
+#    d'ajouter des fonds lui-même) ──
 # Ré-entrée avec signal fort mais 2 $ de cash pour un cours à ~100 $
-# → SURVEILLER (un conseil inapplicable est pire que pas de conseil)
+# → ACHETER quand même, trésorerie insuffisante notée dans le raisonnement
 adv_sans_cash = generate_advice(_s_clos, _m_calme, _snap_fort, cash_dispo=2.0)
-assert adv_sans_cash["action"] == "SURVEILLER"
-assert "trésorerie suivie insuffisante" in adv_sans_cash["raisonnement"]
+assert adv_sans_cash["action"] == "ACHETER"
+assert "Trésorerie suivie insuffisante" in adv_sans_cash["raisonnement"]
 
 # Ré-entrée avec cash → ACHETER, trésorerie et nb d'actions affichés
 adv_cash = generate_advice(_s_clos, _m_calme, _snap_fort, cash_dispo=10820.0)
@@ -299,16 +301,18 @@ assert adv_plaf["quantite_suggeree"] == 50, \
     f"quantité plafonnée à 50 par le cash, obtenu {adv_plaf['quantite_suggeree']}"
 assert "limitée par la trésorerie" in adv_plaf["raisonnement"]
 
-# RENFORCER sans cash du tout → TENIR avec explication
+# RENFORCER sans cash du tout → RENFORCER quand même (quantité non
+# plafonnée, puisqu'il n'y a rien à plafonner dessus), note explicite
 adv_zero = generate_advice(_s_creux, _m_creux, _snap_ach, cash_dispo=0.0)
-assert adv_zero["action"] == "TENIR"
-assert "trésorerie suivie insuffisante" in adv_zero["raisonnement"]
+assert adv_zero["action"] == "RENFORCER"
+assert adv_zero["quantite_suggeree"] == 2692
+assert "Trésorerie suivie insuffisante" in adv_zero["raisonnement"]
 
 # cash_dispo=None (inconnu) → aucun bridage (comportement historique)
 adv_libre = generate_advice(_s_creux, _m_creux, _snap_ach, cash_dispo=None)
 assert adv_libre["action"] == "RENFORCER"
 assert adv_libre["quantite_suggeree"] == 2692
-print("✓ trésorerie : ACHETER bloqué sans cash, RENFORCER plafonné/bloqué, None → libre")
+print("✓ trésorerie : la note reflète le manque de cash, l'action ACHETER/RENFORCER n'est jamais bloquée")
 
 
 # ── Cohérence avec l'évaluateur : bande TENIR vol-normalisée ──
@@ -390,11 +394,11 @@ adv_couteau = generate_advice(_s_krach, _m_krach,
                                "recommandation": "VENDRE"}, cash_dispo=10800.0)
 assert adv_couteau["action"] != "RENFORCER"
 
-# Sans trésorerie → TENIR avec explication (pas de conseil inapplicable)
+# Sans trésorerie → RENFORCER quand même (note, pas de blocage)
 adv_fauche = generate_advice(_s_krach, _m_krach, _snap_krach, cash_dispo=1.0)
-assert adv_fauche["action"] == "TENIR"
-assert "trésorerie suivie insuffisante" in adv_fauche["raisonnement"]
-print("✓ repli exceptionnel : le 16.07 rejoué → RENFORCER ; bruit/score bas/sans cash → non")
+assert adv_fauche["action"] == "RENFORCER"
+assert "Trésorerie suivie insuffisante" in adv_fauche["raisonnement"]
+print("✓ repli exceptionnel : le 16.07 rejoué → RENFORCER ; bruit/score bas → non ; sans cash → RENFORCER quand même, noté")
 
 
 # ── Point de contrôle post-ouverture : marqueur dans le raisonnement ──
@@ -497,10 +501,11 @@ assert adv_fiable["action"] == "RENFORCER", \
 assert "tirée par des signaux moins fiables" in adv_fiable["raisonnement"]
 assert adv_fiable["quantite_suggeree"] == round(8152 * 0.25)
 
-# Même signal fiable, mais SANS trésorerie → TENIR explicite, pas de crash
+# Même signal fiable, mais SANS trésorerie → RENFORCER quand même, noté
 adv_sans_cash = generate_advice(_s_2007, _m_fiable, _snap_fiable, cash_dispo=1.0)
-assert adv_sans_cash["action"] == "TENIR"
-assert "trésorerie suivie insuffisante" in adv_sans_cash["raisonnement"]
+assert adv_sans_cash["action"] == "RENFORCER"
+assert adv_sans_cash["quantite_suggeree"] == round(8152 * 0.25)
+assert "Trésorerie suivie insuffisante" in adv_sans_cash["raisonnement"]
 
 # reco déjà ACHETER → le chemin standard s'applique, pas de doublon/conflit
 _snap_achat = {**_snap_fiable, "recommandation": "ACHETER"}

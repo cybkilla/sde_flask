@@ -296,20 +296,20 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
                 f"{cd}{intro_sans_position} Clôture réalisée aujourd'hui — "
                 f"pas de ré-entrée le même jour, laisser le titre se stabiliser.")
         elif reco == "ACHETER" and score >= c["score_acheter"]:
-            # Trésorerie suivie insuffisante pour UNE action → pas de
-            # conseil d'achat inapplicable, on surveille en l'expliquant
+            # Trésorerie insuffisante → le signal reste ACHETER (demande
+            # utilisateur du 31.07.2026 : "le manque de trésorerie ne doit
+            # pas empêcher un conseil, à la limite j'aurais pu rajouter de
+            # la trésorerie") — seule la note change, jamais l'action.
             if cash_dispo is not None and prix > 0 and cash_dispo < prix:
-                base = _conseil("SURVEILLER", None, None,
-                    f"{cd}{intro_sans_position} Signal d'achat ({score:.0f}/100) "
-                    f"mais trésorerie suivie insuffisante ({cash_dispo:.2f} $ "
-                    f"pour un cours à {prix:.2f} $) — entrée non proposée.")
+                cash_txt = (f" ⚠ Trésorerie suivie insuffisante ({cash_dispo:.2f} $) "
+                            f"pour un cours à {prix:.2f} $ — entrée à financer.")
             else:
                 cash_txt = (f" Trésorerie suivie disponible : {cash_dispo:,.2f} $ "
                             f"(≈ {int(cash_dispo // prix)} actions)."
                             if cash_dispo is not None and prix > 0 else "")
-                base = _conseil("ACHETER", None, prix,
-                    f"{cd}{intro_sans_position} Signal SDE haussier ({score:.0f}/100, RSI {rsi:.0f}). "
-                    f"Opportunité d'entrée autour de {prix:.2f} $.{cash_txt}")
+            base = _conseil("ACHETER", None, prix,
+                f"{cd}{intro_sans_position} Signal SDE haussier ({score:.0f}/100, RSI {rsi:.0f}). "
+                f"Opportunité d'entrée autour de {prix:.2f} $.{cash_txt}")
         else:
             base = _conseil("SURVEILLER", None, None,
                 f"{cd}{intro_sans_position} Signal SDE {reco} ({score:.0f}/100) — "
@@ -393,17 +393,17 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
             and rsi <= c["rsi_renforcer"] and achete_auj == 0:
         renforcer = max(1, round(total_shares * 0.25))
         note_cash = ""
+        # Trésorerie insuffisante -> l'action reste RENFORCER, seule la
+        # note change (demande utilisateur du 31.07.2026 : un conseil
+        # inapplicable FAUTE DE FONDS reste plus utile qu'un TENIR muet —
+        # l'utilisateur peut décider d'ajouter de la trésorerie lui-même).
         if cash_dispo is not None and prix > 0:
             max_achetable = int(cash_dispo // prix)
             if max_achetable < 1:
-                # Renforcement indiqué mais rien pour le financer :
-                # un conseil inapplicable est pire que pas de conseil
-                base = _conseil("TENIR", None, None,
-                    f"{cd}Renforcement indiqué (RSI {rsi:.0f}, signal haussier "
-                    f"{score:.0f}/100, position à {pnl_pct:+.1f}%) mais trésorerie "
-                    f"suivie insuffisante ({cash_dispo:.2f} $) — maintien.")
-                return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
-            if renforcer > max_achetable:
+                note_cash = (f" ⚠ Trésorerie suivie insuffisante ({cash_dispo:.2f} $) "
+                             f"pour financer les {renforcer:g} action(s) — "
+                             f"renforcement à financer.")
+            elif renforcer > max_achetable:
                 renforcer  = max_achetable
                 note_cash = (f" Quantité limitée par la trésorerie disponible "
                              f"({cash_dispo:,.2f} $).")
@@ -430,12 +430,10 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
         if cash_dispo is not None and prix > 0:
             max_achetable = int(cash_dispo // prix)
             if max_achetable < 1:
-                base = _conseil("TENIR", None, None,
-                    f"{cd}Repli exceptionnel ({var_j:+.1f}% aujourd'hui, RSI "
-                    f"{rsi:.0f}) — opportunité de renforcement, mais trésorerie "
-                    f"suivie insuffisante ({cash_dispo:.2f} $). Maintien.")
-                return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
-            if renforcer > max_achetable:
+                note_cash = (f" ⚠ Trésorerie suivie insuffisante ({cash_dispo:.2f} $) "
+                             f"pour financer les {renforcer:g} action(s) — "
+                             f"renforcement à financer.")
+            elif renforcer > max_achetable:
                 renforcer = max_achetable
                 note_cash = (f" Quantité limitée par la trésorerie disponible "
                              f"({cash_dispo:,.2f} $).")
@@ -467,13 +465,10 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
             if cash_dispo is not None and prix > 0:
                 max_achetable = int(cash_dispo // prix)
                 if max_achetable < 1:
-                    base = _conseil("TENIR", None, None,
-                        f"{cd}Signal haussier fiable à {conf_achat['moyenne_hit_pct']}% "
-                        f"sur ce titre ({signal_txt}), ignoré par la reco globale "
-                        f"{reco} — mais trésorerie suivie insuffisante "
-                        f"({cash_dispo:.2f} $). Maintien.")
-                    return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
-                if renforcer > max_achetable:
+                    note_cash = (f" ⚠ Trésorerie suivie insuffisante ({cash_dispo:.2f} $) "
+                                 f"pour financer les {renforcer:g} action(s) — "
+                                 f"renforcement à financer.")
+                elif renforcer > max_achetable:
                     renforcer = max_achetable
                     note_cash = (f" Quantité limitée par la trésorerie disponible "
                                  f"({cash_dispo:,.2f} $).")
