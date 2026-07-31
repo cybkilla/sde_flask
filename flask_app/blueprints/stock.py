@@ -111,8 +111,12 @@ def analyze(ticker: str):
     # Snapshot trop vieux -> rafraîchissement complet en tâche de fond,
     # sans ralentir CETTE visite (cf. commentaire SEUIL_RAFRAICHISSEMENT_MIN
     # en haut du fichier). nocache=1 ne repasse jamais ici : snapshot_age_min
-    # est None sur un pipeline frais.
-    if snapshot_age_min is not None and snapshot_age_min > SEUIL_RAFRAICHISSEMENT_MIN:
+    # est None sur un pipeline frais. refresh_auto_lance -> bandeau dédié
+    # côté template (signalé confus le 31.07.2026 : la page qui déclenche
+    # le refresh affiche encore l'ancien "Rafraîchir", trompeur juste après
+    # avoir lancé une actualisation en arrière-plan).
+    refresh_auto_lance = snapshot_age_min is not None and snapshot_age_min > SEUIL_RAFRAICHISSEMENT_MIN
+    if refresh_auto_lance:
         _lancer_refresh_arriere_plan(ticker)
 
     # Prix live : Finnhub quote systématique sur tout hit cache (in-memory ou Supabase).
@@ -285,6 +289,7 @@ def analyze(ticker: str):
         candle_pattern   = candle_pattern,
         snapshot_age_min = snapshot_age_min,
         snapshot_ts      = snapshot_ts,
+        refresh_auto_lance = refresh_auto_lance,
     )
 
 

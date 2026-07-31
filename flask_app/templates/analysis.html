@@ -94,6 +94,11 @@
 <div style="background:#F1F5F9;border-bottom:1px solid var(--sde-border);
             padding:5px 16px;font-size:.74rem;color:var(--sde-muted);
             display:flex;align-items:center;gap:8px">
+  {% if refresh_auto_lance %}
+  <i class="bi bi-arrow-repeat" style="font-size:.72rem"></i>
+  Un rafraîchissement vient d'être lancé, patientez quelques instants —
+  rechargez la page pour voir l'analyse à jour.
+  {% else %}
   <i class="bi bi-database" style="font-size:.72rem"></i>
   Analyse mise en cache il y a {{ snap_age_str }} · Prix actualisé en direct
   <a href="{{ url_for('stock.analyze', ticker=ticker) }}?nocache=1"
@@ -101,6 +106,7 @@
      style="color:var(--sde-teal);font-weight:500;margin-left:4px">
     Rafraîchir
   </a>
+  {% endif %}
 </div>
 {% endif %}
 
