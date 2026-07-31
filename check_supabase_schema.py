@@ -17,7 +17,7 @@ import sys
 # individuellement : une table peut exister sans ses colonnes récentes).
 # À COMPLÉTER à chaque nouvelle migration documentée dans doc/SUPABASE.md.
 SCHEMA_ATTENDU = {
-    "users":               ["cash_ajustement"],   # correction admin cash disponible 2026-07-28
+    "users":               ["cash_ajustement", "premarche_digest_date"],   # correction cash 2026-07-28, digest pré-marché 2026-07-31
     "watchlist":           [],
     "scores":              ["var_alerte_pct", "var_alerte_date",    # paliers alerte 2026-07-17
                             "hyst_stable", "hyst_candidat", "hyst_streak"],  # hystérésis 2026-07-19

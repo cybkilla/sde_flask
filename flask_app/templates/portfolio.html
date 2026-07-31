@@ -24,6 +24,17 @@
   </button>
 </div>
 
+<!-- Pré-marché (visible seulement 10h00-15h25 Paris, avant l'ouverture NASDAQ) -->
+<div class="sde-card mb-3" id="sde-premarche-card" style="display:none">
+  <span class="sde-section-title mb-0" style="font-size:.8rem">
+    <i class="bi bi-sunrise me-1"></i>Pré-marché
+  </span>
+  <p class="text-muted mb-2" style="font-size:.7rem">
+    État de vos positions avant l'ouverture NASDAQ (15h30 Paris) — se préparer à la séance à venir.
+  </p>
+  <div id="sde-premarche-body"></div>
+</div>
+
 <!-- Graphe historique portefeuille -->
 <div class="sde-card mb-3" id="sde-history-card" style="display:none">
   <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
@@ -942,6 +953,60 @@
   };
 
   document.addEventListener("DOMContentLoaded", () => window.loadHistory(90));
+})();
+
+/* ── Pré-marché ───────────────────────────────────────────────────────── */
+(function () {
+  function loadPremarche() {
+    fetch("/portfolio/premarche")
+      .then(r => r.json())
+      .then(data => {
+        const card = document.getElementById("sde-premarche-card");
+        if (!data.ok || !data.en_fenetre || !data.positions || !data.positions.length) {
+          // Hors fenêtre pré-marché (10h00-15h25 Paris), ou rien à montrer
+          card.style.display = "none";
+          return;
+        }
+        card.style.display = "";
+
+        const rows = data.positions.map(p => {
+          const gap   = p.gap_pct;
+          const color = (gap ?? 0) >= 0 ? "#1D9E75" : "#D85A30";
+          const gapTxt = gap != null ? `${gap >= 0 ? "+" : ""}${gap.toFixed(1)}%` : "—";
+          const badge = p.notable
+            ? `<span title="Mouvement notable (au-delà du bruit habituel du titre)"
+                     style="margin-left:5px;color:#BA7517;font-weight:700">⚠</span>`
+            : "";
+          return `
+            <tr style="border-bottom:1px solid var(--sde-border)">
+              <td style="padding:6px 8px">
+                <a href="/analyze/${p.ticker}" data-sde-loading="Analyse de ${p.ticker}…"
+                   style="color:var(--sde-navy);text-decoration:none;font-weight:700">${p.ticker}</a>${badge}
+                <div style="font-weight:400;color:var(--sde-muted);font-size:.72rem">${p.company || ""}</div>
+              </td>
+              <td style="padding:6px 8px;text-align:right;color:${color};font-weight:700">${gapTxt}</td>
+              <td style="padding:6px 8px;text-align:right">$${p.prix.toFixed(2)}</td>
+            </tr>`;
+        }).join("");
+
+        document.getElementById("sde-premarche-body").innerHTML = `
+          <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+            <thead>
+              <tr style="border-bottom:2px solid var(--sde-border);color:var(--sde-muted)">
+                <th style="padding:6px 8px;text-align:left">Position</th>
+                <th style="padding:6px 8px;text-align:right">Variation</th>
+                <th style="padding:6px 8px;text-align:right">Prix</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+          </div>`;
+      })
+      .catch(() => {});
+  }
+
+  document.addEventListener("DOMContentLoaded", loadPremarche);
 })();
 </script>
 {% endblock %}

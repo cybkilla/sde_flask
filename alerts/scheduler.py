@@ -440,6 +440,26 @@ def _check_all():
             except Exception as e:
                 print(f"  [Advice] Erreur conseils positions {username} : {e}", flush=True)
 
+        # ── Digest pré-marché (31.07.2026) ────────────────────────
+        # "Se préparer à ce qui va arriver au cours de la séance à venir."
+        # Contrairement à _check_position_advice ci-dessus (n'alerte QUE si
+        # un gap change le conseil du jour), ce digest donne la vue
+        # d'ensemble — mais au plus 1×/jour ET seulement s'il y a au moins
+        # un gap notable, pour ne pas recréer le problème de volume
+        # d'emails du 28.07.2026 (8 emails le même jour).
+        if _fenetre_premarche() and email:
+            try:
+                from portfolio.premarche import (etat_premarche, deja_envoye_aujourdhui,
+                                                  marquer_envoye)
+                if not deja_envoye_aujourdhui(username):
+                    etats = etat_premarche(username)
+                    if any(e["notable"] for e in etats):
+                        from alerts.mailer import send_premarche_digest
+                        send_premarche_digest(email, username, etats)
+                        marquer_envoye(username)
+            except Exception as e:
+                print(f"  [Premarche] Erreur digest {username} : {e}", flush=True)
+
         # ── Snapshot quotidien du portefeuille (après clôture NASDAQ) ──
         # Avant : déclenché uniquement par une visite de /portfolio après
         # 22h Paris — le graphe "Évolution du portefeuille" restait figé

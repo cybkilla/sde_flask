@@ -24,7 +24,8 @@ CREATE TABLE users (
   email                TEXT DEFAULT '',
   password             TEXT NOT NULL,
   cash_ajustement      FLOAT DEFAULT 0,   -- correction admin du cash suivi (écart, pas valeur figée)
-  cash_ajustement_note TEXT
+  cash_ajustement_note TEXT,
+  premarche_digest_date TEXT   -- dernière date (YYYY-MM-DD) d'envoi du digest pré-marché (anti-doublon 1x/jour)
 );
 
 -- Tickers suivis par utilisateur
@@ -198,6 +199,17 @@ figée — voir portfolio/positions.py::corriger_cash()) :
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS cash_ajustement      FLOAT DEFAULT 0,
   ADD COLUMN IF NOT EXISTS cash_ajustement_note TEXT;
+```
+
+**Colonne `premarche_digest_date`** (2026-07-31 — anti-doublon du digest
+email pré-marché : "se préparer à ce qui va arriver au cours de la séance
+à venir", envoyé au plus 1×/jour et seulement s'il y a au moins un gap
+overnight notable sur les positions ouvertes — voir
+portfolio/premarche.py et alerts/scheduler.py) :
+
+```sql
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS premarche_digest_date TEXT;
 ```
 
 **Table `opportunites_historique`** (2026-07-24 — évaluation multi-horizons

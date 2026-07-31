@@ -414,3 +414,66 @@ def send_advice_change_alert(to_email: str, username: str,
 
     _emettre(to_email, subject, body,
              f"{ticker} conseil {old_action}→{new_action}")
+
+
+def send_premarche_digest(to_email: str, username: str, etats: list):
+    """
+    Digest quotidien pré-marché : vue d'ensemble des gaps overnight sur
+    toutes les positions ouvertes, pour se préparer à la séance à venir.
+    Envoyé au plus 1×/jour, seulement s'il y a AU MOINS un mouvement
+    notable (portfolio/premarche.py) — un digest systématique tous les
+    jours recréerait le problème de volume d'emails du 28.07.2026.
+    """
+    notables = [e for e in etats if e["notable"]]
+    subject = (f"[StockDecisionEngine] 🌅 Pré-marché — "
+               f"{len(notables)} mouvement(s) notable(s)")
+
+    def _ligne(e):
+        gap   = e["gap_pct"] or 0.0
+        color = "#1D9E75" if gap >= 0 else "#D85A30"
+        badge = (' <span style="color:#BA7517;font-weight:700" title="Mouvement notable">⚠</span>'
+                 if e["notable"] else "")
+        return (f'<tr style="border-bottom:1px solid #e5e7eb">'
+                f'<td style="padding:6px 8px;font-weight:700">{e["ticker"]}{badge}'
+                f'<div style="font-weight:400;color:#6b7280;font-size:11px">{e["company"]}</div></td>'
+                f'<td style="padding:6px 8px;text-align:right;color:{color};font-weight:700">'
+                f'{gap:+.1f}%</td>'
+                f'<td style="padding:6px 8px;text-align:right">${e["prix"]:.2f}</td></tr>')
+
+    rows = "".join(_ligne(e) for e in etats)
+    body = f"""
+    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:20px">
+      <p style="font-size:13px;color:#6b7280;margin-bottom:14px">Bonjour {username},</p>
+      <div style="background:#EEF2FF;border-left:4px solid #6366F1;padding:10px 14px;
+                  border-radius:4px;margin-bottom:16px;font-size:13px;color:#3730A3">
+        🌅 État de vos positions avant l'ouverture NASDAQ (15h30 Paris)
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="color:#6b7280">
+            <th style="text-align:left;padding:6px 8px">Position</th>
+            <th style="text-align:right;padding:6px 8px">Variation</th>
+            <th style="text-align:right;padding:6px 8px">Prix</th>
+          </tr>
+        </thead>
+        <tbody>{rows}</tbody>
+      </table>
+      <p style="font-size:12px;color:#9ca3af;margin-top:16px">
+        ⚠ = mouvement au-delà du bruit habituel de ce titre (seuil adapté à sa volatilité).
+      </p>
+      <div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:12px">
+        <a href="{SDE_BASE_URL}/mes-positions"
+           style="display:inline-block;background:#1D9E75;color:#fff;
+                  font-size:13px;font-weight:600;text-decoration:none;
+                  padding:8px 18px;border-radius:6px;margin-bottom:10px">
+          Voir mes positions →
+        </a>
+        <p style="color:#9ca3af;font-size:11px;margin:0">
+          Cet email a été envoyé automatiquement par StockDecisionEngine.
+          Outil éducatif — pas un conseil financier.
+        </p>
+      </div>
+    </div>
+    """
+
+    _emettre(to_email, subject, body, f"Pré-marché : {len(notables)} gap(s) notable(s)")

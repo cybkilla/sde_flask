@@ -1,0 +1,86 @@
+# portfolio/premarche.py — état pré-marché des positions ouvertes
+#
+# Demandé le 31.07.2026 : "se préparer à ce qui va arriver au cours de la
+# séance à venir" — distinct des alertes existantes (qui ne se
+# déclenchent que si un gap overnight change le conseil du jour, cf.
+# alerts/scheduler.py::_check_position_advice) : ici on veut TOUJOURS
+# voir l'état des positions avant l'ouverture, notable ou pas, dans
+# "Mes positions" — et en plus un email, mais seulement s'il y a au
+# moins un mouvement notable (pas un digest systématique tous les jours,
+# pour ne pas retomber dans le problème de volume d'emails du 28.07.2026).
+
+from datetime import date
+
+
+def etat_premarche(username: str) -> list[dict]:
+    """
+    Pour chaque position OUVERTE : prix pré-marché (get_live_price reflète
+    le dernier print, y compris hors séance), gap vs clôture de la veille,
+    et si ce gap est notable au sens de gap_significatif() (seuil adapté
+    à l'ATR du titre — même règle que la réévaluation de conseil).
+    Trié par |gap| décroissant (le plus notable en premier).
+    """
+    from portfolio.positions import get_positions, get_portfolio_summary
+    from data.market import get_live_price
+    from portfolio.risk import gap_significatif, atr_pct
+    from snapshot import get_snapshot, MAX_AGE_HOURS
+
+    lots = get_positions(username)
+    tickers = list(dict.fromkeys(l["ticker"] for l in lots))
+
+    etats = []
+    for t in tickers:
+        try:
+            live = get_live_price(t) or {}
+            prix = live.get("price")
+            if not prix:
+                continue
+            s = get_portfolio_summary(username, t, prix)
+            if not s or s.get("position_fermee"):
+                continue
+            snap = get_snapshot(t, max_age_hours=MAX_AGE_HOURS)
+            atr  = atr_pct((snap or {}).get("market", {}).get("history")) if snap else None
+            gap  = live.get("var_1d")
+            company = next((l["company"] for l in lots
+                            if l["ticker"] == t and l.get("company")), t)
+            etats.append({
+                "ticker":     t,
+                "company":    company,
+                "prix":       prix,
+                "prev_close": live.get("prev_close"),
+                "gap_pct":    gap,
+                "notable":    gap_significatif(gap, atr),
+                "pnl_pct":    s["pnl_pct"],
+            })
+        except Exception as e:
+            print(f"[Premarche] {t} ignoré : {e}", flush=True)
+
+    etats.sort(key=lambda e: abs(e["gap_pct"] or 0), reverse=True)
+    return etats
+
+
+# ── Anti-spam de l'email digest : au plus 1×/jour/utilisateur ──────────
+# Colonne sur `users` (attribut scalaire par utilisateur, pas un
+# historique) — même choix de conception que cash_ajustement (28.07.2026).
+
+def deja_envoye_aujourdhui(username: str) -> bool:
+    try:
+        from db import find_one, is_available
+        if not is_available():
+            return False
+        row = find_one("users", {"username": username})
+        return bool(row and str(row.get("premarche_digest_date")) == str(date.today()))
+    except Exception as e:
+        print(f"[Premarche] lecture date digest échouée : {e}", flush=True)
+        return False
+
+
+def marquer_envoye(username: str):
+    try:
+        from db import update_one, is_available
+        if not is_available():
+            return
+        update_one("users", {"username": username},
+                   {"$set": {"premarche_digest_date": str(date.today())}})
+    except Exception as e:
+        print(f"[Premarche] marquage date digest échoué : {e}", flush=True)

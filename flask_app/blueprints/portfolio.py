@@ -223,6 +223,25 @@ def get_history():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+# ── Pré-marché ─────────────────────────────────────────────────────────────
+
+@bp.route("/premarche")
+@login_required
+def premarche():
+    """
+    État des positions ouvertes avant l'ouverture NASDAQ (gap overnight
+    par position). `en_fenetre` indique si on est dans la plage utile
+    (10h00-15h25 Paris) — le frontend masque la section en dehors.
+    """
+    try:
+        from alerts.scheduler import _fenetre_premarche
+        from portfolio.premarche import etat_premarche
+        return jsonify({"ok": True, "en_fenetre": _fenetre_premarche(),
+                        "positions": etat_premarche(current_user.id)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 # ── Take Profit / Stop Loss ───────────────────────────────────────────────────
 
 @bp.route("/targets/<ticker>")
