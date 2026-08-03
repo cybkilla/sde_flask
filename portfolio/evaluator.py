@@ -440,6 +440,69 @@ def get_global_stats() -> dict:
     }
 
 
+def get_conseil_suivi_gain_bulk(username: str, tickers: list[str],
+                                 prix_actuels: dict) -> dict:
+    """
+    Pour chaque ticker où le conseil ACTUEL est directionnel (ACHETER,
+    RENFORCER, ALLÉGER, VENDRE) : le gain/coût qu'aurait donné le fait de
+    le suivre depuis le premier jour où CETTE action est recommandée sans
+    interruption (remonte l'historique daily_advice jusqu'au changement
+    d'action précédent). Répond à "si j'avais suivi ce RENFORCER, je
+    serais gagnant ou pas aujourd'hui ?" — TENIR/SURVEILLER n'impliquent
+    aucune transaction, donc pas de gain à calculer, absents du résultat.
+    Réutilise _gain() (même logique signée que l'évaluation J+1/5/20).
+    Une seule requête pour tous les tickers (même souci de perf que
+    get_ticker_stats_bulk).
+    """
+    import db
+    from db import _init, is_available
+    if not is_available() or not tickers:
+        return {}
+
+    _init()
+    try:
+        rows = (
+            db._client.table("daily_advice")
+            .select("ticker,date_conseil,action,prix_jour")
+            .eq("username", username)
+            .in_("ticker", tickers)
+            .order("date_conseil", desc=True)
+            .execute()
+            .data or []
+        )
+    except Exception as e:
+        print(f"[Evaluator] get_conseil_suivi_gain_bulk indisponible : {e}", flush=True)
+        return {}
+
+    par_ticker: dict[str, list] = {}
+    for r in rows:
+        par_ticker.setdefault(r["ticker"], []).append(r)   # déjà trié desc par date_conseil
+
+    resultat = {}
+    for t, hist in par_ticker.items():
+        action_actuelle = hist[0]["action"]
+        if action_actuelle not in ("ACHETER", "RENFORCER", "ALLÉGER", "VENDRE"):
+            continue
+        # remonte tant que l'action n'a pas changé -> premier jour de la série en cours
+        depart = hist[0]
+        for r in hist:
+            if r["action"] != action_actuelle:
+                break
+            depart = r
+        prix_depart = depart.get("prix_jour")
+        prix_live   = prix_actuels.get(t)
+        if not prix_depart or not prix_live:
+            continue
+        var_pct = round((float(prix_live) - float(prix_depart)) / float(prix_depart) * 100, 2)
+        resultat[t] = {
+            "action":      action_actuelle,
+            "depuis":      depart["date_conseil"],
+            "prix_depart": round(float(prix_depart), 4),
+            "gain_pct":    _gain(action_actuelle, var_pct),
+        }
+    return resultat
+
+
 def get_ticker_stats_bulk(username: str, tickers: list[str]) -> dict:
     """
     Fiabilité J+1 des conseils déjà émis, pour CET utilisateur et CES

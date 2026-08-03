@@ -113,7 +113,7 @@ def get_overview():
     try:
         from portfolio.positions import get_positions, get_portfolio_summary
         from portfolio.advisor   import get_all_today_advice, ACTION_LABELS
-        from portfolio.evaluator import get_ticker_stats_bulk
+        from portfolio.evaluator import get_ticker_stats_bulk, get_conseil_suivi_gain_bulk
         from data.market         import get_live_price
 
         _SYM = {"USD":"$","EUR":"€","GBP":"£","JPY":"¥","CHF":"Fr","CAD":"CA$","AUD":"A$","HKD":"HK$"}
@@ -189,6 +189,13 @@ def get_overview():
                 })
             except Exception as e:
                 print(f"[Overview] {ticker} erreur : {e}", flush=True)
+
+        # Gain qu'aurait donné le fait de suivre le conseil directionnel actuel,
+        # depuis son premier jour — nécessite les prix live déjà calculés ci-dessus
+        prix_actuels = {r["ticker"]: r["price"] for r in result if r["price"]}
+        conseil_gains = get_conseil_suivi_gain_bulk(current_user.id, tickers, prix_actuels)
+        for r in result:
+            r["conseil_suivi_gain"] = conseil_gains.get(r["ticker"])
 
         # Snapshot quotidien après clôture NASDAQ (22h Paris, une fois par jour)
         try:
