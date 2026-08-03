@@ -249,7 +249,8 @@ def send_weekly_report(username: str, email: str, watchlist: list,
     # et au buy & hold (qu'aurait valu le compte sans suivre aucun conseil).
     compte_block = ""
     try:
-        from portfolio.positions import get_positions as _get_lots, etat_compte
+        from portfolio.positions import (get_positions as _get_lots, etat_compte,
+                                          get_ajustement_cash)
 
         tous_lots = _get_lots(username) or []
         # Prix par ticker : ceux déjà récupérés dans la boucle, complétés
@@ -261,9 +262,13 @@ def send_weekly_report(username: str, email: str, watchlist: list,
 
         # Une devise par bloc (la quasi-totalité des cas : USD seul)
         devises = {l.get("currency", "USD") for l in tous_lots} or {"USD"}
+        # Correction admin non ventilée par devise (cf. get_ajustement_cash) —
+        # appliquée seulement s'il n'y a qu'une devise, même garde-fou que
+        # portfolio.html pour data.cash_dispo
+        ajustement = get_ajustement_cash(username) if len(devises) == 1 else 0.0
         for cur in sorted(devises):
             lots_cur = [l for l in tous_lots if l.get("currency", "USD") == cur]
-            etat = etat_compte(lots_cur, prix_map)
+            etat = etat_compte(lots_cur, prix_map, ajustement=ajustement)
             if etat["total"] <= 0:
                 continue
             sym = _SYM.get(cur, "$")

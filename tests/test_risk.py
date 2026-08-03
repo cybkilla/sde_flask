@@ -443,6 +443,18 @@ etat3 = etat_compte([{"ticker": "X", "type": "achat", "quantite": 100, "prix_ach
 assert etat3["cash"] == 0.0 and etat3["total"] == 1000.0
 print("✓ etat_compte : compte total exact, pas de double comptage, B&H stable")
 
+# Correction admin (ajustement) : appliquée AVANT le plancher 0, comme
+# get_cash_disponible() — sinon le rapport hebdo réaffiche le solde brut
+# après une correction (bug réel du 03.08.2026 : $256.57 au lieu de $10)
+etat4 = etat_compte(lots_admin, {"TMC": 4.13}, ajustement=-1000.0)
+assert etat4["cash"] == round(2692 * 4.02 - 1000, 2)
+# achat 100@10 -> cash brut -1000 ; +200 d'ajustement -> -800, planché à 0
+# (si le plancher était appliqué AVANT l'ajustement, on obtiendrait 200 à tort)
+etat5 = etat_compte([{"ticker": "X", "type": "achat", "quantite": 100, "prix_achat": 10}],
+                    {"X": 10}, ajustement=200.0)
+assert etat5["cash"] == 0.0
+print("✓ etat_compte : ajustement admin appliqué au cash avant le plancher 0")
+
 print("\n✓ Tous les tests test_risk.py sont OK (hors réseau)")
 
 

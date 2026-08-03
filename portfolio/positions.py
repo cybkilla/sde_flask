@@ -245,17 +245,25 @@ def get_cash_disponible(username: str):
         return None
 
 
-def etat_compte(lots: list, prix_par_ticker: dict) -> dict:
+def etat_compte(lots: list, prix_par_ticker: dict, ajustement: float = 0.0) -> dict:
     """
     Photographie du compte à partir des lots (UNE devise) et des prix
     actuels. Fonction PURE — source de vérité unique pour le rapport
     hebdo, l'en-tête de page et les comparaisons.
 
+    `ajustement` (optionnel) : correction manuelle admin du cash suivi
+    (cf. get_ajustement_cash) — sans lui, le cash reste le solde BRUT
+    ventes−achats, comme le "$256.57" resté affiché dans le rapport
+    hebdo le 03.08.2026 après une correction admin à $10 (même bug déjà
+    corrigé sur portfolio.html/history.py : recalculer depuis les lots
+    bruts, sans jamais relire la correction admin, ressuscite l'ancien
+    montant partout où ce raccourci est repris).
+
     Retourne :
       valeur_positions : Σ actions détenues × prix actuel
-      cash             : Σventes − Σachats (convention : 'achat' financé
-                         par le cash suivi, 'import' = cash externe exclu),
-                         plancher 0
+      cash             : Σventes − Σachats + ajustement (convention :
+                         'achat' financé par le cash suivi, 'import' =
+                         cash externe exclu), plancher 0
       total            : valeur_positions + cash — LA métrique objectif
       buy_hold         : valeur qu'aurait le compte si on n'avait JAMAIS
                          suivi les conseils = lots 'import' conservés tels
@@ -285,7 +293,7 @@ def etat_compte(lots: list, prix_par_ticker: dict) -> dict:
 
     valeur = sum(max(q, 0) * float(prix_par_ticker.get(t) or 0)
                  for t, q in par_ticker.items())
-    cash = max(round(cash, 2), 0.0)
+    cash = max(round(cash + ajustement, 2), 0.0)
     return {
         "valeur_positions": round(valeur, 2),
         "cash":             cash,
