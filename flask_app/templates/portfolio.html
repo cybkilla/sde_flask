@@ -248,17 +248,28 @@
     const companyEsc   = (company || ticker).replace(/'/g, "\\'");
     const badgeInner   = `${icon} ${a.action}${qty}`;
     const today_cd     = new Date().toISOString().slice(0, 10);
-    // Fiabilité J+1 sur CE ticker (échantillon >= 3 pour éviter le bruit sur une position récente)
+    // Fiabilité J+20 sur CE ticker : horizon aligné sur les signaux (14-50j),
+    // c'est celui qui fait foi (cf. evaluator.py) — mis en avant à la place du J+1.
+    const reliabilityJ20 = (aStats && aStats.total_j20 >= 3)
+      ? `<span style="font-size:.78rem;color:var(--sde-text);font-weight:600" title="${aStats.bons_j20}/${aStats.total_j20} conseils vérifiés bons 20 séances après émission — horizon aligné sur les signaux utilisés par SDE">
+           SDE : ${aStats.taux_j20_pct}% de bons conseils sur ${ticker} (J+20, ${aStats.total_j20} évalués)
+         </span>`
+      : "";
+    // Fiabilité J+1 : réactivité immédiate, très bruitée (mesure surtout le
+    // bruit quotidien) — reléguée en indice secondaire, plus jamais présentée
+    // comme LE indicateur de qualité.
     const reliability  = (aStats && aStats.total >= 3)
-      ? `<span style="font-size:.72rem;color:var(--sde-muted)" title="${aStats.bons}/${aStats.total} conseils vérifiés bons le lendemain">
-           SDE : ${aStats.taux_pct}% de bons conseils sur ${ticker} (J+1, ${aStats.total} évalués)
+      ? `<span style="font-size:.68rem;color:var(--sde-muted)" title="${aStats.bons}/${aStats.total} conseils vérifiés bons le lendemain — signal court terme et bruyant, à ne pas confondre avec la performance réelle">
+           Réactivité J+1 : ${aStats.taux_pct}% (${aStats.total} évalués)
          </span>`
       : "";
     // Si suivi n'apporte rien : le conseil est déjà appliqué (badge "✓ Suivi" à la place)
+    // C'est la performance RÉELLEMENT vécue depuis le début du conseil en cours :
+    // on la met visuellement au même niveau que le taux J+20, au-dessus du J+1.
     const gainColor = gainInfo && gainInfo.gain_pct >= 0 ? "#1D9E75" : "#D85A30";
     const gainSuivi = (!followed && gainInfo)
-      ? `<div style="font-size:.72rem;color:${gainColor};font-weight:600;margin-top:2px">
-           Si suivi depuis le ${_dateFr(gainInfo.depuis)} (${sym}${gainInfo.prix_depart.toFixed(2)}) :
+      ? `<div style="font-size:.78rem;color:${gainColor};font-weight:700">
+           Performance réelle si suivi depuis le ${_dateFr(gainInfo.depuis)} (${sym}${gainInfo.prix_depart.toFixed(2)}) :
            ${gainInfo.gain_pct >= 0 ? "+" : ""}${gainInfo.gain_pct}%
          </div>`
       : "";
@@ -288,7 +299,11 @@
           ⟳
         </button>
       </div>
-      ${reliability ? `<div style="margin-bottom:6px">${reliability}${gainSuivi}</div>` : gainSuivi}
+      ${(reliabilityJ20 || gainSuivi || reliability)
+        ? `<div style="margin-bottom:6px;display:flex;flex-direction:column;gap:2px">
+             ${reliabilityJ20}${gainSuivi}${reliability}
+           </div>`
+        : ""}
       <p style="margin:0;font-size:.8rem;color:var(--sde-text);line-height:1.6">${a.raisonnement || ""}</p>
     </div>`;
   }

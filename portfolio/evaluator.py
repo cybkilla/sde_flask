@@ -505,13 +505,20 @@ def get_conseil_suivi_gain_bulk(username: str, tickers: list[str],
 
 def get_ticker_stats_bulk(username: str, tickers: list[str]) -> dict:
     """
-    Fiabilité J+1 des conseils déjà émis, pour CET utilisateur et CES
-    tickers (une position = "comment SDE m'a servi sur ce titre", distinct
-    du taux global admin qui mélange tous les utilisateurs). Une seule
-    requête pour tous les tickers passés (évite le N+1 sur la page
-    portfolio, qui a déjà causé une lenteur similaire avec les prix live).
-    Retourne {ticker: {"total", "bons", "taux_pct"}} — absent si pas encore
-    de conseil évalué pour ce ticker.
+    Fiabilité des conseils déjà émis, pour CET utilisateur et CES tickers
+    (une position = "comment SDE m'a servi sur ce titre", distinct du taux
+    global admin qui mélange tous les utilisateurs). Une seule requête pour
+    tous les tickers passés (évite le N+1 sur la page portfolio, qui a déjà
+    causé une lenteur similaire avec les prix live).
+
+    Renvoie J+1 (réactivité immédiate, bruyant — cf. tête de fichier) ET
+    J+20 (horizon aligné sur les signaux 14-50j, c'est lui qui fait foi)
+    pour que l'affichage puisse mettre en avant le second plutôt que le
+    premier.
+
+    Retourne {ticker: {"total", "bons", "taux_pct",
+                        "total_j20", "bons_j20", "taux_j20_pct"}}
+    — absent si pas encore de conseil évalué pour ce ticker.
     """
     import db
     from db import _init, is_available
@@ -522,23 +529,42 @@ def get_ticker_stats_bulk(username: str, tickers: list[str]) -> dict:
     try:
         rows = (
             db._client.table("daily_advice")
-            .select("ticker,bon_conseil")
+            .select("ticker,bon_conseil,bon_conseil_j20")
             .eq("username", username)
             .in_("ticker", tickers)
             .not_.is_("bon_conseil", "null")
             .execute()
             .data or []
         )
-    except Exception as e:
-        print(f"[Evaluator] get_ticker_stats_bulk indisponible : {e}", flush=True)
-        return {}
+    except Exception:
+        # Colonne J+20 absente (migration non appliquée) → mode J+1 seul
+        try:
+            rows = (
+                db._client.table("daily_advice")
+                .select("ticker,bon_conseil")
+                .eq("username", username)
+                .in_("ticker", tickers)
+                .not_.is_("bon_conseil", "null")
+                .execute()
+                .data or []
+            )
+        except Exception as e:
+            print(f"[Evaluator] get_ticker_stats_bulk indisponible : {e}", flush=True)
+            return {}
 
     stats: dict[str, dict] = {}
     for r in rows:
-        s = stats.setdefault(r["ticker"], {"total": 0, "bons": 0})
+        s = stats.setdefault(r["ticker"], {"total": 0, "bons": 0,
+                                            "total_j20": 0, "bons_j20": 0})
         s["total"] += 1
         if r["bon_conseil"]:
             s["bons"] += 1
+        if r.get("bon_conseil_j20") is not None:
+            s["total_j20"] += 1
+            if r["bon_conseil_j20"]:
+                s["bons_j20"] += 1
     for s in stats.values():
         s["taux_pct"] = round(s["bons"] / s["total"] * 100, 1)
+        s["taux_j20_pct"] = (round(s["bons_j20"] / s["total_j20"] * 100, 1)
+                              if s["total_j20"] else None)
     return stats

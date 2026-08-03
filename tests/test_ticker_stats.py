@@ -15,11 +15,11 @@ db._init = lambda: None
 db.is_available = lambda: True
 
 _ROWS = [
-    {"ticker": "TMC", "bon_conseil": True},
-    {"ticker": "TMC", "bon_conseil": True},
-    {"ticker": "TMC", "bon_conseil": False},
-    {"ticker": "TMC", "bon_conseil": True},
-    {"ticker": "FCEL", "bon_conseil": False},
+    {"ticker": "TMC", "bon_conseil": True,  "bon_conseil_j20": False},
+    {"ticker": "TMC", "bon_conseil": True,  "bon_conseil_j20": True},
+    {"ticker": "TMC", "bon_conseil": False, "bon_conseil_j20": None},
+    {"ticker": "TMC", "bon_conseil": True,  "bon_conseil_j20": None},
+    {"ticker": "FCEL", "bon_conseil": False, "bon_conseil_j20": None},
 ]
 
 
@@ -62,10 +62,12 @@ db._client = type("FakeClient", (), {
 })()
 
 stats = get_ticker_stats_bulk("admin", ["TMC", "FCEL", "ITG"])
-assert stats["TMC"] == {"total": 4, "bons": 3, "taux_pct": 75.0}
-assert stats["FCEL"] == {"total": 1, "bons": 0, "taux_pct": 0.0}
+assert stats["TMC"] == {"total": 4, "bons": 3, "taux_pct": 75.0,
+                        "total_j20": 2, "bons_j20": 1, "taux_j20_pct": 50.0}
+assert stats["FCEL"] == {"total": 1, "bons": 0, "taux_pct": 0.0,
+                         "total_j20": 0, "bons_j20": 0, "taux_j20_pct": None}
 assert "ITG" not in stats   # aucun conseil évalué pour ce ticker -> absent, pas 0%
-print("✓ get_ticker_stats_bulk : regroupement par ticker, taux_pct correct, ticker sans historique absent")
+print("✓ get_ticker_stats_bulk : regroupement par ticker, taux_pct/taux_j20_pct corrects, ticker sans historique absent")
 
 
 # ── Pas de Supabase / pas de tickers -> dégradation silencieuse ──
