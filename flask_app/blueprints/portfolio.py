@@ -113,6 +113,7 @@ def get_overview():
     try:
         from portfolio.positions import get_positions, get_portfolio_summary
         from portfolio.advisor   import get_all_today_advice, ACTION_LABELS
+        from portfolio.evaluator import get_ticker_stats_bulk
         from data.market         import get_live_price
 
         _SYM = {"USD":"$","EUR":"€","GBP":"£","JPY":"¥","CHF":"Fr","CAD":"CA$","AUD":"A$","HKD":"HK$"}
@@ -124,8 +125,9 @@ def get_overview():
         # Tickers uniques, dans l'ordre d'apparition
         tickers = list(dict.fromkeys(l["ticker"] for l in all_lots))
 
-        # Conseils du jour en une seule requête
-        advices = get_all_today_advice(current_user.id, tickers)
+        # Conseils du jour + fiabilité J+1 par ticker, chacun en une seule requête
+        advices      = get_all_today_advice(current_user.id, tickers)
+        advice_stats = get_ticker_stats_bulk(current_user.id, tickers)
 
         from cache import get_cached
 
@@ -182,7 +184,8 @@ def get_overview():
                         "pnl_pct":         round(pnl_pct,         2),
                         "position_fermee":  total_shares <= 0,
                     },
-                    "advice":  advices.get(ticker),
+                    "advice":       advices.get(ticker),
+                    "advice_stats": advice_stats.get(ticker),
                 })
             except Exception as e:
                 print(f"[Overview] {ticker} erreur : {e}", flush=True)

@@ -227,7 +227,7 @@
   };
 
   /* ── Bloc conseil ── */
-  function adviceHtml(ticker, sym, a, livePrice, company, currency, followed) {
+  function adviceHtml(ticker, sym, a, livePrice, company, currency, followed, aStats) {
     if (!a) {
       return `<div id="advice-wrap-${ticker}"
                    style="background:#F1F5F9;border-radius:8px;padding:10px 14px;
@@ -248,6 +248,12 @@
     const companyEsc   = (company || ticker).replace(/'/g, "\\'");
     const badgeInner   = `${icon} ${a.action}${qty}`;
     const today_cd     = new Date().toISOString().slice(0, 10);
+    // Fiabilité J+1 sur CE ticker (échantillon >= 3 pour éviter le bruit sur une position récente)
+    const reliability  = (aStats && aStats.total >= 3)
+      ? `<span style="font-size:.72rem;color:var(--sde-muted)" title="${aStats.bons}/${aStats.total} conseils vérifiés bons le lendemain">
+           SDE : ${aStats.taux_pct}% de bons conseils sur ${ticker} (J+1, ${aStats.total} évalués)
+         </span>`
+      : "";
     const badge = modalType
       ? `<span style="background:${color};color:#fff;padding:4px 12px;border-radius:20px;
                       font-weight:700;font-size:.82rem;letter-spacing:.01em;
@@ -274,6 +280,7 @@
           ⟳
         </button>
       </div>
+      ${reliability ? `<div style="margin-bottom:6px">${reliability}</div>` : ""}
       <p style="margin:0;font-size:.8rem;color:var(--sde-text);line-height:1.6">${a.raisonnement || ""}</p>
     </div>`;
   }
@@ -346,7 +353,7 @@
 
   /* ── Carte ticker ── */
   function renderCard(pos) {
-    const { ticker, company, sym, price, var_1d, summary: s, advice: a, currency, logo_url } = pos;
+    const { ticker, company, sym, price, var_1d, summary: s, advice: a, advice_stats: aStats, currency, logo_url } = pos;
     const pColor  = var_1d >= 0 ? "#1D9E75" : "#D85A30";
     const arr     = var_1d >= 0 ? "▲" : "▼";
     const pColor2 = s.pnl_pct >= 0 ? "#1D9E75" : "#D85A30";
@@ -390,7 +397,7 @@
   </div>
 
   <!-- Conseil du jour -->
-  ${adviceHtml(ticker, sym, a, price, company, currency, followed)}
+  ${adviceHtml(ticker, sym, a, price, company, currency, followed, aStats)}
 
   <!-- Résumé P&L -->
   <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;font-size:.8rem;

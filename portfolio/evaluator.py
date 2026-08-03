@@ -438,3 +438,44 @@ def get_global_stats() -> dict:
         "taux_j20_pct":    taux_j20,
         "gain_j20_moyen":  gain_j20,
     }
+
+
+def get_ticker_stats_bulk(username: str, tickers: list[str]) -> dict:
+    """
+    Fiabilité J+1 des conseils déjà émis, pour CET utilisateur et CES
+    tickers (une position = "comment SDE m'a servi sur ce titre", distinct
+    du taux global admin qui mélange tous les utilisateurs). Une seule
+    requête pour tous les tickers passés (évite le N+1 sur la page
+    portfolio, qui a déjà causé une lenteur similaire avec les prix live).
+    Retourne {ticker: {"total", "bons", "taux_pct"}} — absent si pas encore
+    de conseil évalué pour ce ticker.
+    """
+    import db
+    from db import _init, is_available
+    if not is_available() or not tickers:
+        return {}
+
+    _init()
+    try:
+        rows = (
+            db._client.table("daily_advice")
+            .select("ticker,bon_conseil")
+            .eq("username", username)
+            .in_("ticker", tickers)
+            .not_.is_("bon_conseil", "null")
+            .execute()
+            .data or []
+        )
+    except Exception as e:
+        print(f"[Evaluator] get_ticker_stats_bulk indisponible : {e}", flush=True)
+        return {}
+
+    stats: dict[str, dict] = {}
+    for r in rows:
+        s = stats.setdefault(r["ticker"], {"total": 0, "bons": 0})
+        s["total"] += 1
+        if r["bon_conseil"]:
+            s["bons"] += 1
+    for s in stats.values():
+        s["taux_pct"] = round(s["bons"] / s["total"] * 100, 1)
+    return stats
