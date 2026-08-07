@@ -253,6 +253,20 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
                 f"— gap {sens_gap} attendu à l'ouverture, conseil réévalué "
                 f"avant la séance."
             )
+        # Résultats trimestriels imminents : événement à variance élevée
+        # que l'analyse technique/fondamentale ne peut pas anticiper (cas
+        # réel du 23.07.2026 : ACHETER sur MXL à score 65.5, -21.2% le
+        # lendemain — probable choc résultats). Informatif seulement,
+        # ne bloque ni ne dégrade jamais le conseil (même principe que la
+        # trésorerie insuffisante : annoter, jamais rétrograder).
+        jae = market.get("jours_avant_earnings")
+        if jae is not None and jae <= 5:
+            delai = "aujourd'hui ou demain" if jae <= 1 else f"dans {jae} jours"
+            r["raisonnement"] += (
+                f"<br>{cd}⚠️ Résultats trimestriels attendus {delai} — "
+                f"volatilité potentiellement élevée, au-delà de ce que "
+                f"l'analyse technique/fondamentale peut anticiper."
+            )
         # Mémoire du jour : rappeler ce qui a déjà été exécuté
         if pnl is not None and vendu_auj > 0:
             r["raisonnement"] += (
@@ -821,6 +835,18 @@ def ensure_today_advice(username: str, ticker: str, prix_live: float,
             tf = tendance_fond(ticker)
             if tf:
                 market["tendance_fond"] = tf
+        except Exception:
+            pass
+
+        # Résultats trimestriels imminents — un appel Finnhub par ticker,
+        # une seule fois par jour (ensure_today_advice retourne tôt si le
+        # conseil du jour existe déjà) ; purement informatif dans le texte,
+        # cf. generate_advice.
+        try:
+            from data.market import get_next_earnings
+            earnings = get_next_earnings(ticker)
+            if earnings:
+                market["jours_avant_earnings"] = earnings["jours"]
         except Exception:
             pass
 

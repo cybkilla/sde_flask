@@ -135,6 +135,24 @@ assert "Pré-marché" not in adv2["raisonnement"]
 print("✓ conseil : ligne Pré-marché présente avec gap, absente sans")
 
 
+# ── Ligne Résultats trimestriels : informatif seulement, jamais bloquant ──
+# Cas réel MXL (23.07.2026) : ACHETER à score 65.5 -> -21.2% le lendemain,
+# probable choc résultats non anticipable par l'analyse technique.
+_market_earn = {**_market, "jours_avant_earnings": 3}
+adv3 = generate_advice(_summary, _market_earn, _snap)
+assert "Résultats trimestriels attendus dans 3 jours" in adv3["raisonnement"]
+assert adv3["action"] == "TENIR"   # n'influence jamais l'action, informatif seulement
+
+_market_loin = {**_market, "jours_avant_earnings": 8}   # au-delà du seuil (5j) -> silence
+adv4 = generate_advice(_summary, _market_loin, _snap)
+assert "Résultats trimestriels" not in adv4["raisonnement"]
+
+_market_demain = {**_market, "jours_avant_earnings": 1}
+adv5 = generate_advice(_summary, _market_demain, _snap)
+assert "aujourd'hui ou demain" in adv5["raisonnement"]
+print("✓ conseil : ligne Résultats trimestriels sous 5j, silencieuse au-delà, n'influence jamais l'action")
+
+
 # ── Surclassement chandelier : plus de texte contradictoire ──
 # Reproduction du cas TMC 14.07.2026 : base TENIR ('maintien de la
 # position') surclassée en ALLÉGER par un pattern baissier — la première

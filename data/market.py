@@ -417,6 +417,40 @@ def get_premarket_gap(ticker: str) -> dict | None:
         return None
 
 
+def get_next_earnings(ticker: str, horizon_jours: int = 10) -> dict | None:
+    """
+    Prochaine date de publication de résultats trimestriels dans les
+    `horizon_jours` prochains jours — Finnhub `earnings_calendar`,
+    disponible sur le plan gratuit (vérifié en réel le 03.08.2026,
+    filtré par `symbol`, un seul appel par ticker).
+
+    But : un choc résultats est un événement à variance élevée qu'aucun
+    signal technique/fondamental ne peut anticiper (cas réel MXL, ACHETER
+    à score 65.5 suivi d'un -21.2% le lendemain, probable annonce). Best
+    effort — None si indisponible ou aucune date connue, jamais bloquant.
+    """
+    try:
+        import datetime
+        from utils.net_timeout import with_timeout
+        fh    = _fh()
+        today = datetime.date.today()
+        result = with_timeout(
+            lambda: fh.earnings_calendar(
+                _from=str(today), to=str(today + datetime.timedelta(days=horizon_jours)),
+                symbol=ticker.upper()),
+            6,
+        )
+        rows = (result or {}).get("earningsCalendar") or []
+        if not rows:
+            return None
+        prochaine = min(rows, key=lambda r: r["date"])
+        d = datetime.datetime.strptime(prochaine["date"], "%Y-%m-%d").date()
+        return {"date": prochaine["date"], "jours": (d - today).days}
+    except Exception as e:
+        print(f"[Market] get_next_earnings({ticker}) indisponible : {e}", flush=True)
+        return None
+
+
 # ══════════════════════════════════════════════════════════
 # POINT D'ENTRÉE — essaie yfinance, bascule sur Finnhub+TD
 # ══════════════════════════════════════════════════════════

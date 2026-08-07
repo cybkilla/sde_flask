@@ -408,6 +408,15 @@ def get_advice(ticker: str):
                     market["tendance_fond"] = tf
             except Exception:
                 pass
+            # Résultats trimestriels imminents — informatif seulement,
+            # même appel que ensure_today_advice (cf. advisor.py)
+            try:
+                from data.market import get_next_earnings
+                earnings = get_next_earnings(ticker)
+                if earnings:
+                    market["jours_avant_earnings"] = earnings["jours"]
+            except Exception:
+                pass
             summary = get_portfolio_summary(current_user.id, ticker, price)
 
             # Pattern chandelier depuis l'historique du snapshot

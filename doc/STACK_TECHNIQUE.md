@@ -82,7 +82,12 @@ clé requise).
 
 ### Finnhub
 **Fonction** : prix "temps réel" (`/quote`), source *primaire* en
-production pour le prix courant et la variation du jour.
+production pour le prix courant et la variation du jour. Aussi utilisé
+depuis le 03.08.2026 pour le calendrier de résultats trimestriels
+(`earnings_calendar`, filtré par ticker) — signale dans le raisonnement
+du conseil qu'une publication est imminente, sans jamais bloquer ou
+modifier l'action (événement à variance élevée que l'analyse technique
+ne peut pas anticiper).
 **Limite connue** : hors séance, son `/quote` reste figé sur la clôture
 de la veille (pas de vrai pré-marché sur le plan gratuit).
 **Prix** : gratuit — 60 appels/minute.
