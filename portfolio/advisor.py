@@ -485,10 +485,35 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
             f"Maintien recommandé, la tendance reste favorable.")
         return _finalize(base, pnl=pnl_pct)
 
+    # Zone morte : score ACHETER solide, mais aucune branche RENFORCER
+    # ci-dessus n'a matché (ni repli suffisant, ni RSI assez bas, ni
+    # renforcement déjà fait aujourd'hui) — sans cette ligne le message
+    # générique ne dit JAMAIS pourquoi un score fort ne déclenche rien.
+    # Cas réel ITG : score 62-73/100, 4 occurrences entre le 23.07 et le
+    # 07.08.2026, toujours le même texte muet. Contraire à la promesse
+    # produit ("chaque conseil est expliqué, pas juste quoi faire").
+    note_zone_morte = ""
+    if reco == "ACHETER" and score >= c["score_tenir"] and pnl_pct <= 0:
+        if achete_auj > 0:
+            note_zone_morte = (f"<br>{cd}Signal fort ({score:.0f}/100) mais pas de "
+                                f"nouveau renforcement : déjà fait aujourd'hui.")
+        else:
+            raisons = []
+            if pnl_pct > seuils["pnl_renforcer"]:
+                raisons.append(f"le repli ({pnl_pct:+.1f}%) n'atteint pas encore le "
+                                f"seuil de renforcement ({seuils['pnl_renforcer']:+.1f}%)")
+            if rsi > c["rsi_renforcer"]:
+                raisons.append(f"le RSI ({rsi:.0f}) n'est pas encore assez bas "
+                                f"(seuil {c['rsi_renforcer']:.0f})")
+            if raisons:
+                note_zone_morte = (f"<br>{cd}Signal fort ({score:.0f}/100) mais pas de "
+                                    f"renforcement : {' et '.join(raisons)}.")
+
     # Défaut : tenir
     base = _conseil("TENIR", None, None,
         f"{cd}Position à {pnl_pct:+.1f}% (coût moyen {cout_moyen:.2f} $). "
-        f"Signal SDE {reco} ({score:.0f}/100) — maintien de la position.")
+        f"Signal SDE {reco} ({score:.0f}/100) — maintien de la position."
+        f"{note_zone_morte}")
     return _finalize(base, pnl=pnl_pct, shares=total_shares, px=prix)
 
 
