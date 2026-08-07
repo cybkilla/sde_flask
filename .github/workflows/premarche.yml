@@ -13,7 +13,12 @@ name: Relais pré-marché
 on:
   schedule:
     - cron: "*/30 7-14 * * 1-5"
-  workflow_dispatch: {}   # déclenchement manuel pour tester
+  workflow_dispatch:      # déclenchement manuel pour tester
+    inputs:
+      force:
+        description: "Ignorer la fenêtre pré-marché (test de la chaîne complète)"
+        type: boolean
+        default: false
 
 jobs:
   relay:
@@ -34,4 +39,5 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          RELAY_FORCE:  ${{ inputs.force }}
         run: python scripts/premarche_relay.py

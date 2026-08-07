@@ -129,4 +129,17 @@ db.find = _pas_de_reseau   # tout accès ferait planter le test
 assert relay.relayer() == 0
 print("✓ relayer : hors fenêtre (10h00-15h25 Paris) -> sortie immédiate sans rien toucher")
 
+
+# ── RELAY_FORCE=true (test manuel) -> la fenêtre est ignorée ──
+# Ajouté après le premier test réel du 07.08.2026, lancé à 15h50 Paris :
+# fenêtre fermée -> impossible de valider les secrets sans attendre lundi.
+import os
+os.environ["RELAY_FORCE"] = "true"
+db.find = lambda table, filt: [{"ticker": "AAA"}]
+ecrits.clear()
+assert relay.relayer() == 0
+assert len(ecrits) == 1 and ecrits[0][1] == "AAA"
+del os.environ["RELAY_FORCE"]
+print("✓ relayer : RELAY_FORCE=true ignore la fenêtre (validation manuelle de la chaîne complète)")
+
 print("\n✓ Tous les tests test_premarche_relay.py sont OK (hors réseau)")

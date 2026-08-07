@@ -38,7 +38,12 @@ def _tickers_en_position() -> list[str]:
 
 
 def relayer() -> int:
-    if not _fenetre_premarche_paris():
+    # RELAY_FORCE (input "force" du workflow_dispatch) : valider la chaîne
+    # complète (secrets → yfinance → écriture) hors fenêtre — Yahoo garde
+    # les champs preMarket* renseignés même après l'ouverture.
+    if os.getenv("RELAY_FORCE", "").lower() == "true":
+        print("[Relay] mode forcé (test manuel) — fenêtre pré-marché ignorée")
+    elif not _fenetre_premarche_paris():
         print("[Relay] hors fenêtre pré-marché (10h00-15h25 Paris, lun-ven) — rien à faire")
         return 0
 
