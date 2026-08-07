@@ -34,6 +34,7 @@ SCHEMA_ATTENDU = {
     "opportunites_scan":   [],   # scan d'opportunités admin 2026-07-22
     "opportunites_univers": ["prompt"],  # override univers de scan (suggestion IA) 2026-07-23, prompt sauvegardé 2026-07-24
     "opportunites_historique": [],  # évaluation multi-horizons du Top 5 2026-07-24
+    "premarche_quotes":    ["fetched_at"],  # relais pré-marché GitHub Actions 2026-08-07
 }
 
 

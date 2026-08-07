@@ -1,0 +1,37 @@
+# Relais pré-marché : exécute yfinance depuis les IP GitHub (Yahoo bloque
+# celles de Render) et dépose les prix dans Supabase — lus ensuite par
+# data/market.py::get_premarket_gap. Voir scripts/premarche_relay.py.
+#
+# Le cron est en UTC toute l'année : la plage 7h-14h UTC couvre la fenêtre
+# 10h00-15h25 Paris été comme hiver, et le script sort immédiatement hors
+# fenêtre (contrôle précis fait en heure de Paris dans le script).
+# Budget minutes : ~16 déclenchements/jour ouvré × ~1-2 min, dont la
+# majorité en sortie immédiate — loin des 2000 min/mois du plan gratuit.
+
+name: Relais pré-marché
+
+on:
+  schedule:
+    - cron: "*/30 7-14 * * 1-5"
+  workflow_dispatch: {}   # déclenchement manuel pour tester
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Dépendances minimales (pas le requirements.txt complet)
+        run: pip install yfinance supabase
+
+      - name: Relayer les prix pré-marché vers Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/premarche_relay.py

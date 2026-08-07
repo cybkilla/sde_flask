@@ -51,7 +51,13 @@ visite le site.
 
 ### GitHub
 **Fonction** : hébergement du code source, historique des commits.
-**Prix** : gratuit (dépôt privé, plan gratuit GitHub).
+Depuis le 07.08.2026, **GitHub Actions** sert aussi de relais
+pré-marché : yfinance est bloqué depuis les IP de Render, mais pas
+depuis les runners GitHub — une Action planifiée (toutes les 30 min
+pendant la fenêtre 10h00-15h25 Paris) récupère les vrais prix
+pré-marché et les dépose dans Supabase, où l'app les lit.
+**Prix** : gratuit (dépôt privé, plan gratuit GitHub — le relais
+consomme ~300-500 min/mois sur les 2 000 gratuites).
 
 ---
 
@@ -77,6 +83,9 @@ exposer un vrai prix pré-marché.
 **Limite connue** : **bloqué au niveau réseau depuis Render** (Yahoo
 Finance bloque les IP de Render) — fonctionne en local/dev, pas en
 production. D'où le besoin des deux sources suivantes en secours.
+Contourné pour le pré-marché depuis le 07.08.2026 via le relais GitHub
+Actions (voir section GitHub) : yfinance tourne sur les runners GitHub
+et dépose les prix dans Supabase.
 **Prix** : gratuit (scrape l'API non-officielle de Yahoo Finance, pas de
 clé requise).
 

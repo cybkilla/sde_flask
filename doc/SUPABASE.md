@@ -212,6 +212,31 @@ ALTER TABLE users
   ADD COLUMN IF NOT EXISTS premarche_digest_date TEXT;
 ```
 
+**Table `premarche_quotes`** (2026-08-07 — relais pré-marché GitHub
+Actions : yfinance est la seule source gratuite d'un vrai prix
+pré-marché mais Yahoo bloque les IP de Render ; une Action planifiée
+(.github/workflows/premarche.yml → scripts/premarche_relay.py) exécute
+yfinance depuis les IP GitHub pendant la fenêtre 10h00-15h25 Paris et
+dépose les prix ici. Lue en PREMIER par data/market.py::get_premarket_gap,
+fraîcheur exigée ≤ 45 min (le cron passe toutes les 30). Une ligne par
+ticker, écrasée à chaque passage — pas d'historique) :
+
+```sql
+CREATE TABLE IF NOT EXISTS premarche_quotes (
+  ticker     TEXT PRIMARY KEY,
+  prix       FLOAT,          -- prix pré-marché (preMarketPrice yfinance)
+  gap_pct    FLOAT,          -- variation % vs clôture veille (preMarketChangePercent)
+  prev_close FLOAT,          -- clôture de la veille (regularMarketPreviousClose)
+  fetched_at TEXT            -- ISO UTC du dépôt (péremption côté lecteur)
+);
+
+ALTER TABLE premarche_quotes ENABLE ROW LEVEL SECURITY;
+```
+
+> Nécessite aussi deux secrets sur le dépôt GitHub (`Settings →
+> Secrets and variables → Actions`) : `SUPABASE_URL` et `SUPABASE_KEY`
+> (la service_role key, comme sur Render).
+
 **Table `opportunites_historique`** (2026-07-24 — évaluation multi-horizons
 (J+1/J+5/J+20) du Top 5 du scan d'opportunités : jusqu'ici aucune ligne
 n'était confrontée à la réalité après coup, chaque évaluation se faisait

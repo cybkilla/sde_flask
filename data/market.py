@@ -393,11 +393,34 @@ def get_premarket_gap(ticker: str) -> dict | None:
 
     Seul yfinance (`.info["preMarketPrice"]`) a la vraie donnée — mais
     yfinance est bloqué au niveau réseau depuis Render (cf. net_timeout.py).
-    Cette fonction est donc un BEST EFFORT : timeout court, retourne None
-    si indisponible plutôt qu'une fausse donnée. En prod, s'attendre à
-    None la plupart du temps — c'est le compromis assumé (pas d'info vaut
-    mieux qu'une info fausse, même convention que get_cash_disponible()).
+
+    Depuis le 07.08.2026, un RELAIS contourne ce blocage : une GitHub
+    Action (scripts/premarche_relay.py) exécute yfinance depuis les IP
+    GitHub pendant la fenêtre pré-marché et dépose les prix dans la table
+    Supabase `premarche_quotes` — lue ICI en premier. L'appel yfinance
+    direct reste en second (utile en dev local), puis None : toujours
+    BEST EFFORT, jamais de fausse donnée (même convention que
+    get_cash_disponible()).
     """
+    # 1. Relais GitHub Actions (frais < 45 min — le cron passe toutes les 30)
+    try:
+        from db import find_one, is_available
+        if is_available():
+            row = find_one("premarche_quotes", {"ticker": ticker.upper()})
+            if row and row.get("prix") is not None and row.get("fetched_at"):
+                from datetime import datetime, timezone
+                age_min = (datetime.now(timezone.utc)
+                           - datetime.fromisoformat(row["fetched_at"])).total_seconds() / 60
+                if age_min <= 45:
+                    return {
+                        "prix":       float(row["prix"]),
+                        "gap_pct":    float(row["gap_pct"]) if row.get("gap_pct") is not None else None,
+                        "prev_close": float(row["prev_close"]) if row.get("prev_close") is not None else None,
+                    }
+    except Exception as e:
+        print(f"[Market] relais pré-marché illisible ({ticker}) : {e}", flush=True)
+
+    # 2. yfinance direct (fonctionne en local, bloqué depuis Render)
     try:
         import yfinance as yf
         from utils.net_timeout import with_timeout
