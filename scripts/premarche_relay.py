@@ -28,6 +28,32 @@ def _fenetre_premarche_paris() -> bool:
     return now.weekday() < 5 and 10 * 60 <= tot < 15 * 60 + 25
 
 
+def _diag_credentials():
+    """Affiche le projet visé et le RÔLE de la clé reçue (anon vs
+    service_role) — lisible dans la clé elle-même sans révéler le secret.
+    Ajouté après un aller-retour de debug le 07.08.2026 : '0 position lue'
+    ne disait pas si la cause était la clé anon, un mauvais projet, ou
+    une base vraiment vide."""
+    import base64, json
+    url = os.getenv("SUPABASE_URL", "")
+    key = os.getenv("SUPABASE_KEY", "")
+    ref = url.split("//")[-1].split(".")[0] if url else "(vide)"
+    if key.startswith("sb_secret_"):
+        role = "service (nouveau format sb_secret_)"
+    elif key.startswith("sb_publishable_"):
+        role = "ANON (nouveau format sb_publishable_) ← pas la bonne clé"
+    else:
+        try:
+            payload = key.split(".")[1]
+            payload += "=" * (-len(payload) % 4)
+            role = json.loads(base64.urlsafe_b64decode(payload)).get("role", "?")
+            if role == "anon":
+                role += " ← pas la bonne clé, prendre la service_role"
+        except Exception:
+            role = "(illisible — clé malformée ou vide ?)"
+    print(f"[Relay] projet Supabase : {ref} — rôle de la clé : {role}")
+
+
 def _tickers_en_position() -> list[str]:
     """Tous les tickers présents dans positions — sans filtrer les positions
     clôturées (le tri fin est fait côté app ; quelques lignes de trop dans
@@ -50,6 +76,7 @@ def relayer() -> int:
     import yfinance as yf
     import db
 
+    _diag_credentials()
     if not db.is_available():
         print("[Relay] Supabase inaccessible — secrets SUPABASE_URL / "
               "SUPABASE_KEY manquants ou vides sur le dépôt GitHub "
