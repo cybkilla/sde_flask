@@ -371,6 +371,18 @@ def get_global_stats() -> dict:
     mauvais = total - bons
     taux    = round(bons / total * 100, 1) if total else None
 
+    # ── Taux DIRECTIONNEL (hors TENIR/SURVEILLER) ──
+    # _juger() note TENIR/SURVEILLER de façon ASYMÉTRIQUE (une hausse est
+    # TOUJOURS un bon TENIR) : sur les données réelles du 03.08.2026, ça
+    # gonfle le taux mélangé à 85% alors que les décisions qui engagent
+    # vraiment (ACHETER/RENFORCER/VENDRE/ALLÉGER) n'étaient bonnes qu'à
+    # 60%. Le taux mélangé reste utile (`taux_pct` ci-dessous, affichage
+    # historique), mais ne doit plus être LE chiffre qu'on montre en tête.
+    rows_dir = [r for r in rows if r.get("action") in
+                ("ACHETER", "RENFORCER", "VENDRE", "ALLÉGER")]
+    bons_dir = sum(1 for r in rows_dir if r["bon_conseil"])
+    taux_dir = round(bons_dir / len(rows_dir) * 100, 1) if rows_dir else None
+
     # ── Horizons J+5 / J+20 : le taux qui fait foi est le J+20 ──
     # (les conseils s'appuient sur des signaux 14-50j — le J+1 mesure
     # surtout le bruit quotidien)
@@ -422,10 +434,13 @@ def get_global_stats() -> dict:
     ticker_list = sorted(ticker_stats.values(), key=lambda x: -x["total"])
 
     return {
-        "total":           total,
-        "bons":            bons,
-        "mauvais":         mauvais,
-        "taux_pct":        taux,
+        "total":              total,
+        "bons":               bons,
+        "mauvais":            mauvais,
+        "taux_pct":           taux,
+        "total_directionnel": len(rows_dir),
+        "bons_directionnel":  bons_dir,
+        "taux_directionnel_pct": taux_dir,
         "suivis":          nb_suivis,
         "bons_suivis":     nb_bons_suivis,
         "taux_suivi_pct":  taux_suivi,

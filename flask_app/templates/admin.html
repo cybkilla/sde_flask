@@ -286,7 +286,14 @@
       return;
     }
 
-    const taux  = stats.taux_pct;
+    // Le taux mélangé (taux_pct) inclut TENIR/SURVEILLER, jugés de façon
+    // asymétrique (une hausse est TOUJOURS un bon TENIR) — ça gonfle le
+    // chiffre alors que ces conseils n'engagent aucune décision. Mesuré en
+    // réel le 03.08.2026 : 85% mélangé contre 60% sur les seules décisions
+    // qui comptent (ACHETER/RENFORCER/VENDRE/ALLÉGER). C'est CE taux
+    // directionnel qui doit être en tête, pas le mélangé.
+    const tauxDir = stats.taux_directionnel_pct;
+    const taux  = tauxDir !== null && tauxDir !== undefined ? tauxDir : stats.taux_pct;
     const color = taux >= 60 ? "#1D9E75" : taux >= 45 ? "#BA7517" : "#D85A30";
     const newlyEval = evalResult ? evalResult.evaluated : 0;
 
@@ -296,7 +303,11 @@
           <div style="font-size:2.8rem;font-weight:800;color:${color};line-height:1">
             ${taux !== null ? taux.toFixed(1) + "%" : "—"}
           </div>
-          <div style="font-size:.75rem;color:var(--sde-muted);margin-top:2px">taux de pertinence global</div>
+          <div style="font-size:.75rem;color:var(--sde-muted);margin-top:2px">
+            ${tauxDir !== null && tauxDir !== undefined
+              ? `pertinence des décisions (${stats.total_directionnel} ACHETER/RENFORCER/VENDRE/ALLÉGER)`
+              : "taux de pertinence global"}
+          </div>
         </div>
         <div style="flex:1;min-width:180px">
           <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:.85rem;margin-bottom:10px">
@@ -307,6 +318,14 @@
             ${newlyEval > 0 ? `<span style="color:var(--sde-teal);font-size:.78rem"><i class="bi bi-check2-circle"></i> ${newlyEval} nouveaux</span>` : ""}
           </div>
           ${gauge(taux, color)}
+          ${tauxDir !== null && tauxDir !== undefined ? `
+          <div style="margin-top:8px">
+            <div style="font-size:.75rem;color:var(--sde-muted);margin-bottom:4px">
+              Taux mélangé avec TENIR/SURVEILLER (${stats.total} évalués) —
+              gonflé par leur évaluation asymétrique, indicatif seulement
+            </div>
+            ${gauge(stats.taux_pct)}
+          </div>` : ""}
           ${stats.taux_j20_pct != null ? `
           <div style="margin-top:8px">
             <div style="font-size:.75rem;color:var(--sde-muted);margin-bottom:4px">
