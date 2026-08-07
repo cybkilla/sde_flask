@@ -427,12 +427,20 @@ def get_premarket_gap(ticker: str) -> dict | None:
         info = with_timeout(lambda: yf.Ticker(ticker.upper()).info, 8)
         pm_price = info.get("preMarketPrice") if info else None
         pm_pct   = info.get("preMarketChangePercent") if info else None
-        if pm_price is None or pm_pct is None:
+        prev     = info.get("regularMarketPreviousClose") if info else None
+        if pm_price is None or (prev is None and pm_pct is None):
             return None
-        prev = info.get("regularMarketPreviousClose")
+        # Gap CALCULÉ depuis les deux prix qu'on affiche, pas repris du
+        # champ preMarketChangePercent de Yahoo : constaté incohérent sur
+        # le digest du 07.08.2026 (ITG affiché +1.9% alors que
+        # 12.93→13.59 = +5.1% — les champs du .info ne sont pas
+        # synchronisés entre eux). Le % Yahoo ne sert plus que de secours
+        # quand la clôture veille manque.
+        gap = (round((float(pm_price) / float(prev) - 1) * 100, 2) if prev
+               else round(float(pm_pct), 2))
         return {
             "prix":       round(float(pm_price), 4),
-            "gap_pct":    round(float(pm_pct), 2),
+            "gap_pct":    gap,
             "prev_close": round(float(prev), 4) if prev else None,
         }
     except Exception as e:

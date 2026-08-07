@@ -45,9 +45,20 @@ def relayer() -> int:
     import yfinance as yf
     import db
 
+    if not db.is_available():
+        print("[Relay] Supabase inaccessible — secrets SUPABASE_URL / "
+              "SUPABASE_KEY manquants ou vides sur le dépôt GitHub "
+              "(Settings → Secrets and variables → Actions)")
+        return 1
+
     tickers = _tickers_en_position()
     if not tickers:
-        print("[Relay] aucune position en base — rien à relayer")
+        # Piège vu au premier run réel (07.08.2026) : avec la clé anon,
+        # RLS fait passer les tables pour VIDES sans lever d'erreur — le
+        # run était vert et la table restait vide, sans explication.
+        print("[Relay] 0 position lue — si des positions existent bien en "
+              "base, SUPABASE_KEY est probablement la clé anon : il faut "
+              "la service_role key (RLS bloque la lecture sinon)")
         return 0
 
     ok = 0
@@ -57,20 +68,25 @@ def relayer() -> int:
             pm_price = info.get("preMarketPrice")
             pm_pct   = info.get("preMarketChangePercent")
             prev     = info.get("regularMarketPreviousClose")
-            if pm_price is None or pm_pct is None:
+            if pm_price is None or (prev is None and pm_pct is None):
                 # Pas de donnée pré-marché pour ce titre à cet instant :
                 # on n'écrit RIEN (pas de fausse ligne), la ligne
                 # précédente périmera d'elle-même via fetched_at.
                 print(f"[Relay] {t} : pas de donnée pré-marché chez Yahoo")
                 continue
+            # Gap calculé depuis les deux prix, pas le % Yahoo — ses
+            # champs .info sont désynchronisés entre eux (constaté le
+            # 07.08.2026, même fix que get_premarket_gap côté app)
+            gap = (round((float(pm_price) / float(prev) - 1) * 100, 2) if prev
+                   else round(float(pm_pct), 2))
             db.update_one("premarche_quotes", {"ticker": t}, {"$set": {
                 "prix":       round(float(pm_price), 4),
-                "gap_pct":    round(float(pm_pct), 2),
+                "gap_pct":    gap,
                 "prev_close": round(float(prev), 4) if prev else None,
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
             }}, upsert=True)
             ok += 1
-            print(f"[Relay] {t} : {pm_price} ({pm_pct:+.2f}%) déposé")
+            print(f"[Relay] {t} : {pm_price} ({gap:+.2f}%) déposé")
         except Exception as e:
             print(f"[Relay] {t} échoué : {type(e).__name__}: {e}")
 

@@ -79,6 +79,11 @@ class _FakeYFTicker:
             "AAA": {"preMarketPrice": 5.5, "preMarketChangePercent": 10.0,
                     "regularMarketPreviousClose": 5.0},
             "BBB": {},
+            # CCC : cas réel ITG du digest 07.08.2026 — le % Yahoo (+1.9)
+            # contredit ses propres prix (12.93→13.59 = +5.1%) : le gap
+            # doit être RECALCULÉ depuis les prix, pas repris de Yahoo
+            "CCC": {"preMarketPrice": 13.59, "preMarketChangePercent": 1.9,
+                    "regularMarketPreviousClose": 12.93},
         }[self._s]
 
 
@@ -87,14 +92,35 @@ fake_yf = types.ModuleType("yfinance")
 fake_yf.Ticker = _FakeYFTicker
 sys.modules["yfinance"] = fake_yf
 
+db.find = lambda table, filt: [{"ticker": "AAA"}, {"ticker": "BBB"},
+                               {"ticker": "AAA"}, {"ticker": "CCC"}]
 code = relay.relayer()
 assert code == 0
-assert len(ecrits) == 1                      # BBB sans donnée : PAS de ligne écrite
-table, ticker, fields, upsert = ecrits[0]
-assert (table, ticker, upsert) == ("premarche_quotes", "AAA", True)
+assert len(ecrits) == 2                      # BBB sans donnée : PAS de ligne écrite
+par_ticker = {e[1]: e for e in ecrits}
+table, ticker, fields, upsert = par_ticker["AAA"]
+assert (table, upsert) == ("premarche_quotes", True)
 assert fields["prix"] == 5.5 and fields["gap_pct"] == 10.0 and fields["prev_close"] == 5.0
 assert fields["fetched_at"]                  # horodatage présent pour la péremption
-print("✓ relayer : ticker AAA déposé (upsert), BBB sans donnée jamais écrit, doublons dédupliqués")
+ccc_fields = par_ticker["CCC"][2]
+assert ccc_fields["gap_pct"] == 5.1          # (13.59/12.93 - 1) × 100, PAS le +1.9 de Yahoo
+print("✓ relayer : dépôt OK, gap recalculé depuis les prix (pas le % Yahoo incohérent), sans donnée = jamais écrit")
+
+
+# ── Secrets manquants/invalides -> échec BRUYANT (run rouge), pas silence vert ──
+# Premier run réel 07.08.2026 : 27s, vert, table vide — aucun indice en logs.
+db.is_available = lambda: False
+assert relay.relayer() == 1
+db.is_available = lambda: True
+print("✓ relayer : Supabase inaccessible -> code retour 1 (voyant rouge côté GitHub)")
+
+
+# ── Lecteur, chemin yfinance direct : même recalcul du gap ──
+nt.with_timeout = lambda fn, secs: fn()      # réseau "rétabli" -> le fake yfinance répond
+db.find_one = lambda table, filt: None       # pas de ligne relais -> chemin direct
+r_direct = get_premarket_gap("CCC")
+assert r_direct == {"prix": 13.59, "gap_pct": 5.1, "prev_close": 12.93}
+print("✓ get_premarket_gap direct : gap recalculé depuis les prix affichés (cas réel ITG +1.9% -> +5.1%)")
 
 
 # ── Hors fenêtre pré-marché -> sortie immédiate, aucun accès réseau/DB ──
