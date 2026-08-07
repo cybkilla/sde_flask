@@ -395,7 +395,8 @@
             return `
               <tr style="border-bottom:1px solid var(--sde-border)">
                 <td style="padding:8px 8px;font-weight:700">
-                  <a href="/analyze/${t.ticker}" style="color:var(--sde-navy)">${t.ticker}</a>
+                  <a href="/analyze/${t.ticker}" data-sde-loading="Analyse de ${t.ticker}…"
+                     style="color:var(--sde-navy)">${t.ticker}</a>
                 </td>
                 <td style="padding:8px 8px;text-align:center;color:var(--sde-muted)">${t.total}</td>
                 <td style="padding:8px 8px">${gauge(t.taux_pct)}</td>
