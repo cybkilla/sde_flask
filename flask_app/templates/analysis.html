@@ -188,8 +188,10 @@
   <div class="col-4 col-sm col-lg">
     <div class="sde-card h-100 text-center">
       <div class="sde-section-title">RSI 14j</div>
-      <div class="sde-metric-val" id="sde-rsi-val" style="color:{{ rsi_c }}">{{ "%.1f"|format(rsi) }}</div>
-      <div class="sde-metric-label" id="sde-rsi-label">{{ 'Suracheté' if rsi > 70 else 'Survendu' if rsi < 30 else 'Neutre' }}</div>
+      <div id="sde-rsi-wrap">
+        <div class="sde-metric-val" id="sde-rsi-val" style="color:{{ rsi_c }}">{{ "%.1f"|format(rsi) }}</div>
+        <div class="sde-metric-label" id="sde-rsi-label">{{ 'Suracheté' if rsi > 70 else 'Survendu' if rsi < 30 else 'Neutre' }}</div>
+      </div>
     </div>
   </div>
 
@@ -197,10 +199,12 @@
   <div class="col-4 col-sm col-lg">
     <div class="sde-card h-100 text-center">
       <div class="sde-section-title">Var. 5j</div>
-      <div class="sde-metric-val" id="sde-var5-val" style="color:{{ '#1D9E75' if v5 >= 0 else '#D85A30' }}">
-        {{ "%+.2f"|format(v5) }}%
+      <div id="sde-var5-wrap">
+        <div class="sde-metric-val" id="sde-var5-val" style="color:{{ '#1D9E75' if v5 >= 0 else '#D85A30' }}">
+          {{ "%+.2f"|format(v5) }}%
+        </div>
+        <div class="sde-metric-label">5 derniers jours</div>
       </div>
-      <div class="sde-metric-label">5 derniers jours</div>
     </div>
   </div>
 
@@ -1654,25 +1658,32 @@ const sdeBacktest = (function () {
 (function () {
   const TICKER = {{ ticker | tojson }};
   const SYM    = {{ sym | tojson }};
+  // Effet de rafraîchissement (flou + opacité pendant le fetch, retour net
+  // ensuite) appliqué à TOUTES les données qui bougent au même rythme —
+  // signalé le 10.08.2026 : seul le prix avait l'effet, RSI/Var 5j
+  // changeaient d'un coup sec, incohérent visuellement sur la même ligne.
+  function _flashStart(ids) {
+    const els = ids.map(id => document.getElementById(id)).filter(Boolean);
+    els.forEach(el => {
+      el.style.transition = "opacity .25s ease, filter .25s ease";
+      el.style.opacity = "0.35";
+      el.style.filter  = "blur(2px)";
+    });
+    const t0 = Date.now();
+    // Durée minimale de 350ms pour rester perceptible même quand la
+    // réponse arrive en 100ms (sinon l'effet clignoterait)
+    return () => {
+      const attente = Math.max(0, 350 - (Date.now() - t0));
+      setTimeout(() => {
+        els.forEach(el => { el.style.opacity = "1"; el.style.filter = "none"; });
+      }, attente);
+    };
+  }
+
   function majPrix() {
     if (document.hidden) return;          // onglet en arrière-plan : ne rien faire
     const wrap = document.getElementById("sde-live-wrap");
-
-    // Effet de rafraîchissement : flou + opacité pendant le fetch, retour
-    // net ensuite — durée minimale de 350ms pour rester perceptible même
-    // quand la réponse arrive en 100ms (sinon l'effet clignoterait)
-    if (wrap) {
-      wrap.style.transition = "opacity .25s ease, filter .25s ease";
-      wrap.style.opacity = "0.35";
-      wrap.style.filter  = "blur(2px)";
-    }
-    const t0 = Date.now();
-    const nettete = () => {
-      const attente = Math.max(0, 350 - (Date.now() - t0));
-      setTimeout(() => {
-        if (wrap) { wrap.style.opacity = "1"; wrap.style.filter = "none"; }
-      }, attente);
-    };
+    const nettete = _flashStart(["sde-live-wrap", "sde-rsi-wrap", "sde-var5-wrap"]);
 
     fetch(`/api/live/${TICKER}`)
       .then(r => r.json())
