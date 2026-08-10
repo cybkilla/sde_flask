@@ -95,7 +95,13 @@ def _get_yfinance(ticker: str) -> dict:
     info       = stock.info
     officers   = info.get("companyOfficers", [])
     live_price = _safe(info.get("regularMarketPrice") or info.get("currentPrice"))
-    prev_close = _safe(info.get("regularMarketPreviousClose") or info.get("previousClose"))
+    # Clôture veille depuis les bougies déjà en mémoire (`hist`), pas
+    # info["regularMarketPreviousClose"] : ce champ temps-réel peut rester
+    # bloqué sur l'avant-dernière séance (constaté en réel le 10.08.2026,
+    # un lundi matin — encore la clôture de jeudi au lieu de vendredi).
+    # Repli sur l'ancien champ si l'historique est trop court pour trancher.
+    prev_close = (_cloture_avant_aujourdhui(hist)
+                  or _safe(info.get("regularMarketPreviousClose") or info.get("previousClose")))
     pre_market = _safe(info.get("preMarketPrice"))
     post_market= _safe(info.get("postMarketPrice"))
 
@@ -380,6 +386,30 @@ def get_live_price(ticker: str) -> dict:
         return {}
 
 
+def _cloture_avant_aujourdhui(hist) -> float | None:
+    """
+    Dernière clôture d'une séance ANTÉRIEURE à aujourd'hui (heure de
+    marché US) — pas simplement la dernière ligne de l'historique
+    (`.iloc[-1]`), qui peut être la bougie du jour EN COURS de formation
+    si le marché est ouvert au moment de l'appel (yfinance ajoute une
+    ligne "aujourd'hui" dès l'ouverture, mise à jour en direct — la
+    prendre pour une "clôture" reviendrait à dupliquer le prix live).
+    Fonction PURE, réutilisable sur un historique déjà en mémoire.
+    """
+    if hist is None or hist.empty:
+        return None
+    import datetime
+    try:
+        import zoneinfo
+        aujourdhui_et = datetime.datetime.now(zoneinfo.ZoneInfo("America/New_York")).date()
+    except Exception:
+        aujourdhui_et = datetime.date.today()
+    completes = hist[hist.index.date < aujourdhui_et]
+    if completes.empty:
+        return None
+    return round(float(completes["Close"].iloc[-1]), 4)
+
+
 def _derniere_cloture_reelle(ticker: str) -> float | None:
     """
     Dernière clôture RÉELLE (bougie quotidienne complète) — PAS
@@ -389,14 +419,11 @@ def _derniere_cloture_reelle(ticker: str) -> float | None:
     encore la clôture de JEUDI (4.12) au lieu de celle de VENDREDI
     (4.57, vérifiée via l'historique) — Yahoo n'avait pas fini de "rouler"
     son cache du week-end sur ce champ temps-réel. Les bougies
-    quotidiennes n'ont pas ce problème : la dernière ligne EST toujours
-    la dernière séance vraiment clôturée.
+    quotidiennes n'ont pas ce problème.
     """
     import yfinance as yf
     hist = yf.Ticker(ticker.upper()).history(period="5d")
-    if hist is None or hist.empty:
-        return None
-    return round(float(hist["Close"].iloc[-1]), 4)
+    return _cloture_avant_aujourdhui(hist)
 
 
 def get_premarket_gap(ticker: str) -> dict | None:

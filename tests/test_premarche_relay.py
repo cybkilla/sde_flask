@@ -97,9 +97,14 @@ class _FakeYFTicker:
         # leurre regularMarketPreviousClose ci-dessus, pour prouver que
         # c'est bien elle qui est utilisée (cas réel TMC 10.08.2026 :
         # regularMarketPreviousClose bloqué sur jeudi, history() donnait
-        # la vraie clôture de vendredi)
+        # la vraie clôture de vendredi). Index de vraies dates PASSÉES
+        # (hier, avant-hier) : indispensable, le filtre "date < aujourd'hui"
+        # ignorerait silencieusement une DataFrame sans DatetimeIndex.
         closes = {"AAA": 5.0, "BBB": 1.0, "CCC": 12.93}
-        return pd.DataFrame({"Close": [closes[self._s] - 0.3, closes[self._s]]})
+        hier      = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
+        avant_hier = hier - pd.Timedelta(days=1)
+        return pd.DataFrame({"Close": [closes[self._s] - 0.3, closes[self._s]]},
+                            index=pd.DatetimeIndex([avant_hier, hier]))
 
 
 import types
@@ -166,5 +171,28 @@ assert relay.relayer() == 0
 assert len(ecrits) == 1 and ecrits[0][1] == "AAA"
 del os.environ["RELAY_FORCE"]
 print("✓ relayer : RELAY_FORCE=true ignore la fenêtre (validation manuelle de la chaîne complète)")
+
+# ── _cloture_avant_aujourdhui : exclut la bougie du jour EN COURS ──
+# Si le marché est ouvert au moment de l'appel, yfinance ajoute une ligne
+# "aujourd'hui" mise à jour en direct — la prendre pour une "clôture"
+# reviendrait à resservir le prix live sous un autre nom.
+from data.market import _cloture_avant_aujourdhui
+
+_aujourdhui = pd.Timestamp.now().normalize()
+_hier       = _aujourdhui - pd.Timedelta(days=1)
+_avant_hier = _hier - pd.Timedelta(days=1)
+
+hist_avec_jour_en_cours = pd.DataFrame(
+    {"Close": [4.02, 4.12, 4.60]},   # avant-hier, hier (vraie clôture), "aujourd'hui" en formation
+    index=pd.DatetimeIndex([_avant_hier, _hier, _aujourdhui]),
+)
+assert _cloture_avant_aujourdhui(hist_avec_jour_en_cours) == 4.12
+print("✓ _cloture_avant_aujourdhui : ignore la bougie du jour en cours, prend la vraie clôture d'hier")
+
+assert _cloture_avant_aujourdhui(None) is None
+assert _cloture_avant_aujourdhui(pd.DataFrame({"Close": []})) is None
+hist_que_aujourdhui = pd.DataFrame({"Close": [4.60]}, index=pd.DatetimeIndex([_aujourdhui]))
+assert _cloture_avant_aujourdhui(hist_que_aujourdhui) is None
+print("✓ _cloture_avant_aujourdhui : historique vide ou sans séance antérieure -> None, pas de faux prix")
 
 print("\n✓ Tous les tests test_premarche_relay.py sont OK (hors réseau)")

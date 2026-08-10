@@ -55,14 +55,28 @@ def _diag_credentials():
 
 
 def _derniere_cloture_reelle(t, yf) -> float | None:
-    """Dernière clôture RÉELLE (bougie quotidienne), pas
-    info["regularMarketPreviousClose"] — même correction et même raison
-    que data/market.py::_derniere_cloture_reelle (constaté en réel le
-    10.08.2026 : ce champ retardait d'une séance un lundi matin)."""
+    """Dernière clôture d'une séance ANTÉRIEURE à aujourd'hui (heure de
+    marché US), pas info["regularMarketPreviousClose"] (retarde parfois
+    d'une séance, constaté en réel le 10.08.2026 un lundi matin) NI
+    simplement la dernière bougie de l'historique (qui peut être celle
+    du jour en cours de formation si le marché est ouvert — pertinent
+    avec RELAY_FORCE, qui peut tourner à toute heure). Même logique que
+    data/market.py::_cloture_avant_aujourdhui, dupliquée ici pour ne pas
+    importer la chaîne de dépendances complète de data/market.py dans
+    ce runner CI minimal (pip install yfinance supabase seulement)."""
     hist = yf.Ticker(t).history(period="5d")
     if hist is None or hist.empty:
         return None
-    return round(float(hist["Close"].iloc[-1]), 4)
+    import datetime
+    try:
+        import zoneinfo
+        aujourdhui_et = datetime.datetime.now(zoneinfo.ZoneInfo("America/New_York")).date()
+    except Exception:
+        aujourdhui_et = datetime.date.today()
+    completes = hist[hist.index.date < aujourdhui_et]
+    if completes.empty:
+        return None
+    return round(float(completes["Close"].iloc[-1]), 4)
 
 
 def _tickers_en_position() -> list[str]:
