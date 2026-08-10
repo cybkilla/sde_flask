@@ -1105,6 +1105,7 @@ window.sdePortfolio = (function () {
           const e = data.earnings;
           if (e && e.jours <= 5) {
             const delaiTxt = e.jours <= 1 ? "aujourd'hui ou demain" : `dans ${e.jours} jours`;
+            const dateTxt  = new Date(e.date + "T00:00:00").toLocaleDateString("fr-FR", {day:"numeric", month:"long"});
             const ec = e.jours <= 1 ? "#991b1b" : e.jours <= 3 ? "#D85A30" : "#BA7517";
             earnWrap.innerHTML = `
               <div class="sde-card mb-3" style="border-left:4px solid ${ec};display:flex;
@@ -1112,7 +1113,7 @@ window.sdePortfolio = (function () {
                 <i class="bi bi-calendar-event" style="font-size:1.4rem;color:${ec}"></i>
                 <div>
                   <div style="font-weight:700;font-size:.88rem;color:${ec}">
-                    ⚠ Résultats trimestriels attendus ${delaiTxt}
+                    ⚠ Résultats trimestriels attendus ${delaiTxt} (${dateTxt})
                   </div>
                   <div style="font-size:.74rem;color:var(--sde-muted)">
                     Volatilité potentiellement élevée — au-delà de ce que l'analyse
