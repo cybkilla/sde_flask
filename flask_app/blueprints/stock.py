@@ -58,6 +58,23 @@ def home():
     return render_template("home.html")
 
 
+@bp.route("/health")
+def health():
+    """
+    Purement pour un ping de "maintien en éveil" externe (cron-job.org) —
+    aucun accès DB/réseau, réponse la plus rapide possible du site.
+    Signalé le 10.08.2026 : "la page d'accueil semble figée ~30s au
+    premier appel" — c'est le cold start Render (plan gratuit : le
+    service s'endort après 15 min d'inactivité, cf. STACK_TECHNIQUE.md).
+    Le cron existant tape /scheduler/run mais seulement toutes les 30 min
+    — plus long que le seuil d'endormissement, donc inefficace pour
+    empêcher la veille. Un second job cron-job.org sur CETTE route,
+    cadencé à moins de 15 min, maintient le service éveillé sans
+    dupliquer/accélérer la logique métier du scheduler.
+    """
+    return "OK", 200
+
+
 # ── Mes positions ─────────────────────────────────────────────────────────────
 
 @bp.route("/mes-positions")
