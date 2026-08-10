@@ -212,8 +212,10 @@
   <div class="col-4 col-sm col-lg">
     <div class="sde-card h-100 text-center">
       <div class="sde-section-title">Vol. ratio</div>
-      <div class="sde-metric-val">{{ "%.1f"|format(market.vol_ratio) }}×</div>
-      <div class="sde-metric-label" title="Donnée quotidienne — volume temps réel indisponible">vs. moy. 20j (quotidien)</div>
+      <div id="sde-vol-wrap">
+        <div class="sde-metric-val">{{ "%.1f"|format(market.vol_ratio) }}×</div>
+        <div class="sde-metric-label" title="Donnée quotidienne — volume temps réel indisponible">vs. moy. 20j (quotidien)</div>
+      </div>
     </div>
   </div>
 
@@ -1680,10 +1682,12 @@ const sdeBacktest = (function () {
     };
   }
 
+  const _FLASH_IDS = ["sde-live-wrap", "sde-rsi-wrap", "sde-var5-wrap", "sde-vol-wrap"];
+
   function majPrix() {
     if (document.hidden) return;          // onglet en arrière-plan : ne rien faire
     const wrap = document.getElementById("sde-live-wrap");
-    const nettete = _flashStart(["sde-live-wrap", "sde-rsi-wrap", "sde-var5-wrap"]);
+    const nettete = _flashStart(_FLASH_IDS);
 
     fetch(`/api/live/${TICKER}`)
       .then(r => r.json())
@@ -1754,7 +1758,18 @@ const sdeBacktest = (function () {
     }
   }
 
-  setInterval(majPrix, 60000);
+  // Effet flou toutes les 30s (la page "respire" plus souvent), vrai
+  // rafraîchissement (fetch + données) 1 fois sur 2 seulement — donc
+  // toujours toutes les 60s comme avant, sans doubler les appels serveur.
+  let _pulseCount = 0;
+  setInterval(() => {
+    _pulseCount++;
+    if (_pulseCount % 2 === 0) {
+      majPrix();   // vrai rafraîchissement, gère déjà son propre flou
+    } else if (!document.hidden) {
+      _flashStart(_FLASH_IDS)();   // flou cosmétique seul, pas de fetch
+    }
+  }, 30000);
 })();
 
 /* ── Graphiques ─────────────────────────────────────────────────────────── */
