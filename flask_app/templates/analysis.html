@@ -1664,6 +1664,11 @@ const sdeBacktest = (function () {
   // ensuite) appliqué à TOUTES les données qui bougent au même rythme —
   // signalé le 10.08.2026 : seul le prix avait l'effet, RSI/Var 5j
   // changeaient d'un coup sec, incohérent visuellement sur la même ligne.
+  // Durée minimale de l'effet — perceptible même quand la réponse arrive
+  // en 100ms (sinon ça clignoterait) ; allongée de 2s le 10.08.2026 pour
+  // rester visible plus longtemps
+  const _FLASH_DUREE_MS = 2350;
+
   function _flashStart(ids) {
     const els = ids.map(id => document.getElementById(id)).filter(Boolean);
     els.forEach(el => {
@@ -1672,10 +1677,8 @@ const sdeBacktest = (function () {
       el.style.filter  = "blur(2px)";
     });
     const t0 = Date.now();
-    // Durée minimale de 350ms pour rester perceptible même quand la
-    // réponse arrive en 100ms (sinon l'effet clignoterait)
     return () => {
-      const attente = Math.max(0, 350 - (Date.now() - t0));
+      const attente = Math.max(0, _FLASH_DUREE_MS - (Date.now() - t0));
       setTimeout(() => {
         els.forEach(el => { el.style.opacity = "1"; el.style.filter = "none"; });
       }, attente);
