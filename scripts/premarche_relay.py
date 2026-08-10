@@ -54,6 +54,17 @@ def _diag_credentials():
     print(f"[Relay] projet Supabase : {ref} — rôle de la clé : {role}")
 
 
+def _derniere_cloture_reelle(t, yf) -> float | None:
+    """Dernière clôture RÉELLE (bougie quotidienne), pas
+    info["regularMarketPreviousClose"] — même correction et même raison
+    que data/market.py::_derniere_cloture_reelle (constaté en réel le
+    10.08.2026 : ce champ retardait d'une séance un lundi matin)."""
+    hist = yf.Ticker(t).history(period="5d")
+    if hist is None or hist.empty:
+        return None
+    return round(float(hist["Close"].iloc[-1]), 4)
+
+
 def _tickers_en_position() -> list[str]:
     """Tous les tickers présents dans positions — sans filtrer les positions
     clôturées (le tri fin est fait côté app ; quelques lignes de trop dans
@@ -99,7 +110,7 @@ def relayer() -> int:
             info     = yf.Ticker(t).info or {}
             pm_price = info.get("preMarketPrice")
             pm_pct   = info.get("preMarketChangePercent")
-            prev     = info.get("regularMarketPreviousClose")
+            prev     = _derniere_cloture_reelle(t, yf)
             if pm_price is None or (prev is None and pm_pct is None):
                 # Pas de donnée pré-marché pour ce titre à cet instant :
                 # on n'écrit RIEN (pas de fausse ligne), la ligne

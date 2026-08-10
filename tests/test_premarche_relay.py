@@ -68,6 +68,9 @@ db.update_one = lambda table, filt, update, upsert=False: ecrits.append(
     (table, filt["ticker"], update["$set"], upsert))
 
 
+import pandas as pd
+
+
 class _FakeYFTicker:
     def __init__(self, symbol):
         self._s = symbol
@@ -75,16 +78,28 @@ class _FakeYFTicker:
     @property
     def info(self):
         return {
-            # AAA : donnée pré-marché complète ; BBB : rien (marché du titre muet)
+            # AAA : donnée pré-marché complète ; regularMarketPreviousClose
+            # est un LEURRE (4.0) — la vraie clôture doit venir de history()
             "AAA": {"preMarketPrice": 5.5, "preMarketChangePercent": 10.0,
-                    "regularMarketPreviousClose": 5.0},
-            "BBB": {},
+                    "regularMarketPreviousClose": 4.0},
+            "BBB": {},   # rien : marché du titre muet
             # CCC : cas réel ITG du digest 07.08.2026 — le % Yahoo (+1.9)
             # contredit ses propres prix (12.93→13.59 = +5.1%) : le gap
-            # doit être RECALCULÉ depuis les prix, pas repris de Yahoo
+            # doit être RECALCULÉ depuis les prix de history(), pas
+            # repris de Yahoo (ni le %, ni regularMarketPreviousClose,
+            # ici aussi un leurre à 11.0)
             "CCC": {"preMarketPrice": 13.59, "preMarketChangePercent": 1.9,
-                    "regularMarketPreviousClose": 12.93},
+                    "regularMarketPreviousClose": 11.0},
         }[self._s]
+
+    def history(self, period="5d"):
+        # Dernière clôture RÉELLE (bougie quotidienne) — DIFFÉRENTE du
+        # leurre regularMarketPreviousClose ci-dessus, pour prouver que
+        # c'est bien elle qui est utilisée (cas réel TMC 10.08.2026 :
+        # regularMarketPreviousClose bloqué sur jeudi, history() donnait
+        # la vraie clôture de vendredi)
+        closes = {"AAA": 5.0, "BBB": 1.0, "CCC": 12.93}
+        return pd.DataFrame({"Close": [closes[self._s] - 0.3, closes[self._s]]})
 
 
 import types
@@ -121,6 +136,16 @@ db.find_one = lambda table, filt: None       # pas de ligne relais -> chemin dir
 r_direct = get_premarket_gap("CCC")
 assert r_direct == {"prix": 13.59, "gap_pct": 5.1, "prev_close": 12.93}
 print("✓ get_premarket_gap direct : gap recalculé depuis les prix affichés (cas réel ITG +1.9% -> +5.1%)")
+
+# ── Clôture veille prise dans history(), pas dans regularMarketPreviousClose ──
+# Cas réel TMC 10.08.2026 : un lundi matin, regularMarketPreviousClose
+# valait encore la clôture de JEUDI (4.12, leurre ici) au lieu de celle
+# de VENDREDI (4.57, dans history()) — Yahoo n'avait pas fini de "rouler"
+# son cache du week-end sur ce champ temps-réel.
+r_aaa = get_premarket_gap("AAA")
+assert r_aaa["prev_close"] == 5.0, "doit venir de history(), pas du leurre 4.0 de l'info"
+assert r_aaa["gap_pct"] == round((5.5 / 5.0 - 1) * 100, 2)
+print("✓ get_premarket_gap direct : clôture veille = history(), pas regularMarketPreviousClose (cas réel TMC 10.08.2026)")
 
 
 # ── Hors fenêtre pré-marché -> sortie immédiate, aucun accès réseau/DB ──

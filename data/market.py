@@ -380,6 +380,25 @@ def get_live_price(ticker: str) -> dict:
         return {}
 
 
+def _derniere_cloture_reelle(ticker: str) -> float | None:
+    """
+    Dernière clôture RÉELLE (bougie quotidienne complète) — PAS
+    info["regularMarketPreviousClose"], qui peut rester bloqué sur
+    l'avant-dernière séance. Constaté en réel le 10.08.2026, un lundi
+    matin avant ouverture : `regularMarketPreviousClose` de TMC valait
+    encore la clôture de JEUDI (4.12) au lieu de celle de VENDREDI
+    (4.57, vérifiée via l'historique) — Yahoo n'avait pas fini de "rouler"
+    son cache du week-end sur ce champ temps-réel. Les bougies
+    quotidiennes n'ont pas ce problème : la dernière ligne EST toujours
+    la dernière séance vraiment clôturée.
+    """
+    import yfinance as yf
+    hist = yf.Ticker(ticker.upper()).history(period="5d")
+    if hist is None or hist.empty:
+        return None
+    return round(float(hist["Close"].iloc[-1]), 4)
+
+
 def get_premarket_gap(ticker: str) -> dict | None:
     """
     Vrai gap pré-marché (prix pré-marché vs clôture de la veille) —
@@ -427,8 +446,10 @@ def get_premarket_gap(ticker: str) -> dict | None:
         info = with_timeout(lambda: yf.Ticker(ticker.upper()).info, 8)
         pm_price = info.get("preMarketPrice") if info else None
         pm_pct   = info.get("preMarketChangePercent") if info else None
-        prev     = info.get("regularMarketPreviousClose") if info else None
-        if pm_price is None or (prev is None and pm_pct is None):
+        if pm_price is None:
+            return None
+        prev = with_timeout(lambda: _derniere_cloture_reelle(ticker), 8)
+        if prev is None and pm_pct is None:
             return None
         # Gap CALCULÉ depuis les deux prix qu'on affiche, pas repris du
         # champ preMarketChangePercent de Yahoo : constaté incohérent sur
