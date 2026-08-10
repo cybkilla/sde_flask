@@ -530,6 +530,48 @@ def get_next_earnings(ticker: str, horizon_jours: int = 10) -> dict | None:
         return None
 
 
+def get_next_earnings_bulk(tickers: list[str], horizon_jours: int = 10) -> dict:
+    """
+    Comme get_next_earnings(), mais pour plusieurs tickers en UN SEUL appel
+    Finnhub (sans filtre `symbol` — le calendrier renvoie ~1500 lignes
+    tous titres confondus, filtrées ici en Python) — évite le N+1 sur
+    /portfolio/overview, appelée à chaque visite de la page (même souci
+    de perf déjà rencontré avec les prix live et les stats de fiabilité).
+    Retourne {ticker: {"date", "jours"}} — absent si rien sous l'horizon.
+    """
+    try:
+        import datetime
+        from utils.net_timeout import with_timeout
+        if not tickers:
+            return {}
+        fh    = _fh()
+        today = datetime.date.today()
+        result = with_timeout(
+            lambda: fh.earnings_calendar(
+                _from=str(today), to=str(today + datetime.timedelta(days=horizon_jours)),
+                symbol=""),
+            8,
+        )
+        rows = (result or {}).get("earningsCalendar") or []
+        symboles = {t.upper() for t in tickers}
+        par_ticker: dict[str, dict] = {}
+        for r in rows:
+            sym = r.get("symbol")
+            if sym not in symboles:
+                continue
+            existant = par_ticker.get(sym)
+            if existant is None or r["date"] < existant["date"]:
+                par_ticker[sym] = r
+        return {
+            sym: {"date": r["date"],
+                  "jours": (datetime.datetime.strptime(r["date"], "%Y-%m-%d").date() - today).days}
+            for sym, r in par_ticker.items()
+        }
+    except Exception as e:
+        print(f"[Market] get_next_earnings_bulk indisponible : {e}", flush=True)
+        return {}
+
+
 # ══════════════════════════════════════════════════════════
 # POINT D'ENTRÉE — essaie yfinance, bascule sur Finnhub+TD
 # ══════════════════════════════════════════════════════════

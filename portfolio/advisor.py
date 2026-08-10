@@ -260,6 +260,10 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
         # ne bloque ni ne dégrade jamais le conseil (même principe que la
         # trésorerie insuffisante : annoter, jamais rétrograder).
         jae = market.get("jours_avant_earnings")
+        # Exposé aussi en champ structuré (pas seulement dans le texte) —
+        # demandé le 10.08.2026 : un badge dédié, visible sans avoir à lire
+        # le raisonnement, sur la page d'analyse ET la carte de position.
+        r["jours_avant_earnings"] = jae
         if jae is not None and jae <= 5:
             delai = "aujourd'hui ou demain" if jae <= 1 else f"dans {jae} jours"
             r["raisonnement"] += (

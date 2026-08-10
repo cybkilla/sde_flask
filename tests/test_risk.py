@@ -142,15 +142,20 @@ _market_earn = {**_market, "jours_avant_earnings": 3}
 adv3 = generate_advice(_summary, _market_earn, _snap)
 assert "Résultats trimestriels attendus dans 3 jours" in adv3["raisonnement"]
 assert adv3["action"] == "TENIR"   # n'influence jamais l'action, informatif seulement
+assert adv3["jours_avant_earnings"] == 3   # champ structuré, pas seulement dans le texte
 
 _market_loin = {**_market, "jours_avant_earnings": 8}   # au-delà du seuil (5j) -> silence
 adv4 = generate_advice(_summary, _market_loin, _snap)
 assert "Résultats trimestriels" not in adv4["raisonnement"]
+assert adv4["jours_avant_earnings"] == 8   # présent même hors seuil texte (le badge gère son propre seuil)
 
 _market_demain = {**_market, "jours_avant_earnings": 1}
 adv5 = generate_advice(_summary, _market_demain, _snap)
 assert "aujourd'hui ou demain" in adv5["raisonnement"]
-print("✓ conseil : ligne Résultats trimestriels sous 5j, silencieuse au-delà, n'influence jamais l'action")
+
+adv_sans = generate_advice(_summary, _market, _snap)   # pas de clé jours_avant_earnings
+assert adv_sans["jours_avant_earnings"] is None
+print("✓ conseil : ligne Résultats trimestriels sous 5j, silencieuse au-delà, n'influence jamais l'action, champ structuré exposé")
 
 
 # ── Surclassement chandelier : plus de texte contradictoire ──

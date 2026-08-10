@@ -114,7 +114,7 @@ def get_overview():
         from portfolio.positions import get_positions, get_portfolio_summary
         from portfolio.advisor   import get_all_today_advice, ACTION_LABELS
         from portfolio.evaluator import get_ticker_stats_bulk, get_conseil_suivi_gain_bulk
-        from data.market         import get_live_price
+        from data.market         import get_live_price, get_next_earnings_bulk
 
         _SYM = {"USD":"$","EUR":"€","GBP":"£","JPY":"¥","CHF":"Fr","CAD":"CA$","AUD":"A$","HKD":"HK$"}
 
@@ -125,9 +125,11 @@ def get_overview():
         # Tickers uniques, dans l'ordre d'apparition
         tickers = list(dict.fromkeys(l["ticker"] for l in all_lots))
 
-        # Conseils du jour + fiabilité J+1 par ticker, chacun en une seule requête
+        # Conseils du jour + fiabilité J+1 + résultats trimestriels imminents,
+        # chacun en une seule requête pour tous les tickers de la page
         advices      = get_all_today_advice(current_user.id, tickers)
         advice_stats = get_ticker_stats_bulk(current_user.id, tickers)
+        earnings_map = get_next_earnings_bulk(tickers)
 
         from cache import get_cached
 
@@ -186,6 +188,7 @@ def get_overview():
                     },
                     "advice":       advices.get(ticker),
                     "advice_stats": advice_stats.get(ticker),
+                    "earnings":     earnings_map.get(ticker),
                 })
             except Exception as e:
                 print(f"[Overview] {ticker} erreur : {e}", flush=True)
@@ -375,12 +378,20 @@ def get_advice(ticker: str):
                                           save_advice, get_advice_history,
                                           ACTION_LABELS)
         from portfolio.positions import get_portfolio_summary
-        from data.market         import get_live_price
+        from data.market         import get_live_price, get_next_earnings
         from snapshot            import get_snapshot, MAX_AGE_HOURS
 
         # Prix live
         live  = get_live_price(ticker)
         price = live.get("price") or 0
+
+        # Résultats trimestriels imminents — calculé ICI, indépendamment du
+        # cache du conseil (badge dédié demandé le 10.08.2026, pas seulement
+        # une ligne dans le raisonnement du conseil du jour) : sinon, si le
+        # conseil d'aujourd'hui existe déjà (cache), on perdrait l'info —
+        # save_advice() ne persiste pas ce champ (informatif, pas une
+        # colonne daily_advice).
+        earnings = get_next_earnings(ticker)
 
         # Conseil déjà généré aujourd'hui ?
         advice_row = get_today_advice(current_user.id, ticker)
@@ -408,15 +419,11 @@ def get_advice(ticker: str):
                     market["tendance_fond"] = tf
             except Exception:
                 pass
-            # Résultats trimestriels imminents — informatif seulement,
-            # même appel que ensure_today_advice (cf. advisor.py)
-            try:
-                from data.market import get_next_earnings
-                earnings = get_next_earnings(ticker)
-                if earnings:
-                    market["jours_avant_earnings"] = earnings["jours"]
-            except Exception:
-                pass
+            # Résultats trimestriels imminents — pour la ligne dans le
+            # raisonnement du conseil (le badge dédié réutilise `earnings`
+            # calculé plus haut, indépendamment du conseil)
+            if earnings:
+                market["jours_avant_earnings"] = earnings["jours"]
             summary = get_portfolio_summary(current_user.id, ticker, price)
 
             # Pattern chandelier depuis l'historique du snapshot
@@ -470,11 +477,12 @@ def get_advice(ticker: str):
         }
 
         return jsonify({
-            "ok":      True,
-            "advice":  advice_row,
-            "history": history,
-            "stats":   stats,
-            "labels":  ACTION_LABELS,
+            "ok":       True,
+            "advice":   advice_row,
+            "history":  history,
+            "stats":    stats,
+            "labels":   ACTION_LABELS,
+            "earnings": earnings,
         })
 
     except Exception as e:

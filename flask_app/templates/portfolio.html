@@ -226,6 +226,20 @@
     "ALLÉGER": "vente", VENDRE: "vente",
   };
 
+  /* ── Badge résultats trimestriels — visibilité dédiée, demandé le 10.08.2026 ── */
+  function earningsHtml(earnings) {
+    if (!earnings || earnings.jours > 5) return "";
+    const delaiTxt = earnings.jours <= 1 ? "aujourd'hui ou demain" : `dans ${earnings.jours} jours`;
+    const ec = earnings.jours <= 1 ? "#991b1b" : earnings.jours <= 3 ? "#D85A30" : "#BA7517";
+    return `<div style="border-left:3px solid ${ec};background:${ec}10;border-radius:6px;
+                        padding:6px 10px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+      <i class="bi bi-calendar-event" style="color:${ec}"></i>
+      <span style="font-size:.78rem;font-weight:600;color:${ec}">
+        Résultats trimestriels attendus ${delaiTxt}
+      </span>
+    </div>`;
+  }
+
   /* ── Bloc conseil ── */
   function adviceHtml(ticker, sym, a, livePrice, company, currency, followed, aStats, gainInfo) {
     if (!a) {
@@ -377,7 +391,7 @@
   /* ── Carte ticker ── */
   function renderCard(pos) {
     const { ticker, company, sym, price, var_1d, summary: s, advice: a, advice_stats: aStats,
-            conseil_suivi_gain: gainInfo, currency, logo_url } = pos;
+            conseil_suivi_gain: gainInfo, earnings, currency, logo_url } = pos;
     const pColor  = var_1d >= 0 ? "#1D9E75" : "#D85A30";
     const arr     = var_1d >= 0 ? "▲" : "▼";
     const pColor2 = s.pnl_pct >= 0 ? "#1D9E75" : "#D85A30";
@@ -419,6 +433,8 @@
         : `<span style="font-size:.78rem;color:var(--sde-muted)">Prix indisponible</span>`}
     </div>
   </div>
+
+  ${earningsHtml(earnings)}
 
   <!-- Conseil du jour -->
   ${adviceHtml(ticker, sym, a, price, company, currency, followed, aStats, gainInfo)}

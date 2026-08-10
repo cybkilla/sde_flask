@@ -10,7 +10,7 @@ import sys, pathlib, datetime
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
 import data.market as market_mod
-from data.market import get_next_earnings
+from data.market import get_next_earnings, get_next_earnings_bulk
 
 _TODAY = datetime.date.today()
 
@@ -48,5 +48,39 @@ def _boom():
 market_mod._fh = _boom
 assert get_next_earnings("ITG") is None
 print("✓ get_next_earnings : Finnhub indisponible -> None, jamais bloquant")
+
+# ── get_next_earnings_bulk : UN appel Finnhub (sans filtre symbol) pour
+#    plusieurs tickers — demandé le 10.08.2026, badge dédié sur
+#    /portfolio/overview (évite le N+1 déjà rencontré ailleurs) ──
+class _FakeFinnhubGlobal:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def earnings_calendar(self, _from, to, symbol):
+        assert symbol == ""   # calendrier global, filtré en Python ensuite
+        return {"earningsCalendar": self._rows}
+
+
+d_tmc  = str(_TODAY + datetime.timedelta(days=6))
+d_fcel = str(_TODAY + datetime.timedelta(days=2))
+market_mod._fh = lambda: _FakeFinnhubGlobal([
+    {"symbol": "AAPL", "date": str(_TODAY + datetime.timedelta(days=1))},  # pas dans nos tickers
+    {"symbol": "TMC",  "date": d_tmc},
+    {"symbol": "FCEL", "date": d_fcel},
+])
+res = get_next_earnings_bulk(["TMC", "FCEL", "ITG"])
+assert res == {"TMC": {"date": d_tmc, "jours": 6}, "FCEL": {"date": d_fcel, "jours": 2}}
+assert "ITG" not in res and "AAPL" not in res
+print("✓ get_next_earnings_bulk : un seul appel Finnhub, filtré sur nos tickers, absents si rien sous l'horizon")
+
+# ── Aucun ticker -> {} sans appel réseau ──
+market_mod._fh = lambda: (_ for _ in ()).throw(RuntimeError("ne doit jamais être appelé"))
+assert get_next_earnings_bulk([]) == {}
+print("✓ get_next_earnings_bulk : aucun ticker -> {} sans appeler Finnhub")
+
+# ── Finnhub indisponible -> {} sans crash ──
+market_mod._fh = _boom
+assert get_next_earnings_bulk(["TMC"]) == {}
+print("✓ get_next_earnings_bulk : Finnhub indisponible -> {} sans crash")
 
 print("\n✓ Tous les tests test_earnings.py sont OK (hors réseau)")
