@@ -72,12 +72,15 @@ assert -20 < weights["rsi_surachat"] < 0
 assert weights["trend_5j_fort"] > TECH_WEIGHTS["trend_5j_fort"]
 # rsi_survente intact (5 épisodes < 8)
 assert weights["rsi_survente"] == TECH_WEIGHTS["rsi_survente"]
-# Détail : seulement les ajustements réels, triés par ampleur décroissante
+# Détail : seulement les ajustements réels, triés par fiabilité mesurée
+# décroissante (demandé le 10.08.2026 — le plus fiable en premier)
 codes_detail = [d["code"] for d in detail]
 assert "rsi_survente" not in codes_detail and "signal_fantome" not in codes_detail
-ecarts = [abs(d["poids_ajuste"] - d["poids_base"]) for d in detail]
-assert ecarts == sorted(ecarts, reverse=True)
-print("✓ calibrer : atténue sans inverser, renforce, ignore le bruit, détail trié")
+assert codes_detail == ["trend_5j_fort", "rsi_surachat"], \
+    "trend_5j_fort (63.2%) doit passer avant rsi_surachat (27.3%)"
+hit_pcts = [d["hit_pct"] for d in detail]
+assert hit_pcts == sorted(hit_pcts, reverse=True)
+print("✓ calibrer : atténue sans inverser, renforce, ignore le bruit, détail trié par fiabilité décroissante")
 
 # Attribution vide / None → poids manuels intacts, détail vide
 w_vide, d_vide = calibrer([])

@@ -95,10 +95,11 @@ def calibrer(attribution: list) -> tuple:
             "n_episodes":  a["n_episodes"],
         })
 
-    # Les plus gros ajustements d'abord — ce sont eux qui expliquent
-    # la différence entre score brut et score calibré
-    detail.sort(key=lambda d: abs(d["poids_ajuste"] - d["poids_base"]),
-                reverse=True)
+    # Les signaux les plus fiables d'abord (demandé le 10.08.2026) — on
+    # veut voir en premier ce sur quoi on peut le plus compter, pas juste
+    # ce qui a le plus bougé (un signal peu fiable peut avoir un gros
+    # ajustement sans être pour autant ce qu'on veut mettre en avant)
+    detail.sort(key=lambda d: d["hit_pct"], reverse=True)
     return weights, detail
 
 
