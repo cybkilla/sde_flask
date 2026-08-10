@@ -38,15 +38,21 @@ gunicorn (sync) tourne en permanence ; `max_requests=200` pour libérer la
 mémoire régulièrement (pandas/matplotlib s'accumulent sinon).
 **Prix** : gratuit sur le plan actuel. Render facture au-delà pour plus de
 RAM/CPU ou pour éviter la mise en veille après inactivité prolongée
-(le plan gratuit peut mettre le service en veille — un premier appel
-après veille est plus lent le temps du redémarrage).
+(le plan gratuit endort le service après **15 minutes** sans trafic —
+seuil vérifié en 2026, abaissé depuis 30 min ; premier appel après
+veille ~30-60s pendant lesquelles rien ne peut s'afficher côté
+navigateur, Flask n'ayant pas encore démarré pour répondre).
 
 ### cron-job.org
 **Fonction** : déclenche `POST /scheduler/run` toutes les 30 minutes —
 c'est ce qui fait tourner en arrière-plan les alertes email, les
 réévaluations de conseils, les snapshots quotidiens du portefeuille, le
 digest pré-marché, etc. Sans lui, rien ne se passe tant que personne ne
-visite le site.
+visite le site. **Insuffisant pour empêcher la veille Render** (30 min
+> le seuil de 15 min) — un second job cron-job.org, cadencé à moins de
+15 min sur `GET /health` (route dédiée, sans accès DB, ajoutée le
+10.08.2026), maintient le service éveillé sans dupliquer la logique du
+scheduler.
 **Prix** : gratuit (service dédié justement à ce genre d'usage léger).
 
 ### GitHub
