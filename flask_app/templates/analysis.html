@@ -1390,8 +1390,25 @@ window.sdePortfolio = (function () {
       method: "POST",
       headers: {"X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content},
     })
-    .then(() => loadAdvice())
-    .catch(() => loadAdvice());
+    // Le résultat était ignoré : un échec silencieux (réseau, erreur
+    // serveur) enchaînait quand même sur loadAdvice(), qui ne pouvait
+    // que redemander le MÊME conseil déjà en base — signalé le
+    // 11.08.2026 ("Recalculer" semblait ne jamais rien changer).
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        wrap.innerHTML = `<p class="text-danger small text-center py-1">
+          Échec de la régénération${data.error ? " : " + data.error : ""} —
+          <a href="#" onclick="sdePortfolio.refreshAdvice();return false">réessayer</a></p>`;
+        return;
+      }
+      loadAdvice();
+    })
+    .catch(() => {
+      wrap.innerHTML = `<p class="text-danger small text-center py-1">
+        Échec de la régénération (réseau) —
+        <a href="#" onclick="sdePortfolio.refreshAdvice();return false">réessayer</a></p>`;
+    });
   }
 
 

@@ -476,7 +476,7 @@ def get_advice(ticker: str):
                             if ev_j20 else None,
         }
 
-        return jsonify({
+        resp = jsonify({
             "ok":       True,
             "advice":   advice_row,
             "history":  history,
@@ -484,6 +484,12 @@ def get_advice(ticker: str):
             "labels":   ACTION_LABELS,
             "earnings": earnings,
         })
+        # Sans ça, un cache intermédiaire pourrait resservir l'ancien
+        # conseil après un "Recalculer" — signalé le 11.08.2026 (le
+        # conseil affiché ne changeait jamais malgré le clic). Même
+        # garde-fou que /portfolio/overview.
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     except Exception as e:
         import traceback
