@@ -295,6 +295,42 @@ assert adv_faible["action"] == "SURVEILLER"
 assert "Position clôturée" in adv_faible["raisonnement"]
 print("✓ ré-entrée : clôturée+signal fort → ACHETER, le même jour → SURVEILLER, faible → SURVEILLER")
 
+# ── Ré-entrée par confiance : score sous le seuil flat (60) mais signal
+# haussier MESURÉ très fiable sur ce titre → ACHETER quand même (demandé
+# le 10.08.2026 : "je ne voudrais pas rater une bonne opportunité de
+# revenir sur un ticker en position close la veille"). Même mécanisme
+# que le RENFORCER par confiance, étendu à la ré-entrée.
+_signals_achat_fiable = [
+    {"code": "rsi_survente", "nom": "RSI en zone de survente", "sens": "haussier", "points": 20.0},
+]
+_calib_achat_fiable = [{"code": "rsi_survente", "hit_pct": 68.4, "n_episodes": 15}]
+_snap_score_modere = {"score_global": 55.0, "recommandation": "NEUTRE",
+                      "signals_tech": _signals_achat_fiable, "signals_fund": [],
+                      "calibration": _calib_achat_fiable}
+adv_confiance = generate_advice(_s_clos, _m_calme, _snap_score_modere)
+assert adv_confiance["action"] == "ACHETER", \
+    f"score sous le seuil mais signal fiable → ACHETER quand même, obtenu {adv_confiance['action']}"
+assert "Signal haussier fiable à 68.4% sur ce titre" in adv_confiance["raisonnement"]
+assert "score global encore modéré (55/100" in adv_confiance["raisonnement"]
+
+# Même score modéré mais confiance BASSE (signal peu fiable) → SURVEILLER,
+# comportement inchangé
+_calib_peu_fiable = [{"code": "rsi_survente", "hit_pct": 32.0, "n_episodes": 12}]
+adv_sans_confiance = generate_advice(
+    _s_clos, _m_calme,
+    {**_snap_score_modere, "calibration": _calib_peu_fiable})
+assert adv_sans_confiance["action"] == "SURVEILLER"
+
+# reco VENDRE (aggregat franchement baissier) → jamais de ré-entrée par
+# confiance, même avec un signal isolé très fiable — trop risqué d'ouvrir
+# une position neuve contre un aggregat baissier
+adv_reco_vendre = generate_advice(
+    _s_clos, _m_calme,
+    {**_snap_score_modere, "recommandation": "VENDRE"})
+assert adv_reco_vendre["action"] == "SURVEILLER"
+print("✓ ré-entrée par confiance : signal fiable sous le seuil → ACHETER ; "
+      "peu fiable ou reco VENDRE → SURVEILLER (comportement inchangé)")
+
 
 # ── Trésorerie : la note change, jamais l'action (31.07.2026 — un manque
 #    de cash suivi n'empêche plus le conseil, l'utilisateur peut décider

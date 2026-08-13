@@ -328,6 +328,39 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
             base = _conseil("ACHETER", None, prix,
                 f"{cd}{intro_sans_position} Signal SDE haussier ({score:.0f}/100, RSI {rsi:.0f}). "
                 f"Opportunité d'entrée autour de {prix:.2f} $.{cash_txt}")
+        elif reco != "VENDRE":
+            # Signal isolé mais MESURÉ très fiable sur ce titre, sous le
+            # seuil flat score_acheter — demande du 10.08.2026 : "je ne
+            # voudrais pas rater une bonne opportunité de revenir sur un
+            # ticker en position close la veille". Même mécanisme que le
+            # RENFORCER par confiance (19.07, confiance_conseil) : un
+            # signal fiable sur CE titre ne doit pas être ignoré juste
+            # parce que le score agrégé, tiré par des signaux moins
+            # fiables, reste sous le seuil générique. Exclu si reco =
+            # VENDRE : trop risqué d'ouvrir une position neuve contre un
+            # aggregat franchement baissier sur la seule foi d'un signal.
+            from analysis.calibration import confiance_conseil
+            conf_achat = confiance_conseil(
+                "ACHETER", snapshot.get("signals_tech"), snapshot.get("calibration"),
+            )
+            if conf_achat.get("niveau") == "haute":
+                signal_txt = ", ".join(s["label"] for s in conf_achat["signaux"])
+                if cash_dispo is not None and prix > 0 and cash_dispo < prix:
+                    cash_txt = (f" ⚠ Trésorerie suivie insuffisante ({cash_dispo:.2f} $) "
+                                f"pour un cours à {prix:.2f} $ — entrée à financer.")
+                else:
+                    cash_txt = (f" Trésorerie suivie disponible : {cash_dispo:,.2f} $ "
+                                f"(≈ {int(cash_dispo // prix)} actions)."
+                                if cash_dispo is not None and prix > 0 else "")
+                base = _conseil("ACHETER", None, prix,
+                    f"{cd}{intro_sans_position} Signal haussier fiable à "
+                    f"{conf_achat['moyenne_hit_pct']}% sur ce titre ({signal_txt}) "
+                    f"— entrée malgré un score global encore modéré "
+                    f"({score:.0f}/100, sous le seuil {c['score_acheter']:.0f}).{cash_txt}")
+            else:
+                base = _conseil("SURVEILLER", None, None,
+                    f"{cd}{intro_sans_position} Signal SDE {reco} ({score:.0f}/100) — "
+                    f"attendre un signal plus fort avant d'entrer.")
         else:
             base = _conseil("SURVEILLER", None, None,
                 f"{cd}{intro_sans_position} Signal SDE {reco} ({score:.0f}/100) — "
