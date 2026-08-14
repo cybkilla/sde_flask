@@ -138,24 +138,47 @@ print("✓ conseil : ligne Pré-marché présente avec gap, absente sans")
 # ── Ligne Résultats trimestriels : informatif seulement, jamais bloquant ──
 # Cas réel MXL (23.07.2026) : ACHETER à score 65.5 -> -21.2% le lendemain,
 # probable choc résultats non anticipable par l'analyse technique.
-_market_earn = {**_market, "jours_avant_earnings": 3}
+_market_earn = {**_market, "earnings": {"date": "2026-08-13", "jours": 3, "statut": "a_venir"}}
 adv3 = generate_advice(_summary, _market_earn, _snap)
 assert "Résultats trimestriels attendus dans 3 jours" in adv3["raisonnement"]
 assert adv3["action"] == "TENIR"   # n'influence jamais l'action, informatif seulement
-assert adv3["jours_avant_earnings"] == 3   # champ structuré, pas seulement dans le texte
+assert adv3["earnings"]["jours"] == 3   # champ structuré, pas seulement dans le texte
 
-_market_loin = {**_market, "jours_avant_earnings": 8}   # au-delà du seuil (5j) -> silence
+_market_loin = {**_market, "earnings": {"date": "2026-08-18", "jours": 8, "statut": "a_venir"}}
 adv4 = generate_advice(_summary, _market_loin, _snap)
 assert "Résultats trimestriels" not in adv4["raisonnement"]
-assert adv4["jours_avant_earnings"] == 8   # présent même hors seuil texte (le badge gère son propre seuil)
+assert adv4["earnings"]["jours"] == 8   # présent même hors seuil texte (le badge gère son propre seuil)
 
-_market_demain = {**_market, "jours_avant_earnings": 1}
+_market_demain = {**_market, "earnings": {"date": "2026-08-11", "jours": 1, "statut": "a_venir"}}
 adv5 = generate_advice(_summary, _market_demain, _snap)
 assert "aujourd'hui ou demain" in adv5["raisonnement"]
 
-adv_sans = generate_advice(_summary, _market, _snap)   # pas de clé jours_avant_earnings
-assert adv_sans["jours_avant_earnings"] is None
+adv_sans = generate_advice(_summary, _market, _snap)   # pas de clé earnings
+assert adv_sans["earnings"] is None
 print("✓ conseil : ligne Résultats trimestriels sous 5j, silencieuse au-delà, n'influence jamais l'action, champ structuré exposé")
+
+# ── Résultats déjà PUBLIÉS (cas réel TMC 14.08.2026 : -8% le lendemain
+# d'un BPA -0.14$ vs -0.06$ attendu, -131% de surprise) — résumé succinct
+# dans le raisonnement, jamais d'influence sur l'action ──
+_market_publie = {**_market, "earnings": {
+    "date": "2026-08-13", "jours": -1, "statut": "publie",
+    "eps_estimate": -0.0606, "eps_actual": -0.14, "surprise_pct": -131.0,
+}}
+adv6 = generate_advice(_summary, _market_publie, _snap)
+assert "Résultats trimestriels publiés" in adv6["raisonnement"]
+assert "-0.14$" in adv6["raisonnement"] and "-0.06$" in adv6["raisonnement"]
+assert "131% en-dessous des attentes" in adv6["raisonnement"]
+assert adv6["action"] == "TENIR"   # jamais d'influence sur l'action, ici aussi
+
+# Publié sans estimate connu -> pas de mention "vs X$ attendu" ni de %, pas de crash
+_market_publie_sans_est = {**_market, "earnings": {
+    "date": "2026-08-13", "jours": -1, "statut": "publie",
+    "eps_estimate": None, "eps_actual": 0.10, "surprise_pct": None,
+}}
+adv7 = generate_advice(_summary, _market_publie_sans_est, _snap)
+assert "0.10$" in adv7["raisonnement"]
+assert " vs " not in adv7["raisonnement"]   # pas d'estimate -> pas de comparaison inventée
+print("✓ conseil : résultats publiés -> résumé succinct (BPA réel/estimé/surprise), n'influence jamais l'action")
 
 
 # ── Surclassement chandelier : plus de texte contradictoire ──

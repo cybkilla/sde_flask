@@ -102,7 +102,10 @@ depuis le 03.08.2026 pour le calendrier de résultats trimestriels
 (`earnings_calendar`, filtré par ticker) — signale dans le raisonnement
 du conseil qu'une publication est imminente, sans jamais bloquer ou
 modifier l'action (événement à variance élevée que l'analyse technique
-ne peut pas anticiper).
+ne peut pas anticiper). Depuis le 14.08.2026, le même appel sert aussi
+APRÈS coup : `epsActual` se remplit automatiquement une fois les
+résultats publiés, sans second appel — badge dédié avec BPA réel vs
+attendu et % de surprise.
 **Limite connue** : hors séance, son `/quote` reste figé sur la clôture
 de la veille (pas de vrai pré-marché sur le plan gratuit).
 **Prix** : gratuit — 60 appels/minute.

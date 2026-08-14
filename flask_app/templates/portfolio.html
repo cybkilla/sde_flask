@@ -228,7 +228,25 @@
 
   /* ── Badge résultats trimestriels — visibilité dédiée, demandé le 10.08.2026 ── */
   function earningsHtml(earnings) {
-    if (!earnings || earnings.jours > 5) return "";
+    if (!earnings) return "";
+    // Résultats déjà publiés (cas réel TMC 14.08.2026 : -8% le lendemain
+    // d'un BPA -0.14$ vs -0.06$ attendu) — résumé succinct plutôt que le
+    // compte à rebours, demande utilisateur du même jour
+    if (earnings.statut === "publie") {
+      const sp    = earnings.surprise_pct;
+      const ec    = sp == null ? "#5a6a7a" : sp >= 0 ? "#1D9E75" : "#D85A30";
+      const vsTxt = earnings.eps_estimate != null
+        ? ` vs ${earnings.eps_estimate.toFixed(2)}$ attendu` : "";
+      const spTxt = sp != null ? ` (${sp >= 0 ? "+" : ""}${sp.toFixed(0)}%)` : "";
+      return `<div style="border-left:3px solid ${ec};background:${ec}10;border-radius:6px;
+                          padding:6px 10px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        <i class="bi bi-clipboard-data" style="color:${ec}"></i>
+        <span style="font-size:.78rem;font-weight:600;color:${ec}">
+          Résultats publiés (${_dateFr(earnings.date)}) : BPA ${earnings.eps_actual.toFixed(2)}$${vsTxt}${spTxt}
+        </span>
+      </div>`;
+    }
+    if (earnings.jours > 5) return "";
     const delaiTxt = earnings.jours <= 1 ? "aujourd'hui ou demain" : `dans ${earnings.jours} jours`;
     const ec = earnings.jours <= 1 ? "#991b1b" : earnings.jours <= 3 ? "#D85A30" : "#BA7517";
     return `<div style="border-left:3px solid ${ec};background:${ec}10;border-radius:6px;

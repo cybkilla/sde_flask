@@ -496,17 +496,46 @@ def get_premarket_gap(ticker: str) -> dict | None:
         return None
 
 
-def get_next_earnings(ticker: str, horizon_jours: int = 10) -> dict | None:
+def _formater_earnings(row: dict, today) -> dict:
     """
-    Prochaine date de publication de résultats trimestriels dans les
-    `horizon_jours` prochains jours — Finnhub `earnings_calendar`,
-    disponible sur le plan gratuit (vérifié en réel le 03.08.2026,
-    filtré par `symbol`, un seul appel par ticker).
+    Met en forme UNE ligne earnings_calendar Finnhub. `epsActual` s'y
+    remplit tout seul une fois les résultats publiés (pas besoin d'un
+    second appel `company_earnings`) — d'où les deux statuts :
+      "a_venir" : jours > 0, ou résultat pas encore publié
+      "publie"  : jours <= 0 ET epsActual connu — inclut estimate/actual/
+                  surprise_pct (recalculé nous-mêmes, Finnhub ne le donne
+                  pas sur ce endpoint ; vérifié en réel le 14.08.2026
+                  contre company_earnings : même formule, mêmes chiffres)
+    """
+    import datetime
+    d     = datetime.datetime.strptime(row["date"], "%Y-%m-%d").date()
+    jours = (d - today).days
+    eps_est = row.get("epsEstimate")
+    eps_act = row.get("epsActual")
+    if jours <= 0 and eps_act is not None:
+        surprise_pct = (round((eps_act - eps_est) / abs(eps_est) * 100, 1)
+                        if eps_est else None)
+        return {"date": row["date"], "jours": jours, "statut": "publie",
+                "eps_estimate": eps_est, "eps_actual": eps_act,
+                "surprise_pct": surprise_pct}
+    return {"date": row["date"], "jours": jours, "statut": "a_venir"}
+
+
+def get_next_earnings(ticker: str, horizon_jours: int = 10, retro_jours: int = 3) -> dict | None:
+    """
+    Résultats trimestriels : soit À VENIR (`statut` "a_venir", `jours` > 0),
+    soit RÉCEMMENT PUBLIÉS (`statut` "publie", `jours` <= 0, avec le
+    résultat réel vs attendu) — Finnhub `earnings_calendar`, disponible
+    sur le plan gratuit (vérifié en réel le 03.08.2026, filtré par
+    `symbol`, un seul appel par ticker).
 
     But : un choc résultats est un événement à variance élevée qu'aucun
-    signal technique/fondamental ne peut anticiper (cas réel MXL, ACHETER
-    à score 65.5 suivi d'un -21.2% le lendemain, probable annonce). Best
-    effort — None si indisponible ou aucune date connue, jamais bloquant.
+    signal technique/fondamental ne peut anticiper — avant coup (cas réel
+    MXL, ACHETER à score 65.5 suivi d'un -21.2% le lendemain) ET après
+    coup, où un gros écart estimé/réel explique un mouvement de cours
+    qui semblerait autrement incompréhensible (cas réel TMC 14.08.2026 :
+    -8% le lendemain d'un BPA -0.14$ vs -0.06$ attendu). Best effort —
+    None si indisponible ou aucune date connue, jamais bloquant.
     """
     try:
         import datetime
@@ -515,7 +544,8 @@ def get_next_earnings(ticker: str, horizon_jours: int = 10) -> dict | None:
         today = datetime.date.today()
         result = with_timeout(
             lambda: fh.earnings_calendar(
-                _from=str(today), to=str(today + datetime.timedelta(days=horizon_jours)),
+                _from=str(today - datetime.timedelta(days=retro_jours)),
+                to=str(today + datetime.timedelta(days=horizon_jours)),
                 symbol=ticker.upper()),
             6,
         )
@@ -523,21 +553,21 @@ def get_next_earnings(ticker: str, horizon_jours: int = 10) -> dict | None:
         if not rows:
             return None
         prochaine = min(rows, key=lambda r: r["date"])
-        d = datetime.datetime.strptime(prochaine["date"], "%Y-%m-%d").date()
-        return {"date": prochaine["date"], "jours": (d - today).days}
+        return _formater_earnings(prochaine, today)
     except Exception as e:
         print(f"[Market] get_next_earnings({ticker}) indisponible : {e}", flush=True)
         return None
 
 
-def get_next_earnings_bulk(tickers: list[str], horizon_jours: int = 10) -> dict:
+def get_next_earnings_bulk(tickers: list[str], horizon_jours: int = 10, retro_jours: int = 3) -> dict:
     """
     Comme get_next_earnings(), mais pour plusieurs tickers en UN SEUL appel
     Finnhub (sans filtre `symbol` — le calendrier renvoie ~1500 lignes
     tous titres confondus, filtrées ici en Python) — évite le N+1 sur
     /portfolio/overview, appelée à chaque visite de la page (même souci
     de perf déjà rencontré avec les prix live et les stats de fiabilité).
-    Retourne {ticker: {"date", "jours"}} — absent si rien sous l'horizon.
+    Retourne {ticker: {...}} (même forme que get_next_earnings) — absent
+    si rien sous l'horizon [aujourd'hui-retro_jours ; aujourd'hui+horizon_jours].
     """
     try:
         import datetime
@@ -548,7 +578,8 @@ def get_next_earnings_bulk(tickers: list[str], horizon_jours: int = 10) -> dict:
         today = datetime.date.today()
         result = with_timeout(
             lambda: fh.earnings_calendar(
-                _from=str(today), to=str(today + datetime.timedelta(days=horizon_jours)),
+                _from=str(today - datetime.timedelta(days=retro_jours)),
+                to=str(today + datetime.timedelta(days=horizon_jours)),
                 symbol=""),
             8,
         )
@@ -562,11 +593,7 @@ def get_next_earnings_bulk(tickers: list[str], horizon_jours: int = 10) -> dict:
             existant = par_ticker.get(sym)
             if existant is None or r["date"] < existant["date"]:
                 par_ticker[sym] = r
-        return {
-            sym: {"date": r["date"],
-                  "jours": (datetime.datetime.strptime(r["date"], "%Y-%m-%d").date() - today).days}
-            for sym, r in par_ticker.items()
-        }
+        return {sym: _formater_earnings(r, today) for sym, r in par_ticker.items()}
     except Exception as e:
         print(f"[Market] get_next_earnings_bulk indisponible : {e}", flush=True)
         return {}

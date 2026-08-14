@@ -423,7 +423,7 @@ def get_advice(ticker: str):
             # raisonnement du conseil (le badge dédié réutilise `earnings`
             # calculé plus haut, indépendamment du conseil)
             if earnings:
-                market["jours_avant_earnings"] = earnings["jours"]
+                market["earnings"] = earnings
             summary = get_portfolio_summary(current_user.id, ticker, price)
 
             # Pattern chandelier depuis l'historique du snapshot

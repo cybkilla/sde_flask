@@ -1109,9 +1109,33 @@ window.sdePortfolio = (function () {
         const earnWrap = document.getElementById("sde-earnings-badge");
         if (earnWrap) {
           const e = data.earnings;
-          if (e && e.jours <= 5) {
+          const dateTxt = e ? new Date(e.date + "T00:00:00").toLocaleDateString("fr-FR", {day:"numeric", month:"long"}) : "";
+          if (e && e.statut === "publie") {
+            // Résultats déjà publiés (cas réel TMC 14.08.2026 : -8% le
+            // lendemain d'un BPA -0.14$ vs -0.06$ attendu) — résumé
+            // succinct plutôt que le compte à rebours, demande
+            // utilisateur du même jour
+            const sp    = e.surprise_pct;
+            const ec    = sp == null ? "#5a6a7a" : sp >= 0 ? "#1D9E75" : "#D85A30";
+            const vsTxt = e.eps_estimate != null ? ` vs ${e.eps_estimate.toFixed(2)}$ attendu` : "";
+            const spTxt = sp != null
+              ? `, ${sp >= 0 ? "+" : ""}${sp.toFixed(0)}% ${sp >= 0 ? "au-dessus" : "en-dessous"} des attentes`
+              : "";
+            earnWrap.innerHTML = `
+              <div class="sde-card mb-3" style="border-left:4px solid ${ec};display:flex;
+                          align-items:center;gap:12px">
+                <i class="bi bi-clipboard-data" style="font-size:1.4rem;color:${ec}"></i>
+                <div>
+                  <div style="font-weight:700;font-size:.88rem;color:${ec}">
+                    📊 Résultats publiés le ${dateTxt} : BPA ${e.eps_actual.toFixed(2)}$${vsTxt}
+                  </div>
+                  <div style="font-size:.74rem;color:var(--sde-muted)">
+                    Explique une part du mouvement récent${spTxt}
+                  </div>
+                </div>
+              </div>`;
+          } else if (e && e.jours <= 5) {
             const delaiTxt = e.jours <= 1 ? "aujourd'hui ou demain" : `dans ${e.jours} jours`;
-            const dateTxt  = new Date(e.date + "T00:00:00").toLocaleDateString("fr-FR", {day:"numeric", month:"long"});
             const ec = e.jours <= 1 ? "#991b1b" : e.jours <= 3 ? "#D85A30" : "#BA7517";
             earnWrap.innerHTML = `
               <div class="sde-card mb-3" style="border-left:4px solid ${ec};display:flex;

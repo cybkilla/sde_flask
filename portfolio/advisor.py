@@ -253,23 +253,39 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
                 f"— gap {sens_gap} attendu à l'ouverture, conseil réévalué "
                 f"avant la séance."
             )
-        # Résultats trimestriels imminents : événement à variance élevée
-        # que l'analyse technique/fondamentale ne peut pas anticiper (cas
+        # Résultats trimestriels : événement à variance élevée qu'aucun
+        # signal technique/fondamental ne peut anticiper — avant coup (cas
         # réel du 23.07.2026 : ACHETER sur MXL à score 65.5, -21.2% le
-        # lendemain — probable choc résultats). Informatif seulement,
-        # ne bloque ni ne dégrade jamais le conseil (même principe que la
-        # trésorerie insuffisante : annoter, jamais rétrograder).
-        jae = market.get("jours_avant_earnings")
-        # Exposé aussi en champ structuré (pas seulement dans le texte) —
-        # demandé le 10.08.2026 : un badge dédié, visible sans avoir à lire
-        # le raisonnement, sur la page d'analyse ET la carte de position.
-        r["jours_avant_earnings"] = jae
-        if jae is not None and jae <= 5:
+        # lendemain) ET après coup, où le résultat réel vs attendu explique
+        # un mouvement de cours qui semblerait autrement incompréhensible
+        # (cas réel TMC 14.08.2026 : -8% le lendemain d'un BPA -0.14$ vs
+        # -0.06$ attendu, demande utilisateur du même jour pour un résumé).
+        # Informatif seulement, ne bloque ni ne dégrade jamais le conseil
+        # (même principe que la trésorerie insuffisante : annoter, jamais
+        # rétrograder). Exposé aussi en champ structuré (pas seulement
+        # dans le texte) — un badge dédié sur la page d'analyse ET la
+        # carte de position.
+        earnings = market.get("earnings")
+        r["earnings"] = earnings
+        if earnings and earnings.get("statut") == "a_venir" and earnings["jours"] <= 5:
+            jae   = earnings["jours"]
             delai = "aujourd'hui ou demain" if jae <= 1 else f"dans {jae} jours"
             r["raisonnement"] += (
                 f"<br>{cd}⚠️ Résultats trimestriels attendus {delai} — "
                 f"volatilité potentiellement élevée, au-delà de ce que "
                 f"l'analyse technique/fondamentale peut anticiper."
+            )
+        elif earnings and earnings.get("statut") == "publie":
+            sp   = earnings.get("surprise_pct")
+            sens = "au-dessus" if (sp or 0) >= 0 else "en-dessous"
+            surprise_txt = f", {abs(sp):.0f}% {sens} des attentes" if sp is not None else ""
+            eps_est = earnings.get("eps_estimate")
+            vs_txt  = f" vs {eps_est:+.2f}$ attendu" if eps_est is not None else ""
+            r["raisonnement"] += (
+                f"<br>{cd}📊 Résultats trimestriels publiés : BPA "
+                f"{earnings['eps_actual']:+.2f}${vs_txt}{surprise_txt} — explique "
+                f"une part du mouvement récent, au-delà de ce que l'analyse "
+                f"technique seule capte."
             )
         # Mémoire du jour : rappeler ce qui a déjà été exécuté
         if pnl is not None and vendu_auj > 0:
@@ -883,7 +899,7 @@ def ensure_today_advice(username: str, ticker: str, prix_live: float,
             from data.market import get_next_earnings
             earnings = get_next_earnings(ticker)
             if earnings:
-                market["jours_avant_earnings"] = earnings["jours"]
+                market["earnings"] = earnings
         except Exception:
             pass
 
