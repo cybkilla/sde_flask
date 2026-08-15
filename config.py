@@ -102,7 +102,11 @@ USE_FINBERT      = False  # True si GPU dispo, False → VADER
 # Clé gratuite sur : https://console.groq.com/keys
 # Quota gratuit : 14 400 requêtes / jour
 GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL    = "llama-3.3-70b-versatile"
+# llama-3.3-70b-versatile décommissionné par Groq le 16.08.2026 (email
+# reçu le 15.08.2026) — migré vers leur remplacement recommandé
+# GPT-OSS 120B, moins cher (0.15$/0.60$ par M tokens vs 0.59$/0.79$) et
+# plus rapide en pratique sur ce prompt (testé en réel le même jour).
+GROQ_MODEL    = "openai/gpt-oss-120b"
 
 # ── Gemini — grounding Google Search (suggestion univers scan) ───────────
 # Clé sur : https://aistudio.google.com/apikey

@@ -1,6 +1,7 @@
 # analysis/llm_explain.py
 # Génère une explication textuelle du scoring via un LLM gratuit.
-# Moteur principal : Groq (LLaMA 3.3 70B) — gratuit, rapide.
+# Moteur principal : Groq (GPT-OSS 120B, depuis le 15.08.2026 — remplace
+# LLaMA 3.3 70B, décommissionné par Groq) — gratuit, rapide.
 # Fallback : Ollama local si Groq indisponible.
 # Si les deux échouent : texte de remplacement généré en Python pur.
 
@@ -26,7 +27,7 @@ def _trim_to_last_sentence(text: str) -> str:
 # ── Moteur 1 : Groq API ───────────────────────────────────
 def _call_groq(prompt: str) -> str:
     """
-    Appelle l'API Groq (LLaMA 3.3 70B gratuit).
+    Appelle l'API Groq (GPT-OSS 120B gratuit).
     Endpoint REST compatible OpenAI — headers + JSON body.
 
     Paramètres
@@ -47,7 +48,13 @@ def _call_groq(prompt: str) -> str:
     }
 
     payload = {
-        "model": GROQ_MODEL,    # "llama-3.3-70b-versatile"
+        "model": GROQ_MODEL,    # "openai/gpt-oss-120b"
+        # Modèle de raisonnement : sans ça, une partie du budget
+        # max_tokens part dans un raisonnement interne caché (jusqu'à 83
+        # tokens mesurés en réel sur ce prompt, vs 25 en "low") — inutile
+        # pour une explication factuelle courte, et ça risque de tronquer
+        # la réponse avant sa fin sur les prompts les plus longs.
+        "reasoning_effort": "low",
         "messages": [
             # Rôle système : cadre le LLM comme analyste financier
             {

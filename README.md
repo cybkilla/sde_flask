@@ -13,7 +13,7 @@ Application web d'aide à la décision boursière. Analyse n'importe quelle acti
 - **Activité insiders** : transactions des dirigeants (disponible pour les valeurs US uniquement — source SEC/Yahoo Finance)
 - **Risque dirigeants** : détection d'événements (scandales, départs, rachats)
 - **Zones de trading** : entrée, objectif cible, stop-loss, ratio R/R
-- **Synthèse IA** : résumé généré par LLaMA 3.3 70B via Groq (fallback Python)
+- **Synthèse IA** : résumé généré par GPT-OSS 120B via Groq (fallback Python)
 - **Graphiques** : cours + volume (matplotlib), RSI, chandeliers Plotly interactifs
 - **Figures chartistes** : détection de 12 patterns avec explication contextuelle
 
@@ -59,7 +59,7 @@ Application web d'aide à la décision boursière. Analyse n'importe quelle acti
 | Base de données | Supabase (PostgreSQL) via REST HTTPS |
 | Données marché | yfinance (primaire) · Finnhub (quote live + fallback) · Twelve Data (fallback historique) |
 | NLP / Sentiment | VADER |
-| LLM | Groq API (LLaMA 3.3 70B) + fallback Python |
+| LLM | Groq API (GPT-OSS 120B) + fallback Python |
 | Graphiques | matplotlib (PNG base64), Plotly (JSON → JS) |
 | Actualités | NewsAPI, feedparser (RSS) |
 | Email | Resend (HTTP API — fonctionne sur Render) |

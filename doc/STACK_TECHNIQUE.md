@@ -158,7 +158,11 @@ ou est à quota.
 ### Groq
 **Fonction** : moteur LLM *principal* — génère le texte d'explication de
 chaque conseil ("pourquoi ce score, ce signal") en langage naturel.
-Modèle : `llama-3.3-70b-versatile`.
+Modèle : `openai/gpt-oss-120b` (migré le 15.08.2026 — `llama-3.3-70b-versatile`
+décommissionné par Groq le 16.08.2026 ; nouveau modèle moins cher et
+plus rapide en pratique, `reasoning_effort: "low"` pour éviter qu'une
+partie du budget de tokens parte dans un raisonnement caché inutile
+pour une explication courte).
 **Prix** : gratuit — 14 400 requêtes/jour.
 
 ### Gemini (Google AI Studio)
