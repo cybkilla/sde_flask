@@ -32,19 +32,24 @@
     </div>
   </div>
 
-  <div class="mb-3" id="sde-qa-ticker-wrap">
-    <label class="form-label small fw-semibold">Ticker</label>
-    <select id="sde-qa-ticker-select" class="form-select form-select-sm" style="max-width:280px"
-            onchange="qaLoadData()">
-      <option value="">Chargement…</option>
-    </select>
-    <p class="text-muted mt-1 mb-0" style="font-size:.72rem">
-      Uniquement tes positions et ta watchlist.
-    </p>
-  </div>
+  <div class="mb-3 d-flex flex-wrap align-items-start gap-3">
+    <div id="sde-qa-ticker-wrap">
+      <label class="form-label small fw-semibold">
+        Ticker
+        <span class="text-muted" style="font-weight:400;font-size:.72rem">
+          — uniquement tes positions et ta watchlist
+        </span>
+      </label>
+      <select id="sde-qa-ticker-select" class="form-select form-select-sm" style="width:100px"
+              onchange="qaLoadData()">
+        <option value="">Chargement…</option>
+      </select>
+    </div>
 
-  <!-- Chiffres clés (ligne pour un ticker, tableau pour tout le portefeuille) -->
-  <div class="mb-3" id="sde-qa-data-wrap"></div>
+    <!-- Chiffres clés (ligne pour un ticker, tableau pour tout le portefeuille) —
+         aligné sur la même ligne que le sélecteur (padding-top ≈ hauteur du label) -->
+    <div id="sde-qa-data-wrap" style="flex:1;min-width:260px;padding-top:22px"></div>
+  </div>
 
   <div class="mb-3">
     <label class="form-label small fw-semibold">Ta question</label>
@@ -81,6 +86,24 @@
 (function () {
   const CSRF = document.querySelector('meta[name="csrf-token"]').content;
   let _scope = "ticker";
+
+  // Code couleur standard SDE — mêmes valeurs que portfolio.html/analysis.html
+  // (badge d'action) et admin.html (jauge de fiabilité)
+  const ACTION_COLOR = {
+    ACHETER: "#1D9E75", RENFORCER: "#15803d",
+    TENIR: "#BA7517", SURVEILLER: "#5a6a7a",
+    "ALLÉGER": "#D85A30", VENDRE: "#991b1b",
+  };
+  const ACTION_ICON = {
+    ACHETER: "↑", RENFORCER: "↗", TENIR: "◆",
+    SURVEILLER: "◎", "ALLÉGER": "↘", VENDRE: "↓",
+  };
+  function _gaugeColor(pct) {
+    return pct >= 60 ? "#1D9E75" : pct >= 45 ? "#BA7517" : "#D85A30";
+  }
+  function _pnlColor(v) {
+    return (v || 0) >= 0 ? "#1D9E75" : "#D85A30";
+  }
 
   function qaSetScope(scope) {
     _scope = scope;
@@ -137,26 +160,33 @@
       .catch(() => { wrap.innerHTML = `<p class="text-muted small mb-0">Erreur de chargement.</p>`; });
   }
 
+  function _badgeConseil(action, score) {
+    const color = ACTION_COLOR[action] || "#5a6a7a";
+    const icon  = ACTION_ICON[action]  || "◆";
+    return `<span style="background:${color};color:#fff;padding:2px 10px;border-radius:12px;
+                         font-weight:700;font-size:.76rem">${icon} ${action} (${score}/100)</span>`;
+  }
+
   function _renderLigne(l) {
-    const varColor = (l.var_1d || 0) >= 0 ? "#1D9E75" : "#D85A30";
     const items = [];
     if (l.price != null) {
-      items.push(`<strong>${l.sym}${l.price.toFixed(2)}</strong>
-        <span style="color:${varColor}">${_pct(l.var_1d)}</span>`);
+      items.push(`Prix : <strong>${l.sym}${l.price.toFixed(2)}</strong>
+        <span style="color:${_pnlColor(l.var_1d)}">${_pct(l.var_1d)}</span>`);
     }
     if (l.shares != null) {
-      items.push(`${l.shares.toLocaleString("en-US", {maximumFractionDigits:4})} actions · coût moyen ${l.sym}${l.cout_moyen.toFixed(2)} · P&L position ${_pct(l.pnl_position_pct)}`);
+      items.push(`${l.shares.toLocaleString("en-US", {maximumFractionDigits:4})} actions · coût moyen ${l.sym}${l.cout_moyen.toFixed(2)} · P&L position
+        <span style="color:${_pnlColor(l.pnl_position_pct)};font-weight:600">${_pct(l.pnl_position_pct)}</span>`);
     }
     if (l.action != null) {
-      items.push(`Conseil : <strong>${l.action}</strong> (${l.score}/100)`);
+      items.push(`Conseil : ${_badgeConseil(l.action, l.score)}`);
     }
     if (l.taux_pct != null) {
-      items.push(`Fiabilité ${l.taux_pct}% (${l.total_evalues} conseils)`);
+      items.push(`Fiabilité <span style="color:${_gaugeColor(l.taux_pct)};font-weight:600">${l.taux_pct}%</span> (${l.total_evalues} conseils)`);
     }
     if (l.earnings_txt) {
       items.push(`Résultats : ${l.earnings_txt}`);
     }
-    return `<div class="sde-card py-2 px-3" style="font-size:.78rem;display:flex;flex-wrap:wrap;gap:14px;align-items:center;background:#F8FAFC">
+    return `<div style="font-size:.78rem;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
       ${items.map(i => `<span>${i}</span>`).join(`<span style="color:var(--sde-border)">·</span>`)}
     </div>`;
   }
@@ -166,12 +196,12 @@
       <tr>
         <td class="fw-semibold">${l.ticker}</td>
         <td>${l.price != null ? l.sym + l.price.toFixed(2) : "—"}</td>
-        <td style="color:${(l.var_1d || 0) >= 0 ? '#1D9E75' : '#D85A30'}">${_pct(l.var_1d)}</td>
+        <td style="color:${_pnlColor(l.var_1d)}">${_pct(l.var_1d)}</td>
         <td>${l.shares != null ? l.shares.toLocaleString("en-US", {maximumFractionDigits:4}) : "—"}</td>
         <td>${l.cout_moyen != null ? l.sym + l.cout_moyen.toFixed(2) : "—"}</td>
-        <td>${_pct(l.pnl_position_pct)}</td>
-        <td>${l.action != null ? `${l.action} (${l.score}/100)` : "—"}</td>
-        <td>${l.taux_pct != null ? `${l.taux_pct}% (${l.total_evalues})` : "—"}</td>
+        <td style="color:${_pnlColor(l.pnl_position_pct)};font-weight:600">${_pct(l.pnl_position_pct)}</td>
+        <td>${l.action != null ? _badgeConseil(l.action, l.score) : "—"}</td>
+        <td>${l.taux_pct != null ? `<span style="color:${_gaugeColor(l.taux_pct)};font-weight:600">${l.taux_pct}%</span> (${l.total_evalues})` : "—"}</td>
       </tr>`).join("");
     return `<div class="table-responsive">
       <table class="table table-sm table-hover mb-0" style="font-size:.76rem">
