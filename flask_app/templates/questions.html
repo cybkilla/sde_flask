@@ -32,23 +32,24 @@
     </div>
   </div>
 
-  <div class="mb-3 d-flex flex-wrap align-items-start gap-3">
-    <div id="sde-qa-ticker-wrap" style="max-width:180px">
-      <label class="form-label small fw-semibold">
-        Ticker
-        <span class="text-muted" style="font-weight:400;font-size:.72rem">
-          — uniquement tes positions et ta watchlist
-        </span>
-      </label>
-      <select id="sde-qa-ticker-select" class="form-select form-select-sm" style="width:100px"
-              onchange="qaLoadData()">
-        <option value="">Chargement…</option>
-      </select>
-    </div>
+  <div class="mb-2" id="sde-qa-ticker-label-wrap">
+    <label class="form-label small fw-semibold mb-0" style="white-space:nowrap">
+      Ticker
+      <span class="text-muted" style="font-weight:400;font-size:.72rem">
+        — uniquement tes positions et ta watchlist
+      </span>
+    </label>
+  </div>
+
+  <div class="mb-3 d-flex flex-wrap align-items-center gap-3">
+    <select id="sde-qa-ticker-select" class="form-select form-select-sm" style="width:100px"
+            onchange="qaLoadData()">
+      <option value="">Chargement…</option>
+    </select>
 
     <!-- Chiffres clés (ligne pour un ticker, tableau pour tout le portefeuille) —
-         aligné sur la même ligne que le sélecteur (padding-top ≈ hauteur du label) -->
-    <div id="sde-qa-data-wrap" style="flex:1;min-width:260px;padding-top:22px"></div>
+         sur la même ligne que le sélecteur, nom de société en tête pour combler l'espace -->
+    <div id="sde-qa-data-wrap" style="flex:1;min-width:260px"></div>
   </div>
 
   <div class="mb-3">
@@ -113,7 +114,8 @@
     const OFF = "background:#F1F5F9;color:var(--sde-muted);border:1px solid var(--sde-border)";
     btnT.setAttribute("style", (scope === "ticker" ? ON : OFF) + ";border-radius:7px;font-weight:600");
     btnP.setAttribute("style", (scope === "portefeuille" ? ON : OFF) + ";border-radius:7px;font-weight:600");
-    document.getElementById("sde-qa-ticker-wrap").classList.toggle("d-none", scope !== "ticker");
+    document.getElementById("sde-qa-ticker-label-wrap").classList.toggle("d-none", scope !== "ticker");
+    document.getElementById("sde-qa-ticker-select").classList.toggle("d-none", scope !== "ticker");
     qaLoadData();
   }
 
