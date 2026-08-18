@@ -33,7 +33,7 @@
   </div>
 
   <div class="mb-3 d-flex flex-wrap align-items-start gap-3">
-    <div id="sde-qa-ticker-wrap">
+    <div id="sde-qa-ticker-wrap" style="max-width:180px">
       <label class="form-label small fw-semibold">
         Ticker
         <span class="text-muted" style="font-weight:400;font-size:.72rem">
@@ -169,6 +169,9 @@
 
   function _renderLigne(l) {
     const items = [];
+    if (l.company) {
+      items.push(`<span class="text-muted">${l.company}</span>`);
+    }
     if (l.price != null) {
       items.push(`Prix : <strong>${l.sym}${l.price.toFixed(2)}</strong>
         <span style="color:${_pnlColor(l.var_1d)}">${_pct(l.var_1d)}</span>`);
