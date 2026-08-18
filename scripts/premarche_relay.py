@@ -63,7 +63,13 @@ def _derniere_cloture_reelle(t, yf) -> float | None:
     avec RELAY_FORCE, qui peut tourner à toute heure). Même logique que
     data/market.py::_cloture_avant_aujourdhui, dupliquée ici pour ne pas
     importer la chaîne de dépendances complète de data/market.py dans
-    ce runner CI minimal (pip install yfinance supabase seulement)."""
+    ce runner CI minimal (pip install yfinance supabase seulement).
+
+    Filtre aussi les Close NaN — Yahoo laisse parfois une clôture
+    manquante sur la séance la plus récente (constaté en réel le
+    18.08.2026 : TMC avait Close=NaN pour le 17.08, la veille pourtant
+    déjà clôturée) ; sans ce filtre, `.iloc[-1]` prend cette ligne NaN
+    et la propage jusqu'à l'écriture Supabase (JSON strict, rejette NaN)."""
     hist = yf.Ticker(t).history(period="5d")
     if hist is None or hist.empty:
         return None
@@ -73,10 +79,20 @@ def _derniere_cloture_reelle(t, yf) -> float | None:
         aujourdhui_et = datetime.datetime.now(zoneinfo.ZoneInfo("America/New_York")).date()
     except Exception:
         aujourdhui_et = datetime.date.today()
-    completes = hist[hist.index.date < aujourdhui_et]
+    completes = hist[(hist.index.date < aujourdhui_et) & hist["Close"].notna()]
     if completes.empty:
         return None
     return round(float(completes["Close"].iloc[-1]), 4)
+
+
+def _fini(x) -> bool:
+    """True si x est un nombre fini utilisable (pas None, pas NaN, pas
+    inf). yfinance renvoie parfois preMarketPrice = float('nan') plutôt
+    que None/absent — un `is None` ne l'attrape pas, et Supabase (JSON
+    strict) rejette NaN à l'écriture (constaté en réel le 18.08.2026 :
+    'Out of range float values are not JSON compliant: nan', FCEL et TMC)."""
+    import math
+    return x is not None and isinstance(x, (int, float)) and math.isfinite(x)
 
 
 def _tickers_en_position() -> list[str]:
@@ -125,21 +141,25 @@ def relayer() -> int:
             pm_price = info.get("preMarketPrice")
             pm_pct   = info.get("preMarketChangePercent")
             prev     = _derniere_cloture_reelle(t, yf)
-            if pm_price is None or (prev is None and pm_pct is None):
-                # Pas de donnée pré-marché pour ce titre à cet instant :
-                # on n'écrit RIEN (pas de fausse ligne), la ligne
-                # précédente périmera d'elle-même via fetched_at.
+            if not _fini(pm_price) or (not _fini(prev) and not _fini(pm_pct)):
+                # Pas de donnée pré-marché utilisable pour ce titre à cet
+                # instant (absente OU NaN) : on n'écrit RIEN (pas de
+                # fausse ligne), la ligne précédente périmera d'elle-même
+                # via fetched_at.
                 print(f"[Relay] {t} : pas de donnée pré-marché chez Yahoo")
                 continue
             # Gap calculé depuis les deux prix, pas le % Yahoo — ses
             # champs .info sont désynchronisés entre eux (constaté le
-            # 07.08.2026, même fix que get_premarket_gap côté app)
-            gap = (round((float(pm_price) / float(prev) - 1) * 100, 2) if prev
+            # 07.08.2026, même fix que get_premarket_gap côté app).
+            # _fini(prev), pas "if prev" : NaN est truthy en Python
+            # (bool(float('nan')) == True), un simple "if prev" laisserait
+            # passer un NaN vers la division.
+            gap = (round((float(pm_price) / float(prev) - 1) * 100, 2) if _fini(prev)
                    else round(float(pm_pct), 2))
             db.update_one("premarche_quotes", {"ticker": t}, {"$set": {
                 "prix":       round(float(pm_price), 4),
                 "gap_pct":    gap,
-                "prev_close": round(float(prev), 4) if prev else None,
+                "prev_close": round(float(prev), 4) if _fini(prev) else None,
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
             }}, upsert=True)
             ok += 1

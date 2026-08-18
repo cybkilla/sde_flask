@@ -395,6 +395,12 @@ def _cloture_avant_aujourdhui(hist) -> float | None:
     ligne "aujourd'hui" dès l'ouverture, mise à jour en direct — la
     prendre pour une "clôture" reviendrait à dupliquer le prix live).
     Fonction PURE, réutilisable sur un historique déjà en mémoire.
+
+    Filtre aussi les Close NaN — Yahoo laisse parfois une clôture
+    manquante sur la séance la plus récente (constaté en réel le
+    18.08.2026 : TMC avait Close=NaN pour le 17.08, la veille pourtant
+    déjà clôturée) ; sans ce filtre, `.iloc[-1]` prend cette ligne NaN
+    et la propage jusqu'à la sérialisation JSON en aval.
     """
     if hist is None or hist.empty:
         return None
@@ -404,7 +410,7 @@ def _cloture_avant_aujourdhui(hist) -> float | None:
         aujourdhui_et = datetime.datetime.now(zoneinfo.ZoneInfo("America/New_York")).date()
     except Exception:
         aujourdhui_et = datetime.date.today()
-    completes = hist[hist.index.date < aujourdhui_et]
+    completes = hist[(hist.index.date < aujourdhui_et) & hist["Close"].notna()]
     if completes.empty:
         return None
     return round(float(completes["Close"].iloc[-1]), 4)
@@ -453,15 +459,22 @@ def get_premarket_gap(ticker: str) -> dict | None:
         from db import find_one, is_available
         if is_available():
             row = find_one("premarche_quotes", {"ticker": ticker.upper()})
-            if row and row.get("prix") is not None and row.get("fetched_at"):
+            # _safe() sur CHAQUE champ, pas seulement à l'écriture : une
+            # ligne déposée avant le fix du 18.08.2026 (ou par un autre
+            # chemin) peut contenir un NaN déjà stocké — constaté en réel
+            # le même jour sur TMC (prix correct, gap_pct/prev_close NaN).
+            prix = _safe(row.get("prix")) if row else None
+            if row and prix is not None and row.get("fetched_at"):
                 from datetime import datetime, timezone
                 age_min = (datetime.now(timezone.utc)
                            - datetime.fromisoformat(row["fetched_at"])).total_seconds() / 60
                 if age_min <= 45:
+                    gap  = _safe(row.get("gap_pct"))
+                    prev = _safe(row.get("prev_close"))
                     return {
-                        "prix":       float(row["prix"]),
-                        "gap_pct":    float(row["gap_pct"]) if row.get("gap_pct") is not None else None,
-                        "prev_close": float(row["prev_close"]) if row.get("prev_close") is not None else None,
+                        "prix":       float(prix),
+                        "gap_pct":    float(gap)  if gap  is not None else None,
+                        "prev_close": float(prev) if prev is not None else None,
                     }
     except Exception as e:
         print(f"[Market] relais pré-marché illisible ({ticker}) : {e}", flush=True)
@@ -471,8 +484,14 @@ def get_premarket_gap(ticker: str) -> dict | None:
         import yfinance as yf
         from utils.net_timeout import with_timeout
         info = with_timeout(lambda: yf.Ticker(ticker.upper()).info, 8)
-        pm_price = info.get("preMarketPrice") if info else None
-        pm_pct   = info.get("preMarketChangePercent") if info else None
+        # _safe() (pas un simple .get()) : yfinance renvoie parfois NaN
+        # (pas None/absent) pour preMarketPrice — pd.isna() l'attrape,
+        # un "is None" ne l'aurait pas fait. NaN est en plus truthy en
+        # Python ("if prev" l'aurait laissé filer jusqu'à la division),
+        # et Supabase (JSON strict) rejette NaN à l'écriture — constaté
+        # en réel le 18.08.2026 côté relais (même fonction dupliquée).
+        pm_price = _safe(info.get("preMarketPrice")) if info else None
+        pm_pct   = _safe(info.get("preMarketChangePercent")) if info else None
         if pm_price is None:
             return None
         prev = with_timeout(lambda: _derniere_cloture_reelle(ticker), 8)
@@ -484,12 +503,12 @@ def get_premarket_gap(ticker: str) -> dict | None:
         # 12.93→13.59 = +5.1% — les champs du .info ne sont pas
         # synchronisés entre eux). Le % Yahoo ne sert plus que de secours
         # quand la clôture veille manque.
-        gap = (round((float(pm_price) / float(prev) - 1) * 100, 2) if prev
+        gap = (round((float(pm_price) / float(prev) - 1) * 100, 2) if prev is not None
                else round(float(pm_pct), 2))
         return {
             "prix":       round(float(pm_price), 4),
             "gap_pct":    gap,
-            "prev_close": round(float(prev), 4) if prev else None,
+            "prev_close": round(float(prev), 4) if prev is not None else None,
         }
     except Exception as e:
         print(f"[Market] get_premarket_gap({ticker}) indisponible : {e}", flush=True)

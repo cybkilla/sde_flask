@@ -90,6 +90,12 @@ class _FakeYFTicker:
             # ici aussi un leurre à 11.0)
             "CCC": {"preMarketPrice": 13.59, "preMarketChangePercent": 1.9,
                     "regularMarketPreviousClose": 11.0},
+            # NAN : cas réel FCEL/TMC du 18.08.2026 — yfinance renvoie
+            # parfois NaN (PAS None/absent) pour preMarketPrice. NaN est
+            # truthy en Python et fait planter la sérialisation JSON
+            # Supabase en aval si non filtré explicitement.
+            "NAN": {"preMarketPrice": float("nan"), "preMarketChangePercent": 2.0,
+                    "regularMarketPreviousClose": 9.0},
         }[self._s]
 
     def history(self, period="5d"):
@@ -100,7 +106,7 @@ class _FakeYFTicker:
         # la vraie clôture de vendredi). Index de vraies dates PASSÉES
         # (hier, avant-hier) : indispensable, le filtre "date < aujourd'hui"
         # ignorerait silencieusement une DataFrame sans DatetimeIndex.
-        closes = {"AAA": 5.0, "BBB": 1.0, "CCC": 12.93}
+        closes = {"AAA": 5.0, "BBB": 1.0, "CCC": 12.93, "NAN": 9.0}
         hier      = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
         avant_hier = hier - pd.Timedelta(days=1)
         return pd.DataFrame({"Close": [closes[self._s] - 0.3, closes[self._s]]},
@@ -113,18 +119,20 @@ fake_yf.Ticker = _FakeYFTicker
 sys.modules["yfinance"] = fake_yf
 
 db.find = lambda table, filt: [{"ticker": "AAA"}, {"ticker": "BBB"},
-                               {"ticker": "AAA"}, {"ticker": "CCC"}]
+                               {"ticker": "AAA"}, {"ticker": "CCC"}, {"ticker": "NAN"}]
 code = relay.relayer()
 assert code == 0
-assert len(ecrits) == 2                      # BBB sans donnée : PAS de ligne écrite
+assert len(ecrits) == 2                      # BBB sans donnée, NAN NaN : PAS de ligne écrite
 par_ticker = {e[1]: e for e in ecrits}
+assert "NAN" not in par_ticker, "un preMarketPrice NaN ne doit jamais être écrit (JSON non conforme)"
 table, ticker, fields, upsert = par_ticker["AAA"]
 assert (table, upsert) == ("premarche_quotes", True)
 assert fields["prix"] == 5.5 and fields["gap_pct"] == 10.0 and fields["prev_close"] == 5.0
 assert fields["fetched_at"]                  # horodatage présent pour la péremption
 ccc_fields = par_ticker["CCC"][2]
 assert ccc_fields["gap_pct"] == 5.1          # (13.59/12.93 - 1) × 100, PAS le +1.9 de Yahoo
-print("✓ relayer : dépôt OK, gap recalculé depuis les prix (pas le % Yahoo incohérent), sans donnée = jamais écrit")
+print("✓ relayer : dépôt OK, gap recalculé depuis les prix (pas le % Yahoo incohérent), "
+      "sans donnée ou NaN = jamais écrit")
 
 
 # ── Secrets manquants/invalides -> échec BRUYANT (run rouge), pas silence vert ──
@@ -151,6 +159,12 @@ r_aaa = get_premarket_gap("AAA")
 assert r_aaa["prev_close"] == 5.0, "doit venir de history(), pas du leurre 4.0 de l'info"
 assert r_aaa["gap_pct"] == round((5.5 / 5.0 - 1) * 100, 2)
 print("✓ get_premarket_gap direct : clôture veille = history(), pas regularMarketPreviousClose (cas réel TMC 10.08.2026)")
+
+# ── preMarketPrice = NaN (cas réel FCEL/TMC du 18.08.2026) -> None, jamais
+#    de NaN qui remonte jusqu'à la sérialisation JSON ──
+r_nan = get_premarket_gap("NAN")
+assert r_nan is None, "un preMarketPrice NaN doit dégrader vers None, pas planter ou renvoyer NaN"
+print("✓ get_premarket_gap direct : preMarketPrice NaN -> None, jamais de NaN qui fuit")
 
 
 # ── Hors fenêtre pré-marché -> sortie immédiate, aucun accès réseau/DB ──
@@ -194,5 +208,18 @@ assert _cloture_avant_aujourdhui(pd.DataFrame({"Close": []})) is None
 hist_que_aujourdhui = pd.DataFrame({"Close": [4.60]}, index=pd.DatetimeIndex([_aujourdhui]))
 assert _cloture_avant_aujourdhui(hist_que_aujourdhui) is None
 print("✓ _cloture_avant_aujourdhui : historique vide ou sans séance antérieure -> None, pas de faux prix")
+
+# Close NaN sur la séance la plus récente (cas réel TMC 18.08.2026 :
+# Yahoo avait Close=NaN pour la veille, .iloc[-1] la prenait quand même
+# et le NaN se propageait jusqu'à la sérialisation JSON en aval) —
+# doit sauter cette ligne et prendre la dernière clôture VALIDE
+_avant_avant_hier = _avant_hier - pd.Timedelta(days=1)
+hist_nan_recent = pd.DataFrame(
+    {"Close": [4.02, 4.12, float("nan")]},   # avant-avant-hier, avant-hier (valide), hier (NaN chez Yahoo)
+    index=pd.DatetimeIndex([_avant_avant_hier, _avant_hier, _hier]),
+)
+assert _cloture_avant_aujourdhui(hist_nan_recent) == 4.12, \
+    "doit ignorer la ligne NaN et prendre la dernière clôture valide, pas planter ni renvoyer NaN"
+print("✓ _cloture_avant_aujourdhui : Close NaN sur la séance la plus récente -> ignorée, dernière clôture valide retenue")
 
 print("\n✓ Tous les tests test_premarche_relay.py sont OK (hors réseau)")
