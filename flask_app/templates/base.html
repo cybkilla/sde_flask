@@ -57,6 +57,11 @@
         <i class="bi bi-briefcase"></i>
         <span class="hide-xs">Positions</span>
       </a>
+      <a href="{{ url_for('portfolio.questions_page') }}" class="sde-nav-btn"
+         title="Questions sur mes positions">
+        <i class="bi bi-chat-square-text"></i>
+        <span class="hide-xs">Questions</span>
+      </a>
       {% if current_user.email in admin_emails %}
       <a href="{{ url_for('admin.dashboard') }}" class="sde-nav-btn"
          title="Dashboard admin">

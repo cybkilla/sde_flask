@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}SDE — Questions sur mes positions{% endblock %}
+
+{% block content %}
+
+<div class="sde-ticker-header mb-3">
+  <div style="flex:1">
+    <div class="d-flex align-items-center gap-2">
+      <span class="sde-ticker-name">
+        <i class="bi bi-chat-square-text me-1"></i>Questions sur mes positions
+      </span>
+    </div>
+    <div class="sde-ticker-meta mt-1">
+      Pose une question sur un titre suivi ou tout ton portefeuille — SDE répond
+      uniquement à partir de ses propres données, jamais d'un autre sujet.
+    </div>
+  </div>
+</div>
+
+<div class="sde-card mb-3">
+  <div class="mb-3">
+    <label class="form-label small fw-semibold">Portée de la question</label>
+    <div class="d-flex gap-2 flex-wrap">
+      <button type="button" id="sde-qa-scope-ticker" onclick="qaSetScope('ticker')"
+              class="btn btn-sm" style="border-radius:7px;font-weight:600">
+        <i class="bi bi-tag me-1"></i>Un ticker précis
+      </button>
+      <button type="button" id="sde-qa-scope-portefeuille" onclick="qaSetScope('portefeuille')"
+              class="btn btn-sm" style="border-radius:7px;font-weight:600">
+        <i class="bi bi-briefcase me-1"></i>Tout mon portefeuille
+      </button>
+    </div>
+  </div>
+
+  <div class="mb-3" id="sde-qa-ticker-wrap">
+    <label class="form-label small fw-semibold">Ticker</label>
+    <select id="sde-qa-ticker-select" class="form-select form-select-sm" style="max-width:280px">
+      <option value="">Chargement…</option>
+    </select>
+    <p class="text-muted mt-1 mb-0" style="font-size:.72rem">
+      Uniquement tes positions et ta watchlist.
+    </p>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label small fw-semibold">Ta question</label>
+    <textarea id="sde-qa-question" class="form-control form-control-sm" rows="3"
+              maxlength="500"
+              placeholder="ex : est-ce que je devrais renforcer maintenant, ou attendre un meilleur signal ?"></textarea>
+  </div>
+
+  <div id="sde-qa-error" class="text-danger small mb-2 d-none"></div>
+
+  <button class="btn btn-sm fw-semibold" id="sde-qa-submit" onclick="qaAsk()"
+          style="background:#1D9E75;color:#fff;border:none;border-radius:7px;padding:6px 18px">
+    <i class="bi bi-send me-1"></i>Demander à SDE
+  </button>
+</div>
+
+<div class="sde-card mb-3 d-none" id="sde-qa-response-wrap">
+  <div class="sde-section-title mb-2" style="font-size:.8rem">
+    <i class="bi bi-robot me-1"></i>Réponse de SDE
+  </div>
+  <div id="sde-qa-response" style="font-size:.86rem;line-height:1.7;white-space:pre-line"></div>
+</div>
+
+<p class="sde-disclaimer mt-2">
+  SDE est un outil d'aide à la décision. Ces réponses ne constituent pas un conseil financier —
+  elles s'appuient sur les données et conseils déjà présents dans l'app, jamais sur des
+  informations extérieures.
+</p>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+  let _scope = "ticker";
+
+  function qaSetScope(scope) {
+    _scope = scope;
+    const btnT = document.getElementById("sde-qa-scope-ticker");
+    const btnP = document.getElementById("sde-qa-scope-portefeuille");
+    const ON  = "background:#1D9E75;color:#fff;border:none";
+    const OFF = "background:#F1F5F9;color:var(--sde-muted);border:1px solid var(--sde-border)";
+    btnT.setAttribute("style", (scope === "ticker" ? ON : OFF) + ";border-radius:7px;font-weight:600");
+    btnP.setAttribute("style", (scope === "portefeuille" ? ON : OFF) + ";border-radius:7px;font-weight:600");
+    document.getElementById("sde-qa-ticker-wrap").classList.toggle("d-none", scope !== "ticker");
+  }
+
+  function qaLoadTickers() {
+    fetch("/portfolio/questions/tickers")
+      .then(r => r.json())
+      .then(d => {
+        const sel = document.getElementById("sde-qa-ticker-select");
+        if (!d.ok || !d.tickers || d.tickers.length === 0) {
+          sel.innerHTML = `<option value="">Aucun ticker suivi</option>`;
+          return;
+        }
+        sel.innerHTML = d.tickers.map(t => `<option value="${t}">${t}</option>`).join("");
+      })
+      .catch(() => {
+        document.getElementById("sde-qa-ticker-select").innerHTML =
+          `<option value="">Erreur de chargement</option>`;
+      });
+  }
+
+  window.qaSetScope = qaSetScope;
+
+  window.qaAsk = function () {
+    const errEl  = document.getElementById("sde-qa-error");
+    const respWrap = document.getElementById("sde-qa-response-wrap");
+    const respEl = document.getElementById("sde-qa-response");
+    const btn    = document.getElementById("sde-qa-submit");
+    const question = document.getElementById("sde-qa-question").value.trim();
+    const ticker   = document.getElementById("sde-qa-ticker-select").value;
+
+    errEl.classList.add("d-none");
+    if (!question) {
+      errEl.textContent = "Écris une question avant de l'envoyer.";
+      errEl.classList.remove("d-none");
+      return;
+    }
+    if (_scope === "ticker" && !ticker) {
+      errEl.textContent = "Choisis un ticker.";
+      errEl.classList.remove("d-none");
+      return;
+    }
+
+    const btnHtml0 = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>SDE réfléchit…`;
+    respWrap.classList.add("d-none");
+
+    fetch("/portfolio/questions/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+      body: JSON.stringify({ scope: _scope, ticker: ticker, question: question }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          respEl.textContent = d.reponse;
+          respWrap.classList.remove("d-none");
+        } else {
+          errEl.textContent = d.error || "Erreur inconnue.";
+          errEl.classList.remove("d-none");
+        }
+      })
+      .catch(() => {
+        errEl.textContent = "Erreur réseau — réessaie dans un instant.";
+        errEl.classList.remove("d-none");
+      })
+      .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = btnHtml0;
+      });
+  };
+
+  qaSetScope("ticker");
+  qaLoadTickers();
+})();
+</script>
+{% endblock %}

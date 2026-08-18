@@ -162,7 +162,12 @@ Modèle : `openai/gpt-oss-120b` (migré le 15.08.2026 — `llama-3.3-70b-versati
 décommissionné par Groq le 16.08.2026 ; nouveau modèle moins cher et
 plus rapide en pratique, `reasoning_effort: "low"` pour éviter qu'une
 partie du budget de tokens parte dans un raisonnement caché inutile
-pour une explication courte).
+pour une explication courte). Depuis le 18.08.2026, sert aussi la page
+"Questions sur mes positions" (`analysis/qa_positions.py`) —
+`reasoning_effort: "medium"` cette fois (réponses plus longues, parfois
+comparatives entre plusieurs titres), prompt système qui n'autorise que
+les données du ticker/portefeuille choisi et refuse explicitement tout
+le reste.
 **Prix** : gratuit — 14 400 requêtes/jour.
 
 ### Gemini (Google AI Studio)

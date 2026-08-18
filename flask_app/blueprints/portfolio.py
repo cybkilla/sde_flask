@@ -1,6 +1,6 @@
 # flask_app/blueprints/portfolio.py — positions + conseils journaliers
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template
 from flask_login import current_user, login_required
 
 bp = Blueprint("portfolio", __name__, url_prefix="/portfolio")
@@ -494,4 +494,46 @@ def get_advice(ticker: str):
     except Exception as e:
         import traceback
         print(traceback.format_exc(), flush=True)   # trace dans les logs, PAS au client
+        return jsonify({"ok": False, "error": "Erreur interne — voir les logs serveur."}), 500
+
+
+# ── Q&A positions/portefeuille (18.08.2026) ────────────────────────────────────
+
+@bp.route("/questions")
+@login_required
+def questions_page():
+    """Page du formulaire de questions — le menu de tickers est peuplé côté
+    client via /portfolio/questions/tickers pour rester à jour sans recharger
+    la page après un ajout de position/watchlist."""
+    return render_template("questions.html")
+
+
+@bp.route("/questions/tickers")
+@login_required
+def questions_tickers():
+    """Tickers autorisés pour le sélecteur — même source que la validation
+    de portée côté serveur (analysis/qa_positions.py::tickers_disponibles)."""
+    try:
+        from analysis.qa_positions import tickers_disponibles
+        return jsonify({"ok": True, "tickers": tickers_disponibles(current_user.id)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@bp.route("/questions/ask", methods=["POST"])
+@login_required
+def questions_ask():
+    """Répond à une question scopée sur un ticker ou tout le portefeuille —
+    voir analysis/qa_positions.py pour la portée et les garde-fous."""
+    try:
+        from analysis.qa_positions import ask
+        data     = request.get_json(silent=True) or {}
+        scope    = data.get("scope", "")
+        ticker   = data.get("ticker")
+        question = data.get("question", "")
+        result   = ask(current_user.id, scope, ticker, question)
+        return jsonify(result)
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc(), flush=True)
         return jsonify({"ok": False, "error": "Erreur interne — voir les logs serveur."}), 500

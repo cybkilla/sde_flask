@@ -129,6 +129,14 @@ LLM_MAX_TOKENS = 220     # marge pour 3 phrases complètes (~60 mots)
 LLM_TIMEOUT    = 15      # secondes avant abandon
 LLM_ENABLED    = True    # False = désactive le LLM, fallback systématique
 
+# ── Q&A positions/portefeuille (18.08.2026) ───────────────
+# Réponse plus longue que l'explication de score (5-8 phrases, pas 3) et
+# raisonnement plus riche (compare plusieurs signaux/tickers) — d'où un
+# budget de tokens et un effort de raisonnement supérieurs à LLM_MAX_TOKENS.
+QA_MAX_TOKENS       = 500
+QA_REASONING_EFFORT = "medium"
+QA_TIMEOUT          = 20
+
 # ── Resend — envoi d'emails d'alerte (HTTP, port 443) ────
 # Compte gratuit : https://resend.com/ → API Keys
 # RESEND_FROM doit être une adresse vérifiée sur Resend.
