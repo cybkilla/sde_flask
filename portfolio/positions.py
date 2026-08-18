@@ -79,10 +79,23 @@ def get_portfolio_summary(username: str, ticker: str, current_price: float) -> d
     valeur_actuelle   = total_shares * (current_price or 0)
     pnl_non_realise   = total_shares * ((current_price or 0) - cout_moyen) if total_shares > 0 else 0
 
-    # P&L total = réalisé + non réalisé
+    # P&L total = réalisé + non réalisé — dilué sur TOUT l'historique
+    # d'achat (base_cout_total inclut les actions déjà revendues) :
+    # "comment cette idée de trade a performé depuis le début", légitime
+    # pour un affichage de performance globale (résumé, rapport hebdo).
     pnl_total         = pnl_realise + pnl_non_realise
     base_cout_total   = total_buy_amount  # coût total de tous les achats
     pnl_pct           = (pnl_total / base_cout_total * 100) if base_cout_total > 0 else 0
+
+    # P&L de la position ACTUELLE seule (non dilué par l'historique de
+    # ventes) — signalé le 18.08.2026 : pnl_pct dilué atténue toujours le
+    # pourcentage vers zéro (peu importe le signe du P&L réalisé), ce qui
+    # retardait le déclenchement des seuils de risque (stop loss, take
+    # profit, renforcement) par rapport à ce que le % ATR configuré est
+    # censé protéger. C'est CETTE valeur que l'advisor doit utiliser pour
+    # toute décision sur la position détenue aujourd'hui.
+    pnl_position_pct  = (round((current_price - cout_moyen) / cout_moyen * 100, 2)
+                         if current_price and cout_moyen > 0 and total_shares > 0 else None)
 
     position_fermee   = total_shares <= 0
 
@@ -96,6 +109,7 @@ def get_portfolio_summary(username: str, ticker: str, current_price: float) -> d
         "pnl_non_realise":   round(pnl_non_realise,    2),
         "pnl_euros":         round(pnl_total,          2),
         "pnl_pct":           round(pnl_pct,            2),
+        "pnl_position_pct":  pnl_position_pct,
         "currency":          lots[0].get("currency", "USD"),
         "position_fermee":   position_fermee,
     }

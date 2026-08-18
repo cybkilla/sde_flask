@@ -121,7 +121,7 @@ from portfolio.advisor import generate_advice
 _hist_gap = make_ohlc(0.05)
 _market   = {"price": float(_hist_gap["Close"].iloc[-1]), "rsi": 50.0,
              "history": _hist_gap, "gap_overnight": -7.2}
-_summary  = {"pnl_pct": 5.0, "total_shares": 100, "cout_moyen": 100.0,
+_summary  = {"pnl_pct": 5.0, "pnl_position_pct": 5.0, "total_shares": 100, "cout_moyen": 100.0,
              "lots": [{"type": "achat", "date_achat": "2026-04-01"}]}
 _snap     = {"score_global": 50.0, "recommandation": "NEUTRE",
              "signals_tech": [], "signals_fund": []}
@@ -192,7 +192,7 @@ _candle_bear = {"signal": "bearish", "pattern": "Étoile du soir",
                 "description": "",
                 "date": (_dt.date.today() - _dt.timedelta(days=1)).strftime("%d.%m.%Y")}
 _m_tmc = {"price": 3.99, "rsi": 45.0, "history": make_ohlc(0.06)}
-_s_tmc = {"pnl_pct": -0.5, "total_shares": 10768, "cout_moyen": 4.01,
+_s_tmc = {"pnl_pct": -0.5, "pnl_position_pct": -0.5, "total_shares": 10768, "cout_moyen": 4.01,
           "lots": [{"type": "achat", "date_achat": "2026-06-01"}]}
 _snap_tmc = {"score_global": 41.4, "recommandation": "VENDRE",
              "signals_tech": [], "signals_fund": []}
@@ -211,7 +211,7 @@ print("✓ surclassement chandelier : texte cohérent avec l'action (cas TMC 14.
 # (drawdown 0) pour isoler la règle chandelier testée ici.
 _prix_hwm = float(_m_tmc["history"]["Close"].max()) * 1.01
 _m_rebond = {**_m_tmc, "price": _prix_hwm, "var_1d": 5.5}
-_s_rebond = {**_s_tmc, "pnl_pct": 5.0}
+_s_rebond = {**_s_tmc, "pnl_pct": 5.0, "pnl_position_pct": 5.0}
 adv_rebond = generate_advice(_s_rebond, _m_rebond, _snap_tmc, candle_info=_candle_bear)
 assert adv_rebond["action"] == "TENIR", \
     f"rebond +5.5% doit invalider le pattern baissier, obtenu {adv_rebond['action']}"
@@ -233,7 +233,7 @@ print("✓ invalidation : rebond ≥2% → TENIR, petit rebond ou var inconnu �
 # aujourd'hui) → le même pattern ne doit PAS re-suggérer une réduction
 # (vécu TMC 15.07 : ALLÉGER 2692 suivi → nouvel ALLÉGER 2019 sur le restant)
 from datetime import date as _date
-_s_vendu = {"pnl_pct": 2.3, "total_shares": 8076, "cout_moyen": 4.01,
+_s_vendu = {"pnl_pct": 2.3, "pnl_position_pct": 2.3, "total_shares": 8076, "cout_moyen": 4.01,
             "lots": [
                 {"type": "achat", "date_achat": "2026-06-01", "quantite": 10768},
                 {"type": "vente", "date_achat": str(_date.today()), "quantite": 2692},
@@ -261,7 +261,7 @@ print("✓ mémoire du jour : vente aujourd'hui → pas de nouvel ALLÉGER ; hie
 _hier      = (_date.today() - _dt.timedelta(days=1)).strftime("%Y-%m-%d")
 _avant_hier = (_date.today() - _dt.timedelta(days=2)).strftime("%Y-%m-%d")
 
-_s_achat_hier = {"pnl_pct": -2.7, "total_shares": 2793, "cout_moyen": 3.825,
+_s_achat_hier = {"pnl_pct": -2.7, "pnl_position_pct": -2.7, "total_shares": 2793, "cout_moyen": 3.825,
                  "lots": [{"type": "achat", "date_achat": _hier, "quantite": 2793}]}
 adv_cooldown = generate_advice(_s_achat_hier, _m_calme, _snap_tmc, candle_info=_candle_bear)
 assert adv_cooldown["action"] == "TENIR", \
@@ -276,7 +276,7 @@ assert adv_hors_cooldown["action"] == "ALLÉGER", \
     "achat d'il y a 2 jours (hors cooldown de 1j) → l'escalade doit redevenir normale"
 
 # Le stop loss reste un contrôle de RISQUE, jamais suspendu par le cooldown
-_s_achat_perte = {"pnl_pct": -30.0, "total_shares": 2793, "cout_moyen": 5.5,
+_s_achat_perte = {"pnl_pct": -30.0, "pnl_position_pct": -30.0, "total_shares": 2793, "cout_moyen": 5.5,
                   "lots": [{"type": "achat", "date_achat": _hier, "quantite": 2793}]}
 adv_stop_cooldown = generate_advice(_s_achat_perte, _m_calme, _snap_tmc, candle_info=_candle_bear)
 assert adv_stop_cooldown["action"] == "VENDRE", \
@@ -289,7 +289,7 @@ print("✓ cooldown post-achat : achat d'hier → pas d'allégement discrétionn
 # Position entièrement vendue HIER + signal fort → conseil ACHETER
 # (avant : summary existait → monde 'sans position' inaccessible → jamais
 # de conseil de ré-entrée)
-_s_clos = {"pnl_pct": 5.2, "total_shares": 0, "cout_moyen": 4.01,
+_s_clos = {"pnl_pct": 5.2, "pnl_position_pct": 5.2, "total_shares": 0, "cout_moyen": 4.01,
            "pnl_realise": 215.36, "position_fermee": True,
            "lots": [
                {"type": "achat", "date_achat": "2026-06-01", "quantite": 10768, "prix_achat": 4.01},
@@ -371,7 +371,7 @@ assert "Trésorerie suivie disponible" in adv_cash["raisonnement"]
 
 # RENFORCER plafonné : 25% de 10768 = 2692, mais cash pour ~50 actions
 # (le plafond se calcule sur market['price'] — le cours actuel du titre)
-_s_creux  = {"pnl_pct": -8.0, "total_shares": 10768, "cout_moyen": 4.01,
+_s_creux  = {"pnl_pct": -8.0, "pnl_position_pct": -8.0, "total_shares": 10768, "cout_moyen": 4.01,
              "lots": [{"type": "achat", "date_achat": "2026-06-01", "quantite": 10768}]}
 _m_creux  = {**_m_tmc, "rsi": 35.0}
 _snap_ach = {"score_global": 62.0, "recommandation": "ACHETER",
@@ -455,7 +455,7 @@ print("✓ fraîcheur pattern : > 3 jours → information seulement, ≤ 3 jours
 # RENFORCER (l'utilisateur avait dû acheter SANS conseil ce jour-là :
 # la règle P&L ratait les soldes du marché)
 _m_krach = {**_m_tmc, "price": 3.83, "var_1d": -6.8, "rsi": 34.0}
-_s_krach = {"pnl_pct": -4.6, "total_shares": 8076, "cout_moyen": 4.01,
+_s_krach = {"pnl_pct": -4.6, "pnl_position_pct": -4.6, "total_shares": 8076, "cout_moyen": 4.01,
             "lots": [{"type": "import", "date_achat": "2026-07-08", "quantite": 10768}]}
 _snap_krach = {"score_global": 57.0, "recommandation": "ACHETER",
                "signals_tech": [], "signals_fund": []}
@@ -491,6 +491,30 @@ _m_sans_po = {k: v for k, v in _m_po.items() if k != "post_ouverture"}
 adv_spo = generate_advice(_s_krach, _m_sans_po, _snap_krach, cash_dispo=10800.0)
 assert "après la première heure de séance" not in adv_spo["raisonnement"]
 print("✓ post-ouverture : marqueur présent avec le flag, absent sans")
+
+
+# ── pnl_position_pct (pas pnl_pct) pilote les seuils de risque ──
+# Signalé le 18.08.2026 : pnl_pct est dilué sur tout l'historique d'achat
+# (ventes passées comprises) et atténue TOUJOURS le pourcentage vers
+# zéro — cas réel TMC : -4.1% dilué vs -5.1% sur la position actuelle
+# seule. Ici, pnl_pct (-3%) reste AU-DESSUS du seuil de renforcement
+# (-5%, config par défaut sans ATR) et ne déclencherait rien seul, mais
+# pnl_position_pct (-6%) le franchit — generate_advice() doit suivre ce
+# dernier, pas le dilué.
+_m_dilution = {"price": 9.4, "rsi": 35.0}   # RSI bas -> condition RSI remplie
+_s_dilution = {"pnl_pct": -3.0, "pnl_position_pct": -6.0,
+               "total_shares": 100, "cout_moyen": 10.0,
+               "lots": [{"type": "achat", "date_achat": "2026-06-01"}]}
+_snap_dilution = {"score_global": 58.0, "recommandation": "ACHETER",
+                  "signals_tech": [], "signals_fund": []}
+adv_dilution = generate_advice(_s_dilution, _m_dilution, _snap_dilution)
+assert adv_dilution["action"] == "RENFORCER", \
+    (f"pnl_position_pct (-6%) sous le seuil (-5%) doit déclencher RENFORCER "
+     f"même si pnl_pct dilué (-3%) ne le franchit pas, obtenu {adv_dilution['action']}")
+assert "-6.0%" in adv_dilution["raisonnement"], \
+    "le raisonnement doit citer le P&L de la position actuelle, pas le dilué"
+print("✓ seuils de risque : pilotés par pnl_position_pct (non dilué), pas par pnl_pct "
+      "(cas réel TMC du 18.08.2026 : le dilué aurait retardé le déclenchement)")
 
 
 # ── etat_compte : la métrique objectif (compte total) et son benchmark ──
@@ -573,7 +597,7 @@ _calib_2007 = [
 _snap_2007 = {"score_global": 41.3, "recommandation": "VENDRE",
              "signals_tech": _signals_2007, "calibration": _calib_2007}
 _m_2007 = {"price": 3.69, "rsi": 31.4, "history": None}
-_s_2007 = {"pnl_pct": -7.05, "total_shares": 8152, "cout_moyen": 3.97,
+_s_2007 = {"pnl_pct": -7.05, "pnl_position_pct": -7.05, "total_shares": 8152, "cout_moyen": 3.97,
           "lots": [{"type": "import", "date_achat": "2026-07-08", "quantite": 8152}]}
 adv_2007 = generate_advice(_s_2007, _m_2007, _snap_2007, cash_dispo=10245.85)
 assert adv_2007["action"] == "TENIR", \

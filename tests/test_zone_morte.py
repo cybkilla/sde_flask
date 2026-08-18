@@ -12,7 +12,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 from portfolio.advisor import generate_advice
 
 _market = {"price": 13.17, "rsi": 55.0}   # RSI 55 > seuil rsi_renforcer (42) -> pas oversold
-_summary = {"pnl_pct": -4.6, "total_shares": 100, "cout_moyen": 13.80,
+_summary = {"pnl_pct": -4.6, "pnl_position_pct": -4.6, "total_shares": 100, "cout_moyen": 13.80,
             "lots": [{"type": "achat", "date_achat": "2026-06-01"}]}
 _snap = {"score_global": 73.3, "recommandation": "ACHETER",
          "signals_tech": [], "signals_fund": []}
@@ -26,7 +26,7 @@ print("✓ zone morte : score fort + RSI pas oversold -> raison explicite dans l
 
 # ── Variante : RSI oversold mais repli pas assez profond (seuil par défaut -5%) ──
 _market2 = {"price": 13.17, "rsi": 35.0}   # RSI sous le seuil -> seule la raison P&L doit apparaître
-_summary2 = {**_summary, "pnl_pct": -2.5}
+_summary2 = {**_summary, "pnl_pct": -2.5, "pnl_position_pct": -2.5}
 adv2 = generate_advice(_summary2, _market2, _snap)
 assert adv2["action"] == "TENIR"
 assert "repli (-2.5%) n'atteint pas encore le seuil de renforcement" in adv2["raisonnement"]
@@ -41,7 +41,7 @@ _snap_faible = {"score_global": 50.0, "recommandation": "NEUTRE",
 adv3 = generate_advice(_summary, _market, _snap_faible)
 assert "pas de renforcement" not in adv3["raisonnement"]
 
-_summary_profit = {**_summary, "pnl_pct": 3.0}
+_summary_profit = {**_summary, "pnl_pct": 3.0, "pnl_position_pct": 3.0}
 adv4 = generate_advice(_summary_profit, _market, _snap)
 assert "pas de renforcement" not in adv4["raisonnement"]
 print("✓ zone morte : aucune note quand le score est faible ou la position déjà en profit")

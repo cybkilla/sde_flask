@@ -206,7 +206,7 @@ from portfolio.advisor import generate_advice
 
 _hist_ind = make_trend(+0.001, n=60)   # juste pour ATR/historique du conseil
 _m_base   = {"price": float(_hist_ind["Close"].iloc[-1]), "rsi": 30.0, "history": _hist_ind}
-_s_base   = {"pnl_pct": -2.0, "total_shares": 1000, "cout_moyen": 10.0,
+_s_base   = {"pnl_pct": -2.0, "pnl_position_pct": -2.0, "total_shares": 1000, "cout_moyen": 10.0,
              "lots": [{"type": "achat", "date_achat": "2024-01-01", "quantite": 1000}]}
 _snap_vendre_fort = {"score_global": 30.0, "recommandation": "VENDRE",
                      "signals_tech": [], "signals_fund": []}

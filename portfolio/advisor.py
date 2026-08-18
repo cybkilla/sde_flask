@@ -384,7 +384,15 @@ def generate_advice(summary: dict | None, market: dict, snapshot: dict,
         return _finalize(base)
 
     # ── Cas 2 : position existante ────────────────────────────────────────────
-    pnl_pct      = float(summary["pnl_pct"])
+    # pnl_position_pct (pas pnl_pct) : le P&L de la position ACTUELLE seule,
+    # non dilué par l'historique des ventes déjà réalisées — sinon les
+    # seuils de risque (stop loss, take profit, renforcement) se
+    # déclenchent plus tard que le % ATR configuré ne le laisse croire
+    # (signalé le 18.08.2026). Repli sur pnl_pct si jamais absent (ne
+    # devrait pas arriver en pratique — total_shares > 0 ici, la position
+    # fermée ayant déjà été écartée plus haut).
+    ppp          = summary.get("pnl_position_pct")
+    pnl_pct      = float(ppp if ppp is not None else summary["pnl_pct"])
     total_shares = float(summary["total_shares"])
     cout_moyen   = float(summary["cout_moyen"])
 
