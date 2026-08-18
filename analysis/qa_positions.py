@@ -36,9 +36,14 @@ def tickers_disponibles(username: str) -> list[str]:
     return sorted(pos | wl)
 
 
-def _bloc_ticker(username: str, ticker: str) -> str | None:
-    """Bloc de contexte texte pour UN ticker — None si SDE n'a strictement
-    aucune donnée dessus (ni prix, ni position, ni conseil)."""
+def _donnees_ticker(username: str, ticker: str) -> dict | None:
+    """
+    Données brutes pour UN ticker (prix, position, conseil du jour,
+    fiabilité, résultats trimestriels) — None si SDE n'a strictement
+    aucune donnée dessus (ni prix, ni position, ni conseil). Source
+    unique réutilisée à la fois pour le texte envoyé au LLM
+    (_bloc_ticker) et l'affichage structuré de la page (donnees_affichage).
+    """
     from data.market import get_live_price, get_next_earnings
     from portfolio.positions import get_positions, get_portfolio_summary
     from portfolio.advisor import get_today_advice, get_advice_history
@@ -62,11 +67,27 @@ def _bloc_ticker(username: str, ticker: str) -> str | None:
     lots    = get_positions(username, ticker) or []
     company = next((l["company"] for l in lots if l.get("company")), ticker)
 
-    lignes = [f"### {ticker} ({company})"]
-    if price is not None:
-        var = live.get("var_1d")
+    return {
+        "ticker": ticker, "company": company,
+        "price": price, "var_1d": live.get("var_1d"),
+        "summary": summary, "advice": advice,
+        "stats": stats, "earnings": earnings,
+    }
+
+
+def _bloc_ticker(username: str, ticker: str) -> str | None:
+    """Bloc de contexte TEXTE pour UN ticker, envoyé au LLM — None si
+    aucune donnée (cf. _donnees_ticker)."""
+    d = _donnees_ticker(username, ticker)
+    if not d:
+        return None
+    summary, advice, stats, earnings = d["summary"], d["advice"], d["stats"], d["earnings"]
+
+    lignes = [f"### {d['ticker']} ({d['company']})"]
+    if d["price"] is not None:
+        var = d["var_1d"]
         var_txt = f" ({var:+.2f}% aujourd'hui)" if var is not None else ""
-        lignes.append(f"Prix actuel : {price}${var_txt}")
+        lignes.append(f"Prix actuel : {d['price']}${var_txt}")
 
     if summary and not summary.get("position_fermee"):
         ppp = summary.get("pnl_position_pct")
@@ -112,6 +133,93 @@ def _bloc_ticker(username: str, ticker: str) -> str | None:
     return "\n".join(lignes)
 
 
+def _tickers_detenus(username: str) -> list[str]:
+    """Tickers avec une position OUVERTE (total_shares > 0) — sous-ensemble
+    de tickers_disponibles(), qui inclut aussi la watchlist et les positions
+    clôturées."""
+    from portfolio.positions import get_positions, get_portfolio_summary
+    tickers_lots = sorted({l["ticker"] for l in (get_positions(username) or [])
+                           if l.get("ticker")})
+    detenus = []
+    for t in tickers_lots:
+        s = get_portfolio_summary(username, t, 0)   # prix=0 : juste pour tester position_fermee
+        if s and not s.get("position_fermee"):
+            detenus.append(t)
+    return detenus
+
+
+_SYM = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥",
+        "CHF": "Fr", "CAD": "CA$", "AUD": "A$", "HKD": "HK$"}
+
+
+def _ligne_affichage(d: dict) -> dict:
+    """Transforme les données brutes d'un ticker (_donnees_ticker) en une
+    ligne JSON-sérialisable pour l'affichage structuré de la page — même
+    source que _bloc_ticker, mais en champs plutôt qu'en texte."""
+    summary, advice, stats, earnings = d["summary"], d["advice"], d["stats"], d["earnings"]
+    position_ouverte = bool(summary and not summary.get("position_fermee"))
+    currency = (summary or {}).get("currency", "USD")
+
+    earnings_txt = None
+    if earnings:
+        if earnings.get("statut") == "publie":
+            vs = (f" vs {earnings['eps_estimate']}$" if earnings.get("eps_estimate") is not None else "")
+            earnings_txt = f"Publiés {earnings['date']} : BPA {earnings.get('eps_actual')}${vs}"
+        else:
+            earnings_txt = f"Dans {earnings['jours']} j ({earnings['date']})"
+
+    stats_suffisants = bool(stats and stats.get("total", 0) >= 3)
+
+    return {
+        "ticker":           d["ticker"],
+        "company":          d["company"],
+        "sym":              _SYM.get(currency, "$"),
+        "price":            d["price"],
+        "var_1d":           d["var_1d"],
+        "shares":           summary.get("total_shares")     if position_ouverte else None,
+        "cout_moyen":       summary.get("cout_moyen")        if position_ouverte else None,
+        "pnl_position_pct": summary.get("pnl_position_pct")  if position_ouverte else None,
+        "action":           advice.get("action")    if advice else None,
+        "score":            advice.get("score_sde") if advice else None,
+        "taux_pct":         stats.get("taux_pct") if stats_suffisants else None,
+        "total_evalues":    stats.get("total")     if stats_suffisants else None,
+        "earnings_txt":     earnings_txt,
+    }
+
+
+def donnees_affichage(username: str, scope: str, ticker: str | None) -> dict:
+    """
+    Données STRUCTURÉES (pas le texte du prompt LLM) pour l'affichage de
+    la page — mêmes garde-fous de portée que _contexte(). Retourne
+    {"ok": True, "lignes": [...]} ou {"ok": False, "error": str}.
+    """
+    autorises = tickers_disponibles(username)
+
+    if scope == "ticker":
+        ticker = (ticker or "").upper()
+        if not ticker or ticker not in autorises:
+            return {"ok": False, "error": "Ce ticker n'est ni dans tes positions ni dans ta watchlist."}
+        d = _donnees_ticker(username, ticker)
+        if not d:
+            return {"ok": False, "error": "Aucune donnée disponible sur ce ticker pour l'instant."}
+        return {"ok": True, "lignes": [_ligne_affichage(d)]}
+
+    if scope == "portefeuille":
+        detenus = _tickers_detenus(username)
+        if not detenus:
+            return {"ok": False, "error": "Aucune position détenue pour l'instant."}
+        lignes = []
+        for t in detenus:
+            d = _donnees_ticker(username, t)
+            if d:
+                lignes.append(_ligne_affichage(d))
+        if not lignes:
+            return {"ok": False, "error": "Aucune donnée disponible sur les positions détenues."}
+        return {"ok": True, "lignes": lignes}
+
+    return {"ok": False, "error": "Portée inconnue."}
+
+
 def _contexte(username: str, scope: str, ticker: str | None) -> tuple[str | None, str | None]:
     """Retourne (contexte, erreur) — l'un des deux est toujours None."""
     autorises = tickers_disponibles(username)
@@ -126,14 +234,7 @@ def _contexte(username: str, scope: str, ticker: str | None) -> tuple[str | None
         return bloc, None
 
     if scope == "portefeuille":
-        from portfolio.positions import get_positions, get_portfolio_summary
-        tickers_lots = sorted({l["ticker"] for l in (get_positions(username) or [])
-                               if l.get("ticker")})
-        detenus = []
-        for t in tickers_lots:
-            s = get_portfolio_summary(username, t, 0)   # prix=0 : juste pour tester position_fermee
-            if s and not s.get("position_fermee"):
-                detenus.append(t)
+        detenus = _tickers_detenus(username)
         if not detenus:
             return None, "Aucune position détenue pour l'instant."
         blocs = []

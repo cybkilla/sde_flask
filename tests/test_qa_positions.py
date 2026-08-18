@@ -126,6 +126,55 @@ assert ctx4 is None and "aucune position" in err4.lower()
 print("✓ _contexte : aucune position ouverte -> erreur explicite")
 
 
+# ── donnees_affichage : chiffres clés structurés pour l'UI ──
+# Signalé le 18.08.2026 : avoir les chiffres sous les yeux (ligne pour
+# un ticker, tableau pour le portefeuille), pas seulement dans la
+# réponse texte du LLM. Même source de données que _bloc_ticker
+# (_donnees_ticker), juste formatée en champs plutôt qu'en texte.
+_reset_mocks()
+positions_mod.get_positions = lambda u, t=None: [
+    {"ticker": "TMC", "company": "TMC the metals company"},
+]
+market_mod.get_live_price = lambda t: {"price": 3.77, "var_1d": -5.99}
+positions_mod.get_portfolio_summary = lambda u, t, p: {
+    "total_shares": 8152, "cout_moyen": 3.97, "pnl_position_pct": -5.08,
+    "pnl_pct": -4.1, "position_fermee": False, "currency": "USD",
+}
+advisor_mod.get_today_advice = lambda u, t: {
+    "date_conseil": "2026-08-18", "action": "TENIR", "score_sde": 60.6,
+    "raisonnement": "...",
+}
+evaluator_mod.get_ticker_stats_bulk = lambda u, ts: {
+    "TMC": {"total": 35, "bons": 31, "taux_pct": 88.6},
+}
+d = qa.donnees_affichage("admin", "ticker", "tmc")   # minuscule -> normalisé
+assert d["ok"] is True and len(d["lignes"]) == 1
+ligne = d["lignes"][0]
+assert ligne["ticker"] == "TMC" and ligne["sym"] == "$"
+assert ligne["price"] == 3.77 and ligne["var_1d"] == -5.99
+assert ligne["shares"] == 8152 and ligne["cout_moyen"] == 3.97
+assert ligne["pnl_position_pct"] == -5.08
+assert ligne["action"] == "TENIR" and ligne["score"] == 60.6
+assert ligne["taux_pct"] == 88.6 and ligne["total_evalues"] == 35
+print("✓ donnees_affichage : scope ticker -> une ligne avec tous les chiffres clés")
+
+# Ticker hors portée -> erreur, mêmes garde-fous que _contexte
+d_refus = qa.donnees_affichage("admin", "ticker", "AAPL")
+assert d_refus["ok"] is False
+print("✓ donnees_affichage : ticker hors portée -> refusé (mêmes garde-fous que la Q&A)")
+
+# scope portefeuille -> une ligne par position OUVERTE, clôturées exclues
+positions_mod.get_positions = lambda u, t=None: [
+    {"ticker": "TMC", "company": "TMC"}, {"ticker": "FCEL", "company": "FCEL"},
+]
+positions_mod.get_portfolio_summary = _summary_par_ticker   # TMC ouverte, FCEL clôturée (défini plus haut)
+d_pf = qa.donnees_affichage("admin", "portefeuille", None)
+assert d_pf["ok"] is True
+tickers_lignes = [l["ticker"] for l in d_pf["lignes"]]
+assert tickers_lignes == ["TMC"]
+print("✓ donnees_affichage : scope portefeuille -> une ligne par position ouverte, clôturées exclues")
+
+
 # ── ask() : validations avant tout appel réseau ──
 _reset_mocks()
 assert qa.ask("admin", "ticker", "TMC", "")["ok"] is False   # question vide

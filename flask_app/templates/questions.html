@@ -34,13 +34,17 @@
 
   <div class="mb-3" id="sde-qa-ticker-wrap">
     <label class="form-label small fw-semibold">Ticker</label>
-    <select id="sde-qa-ticker-select" class="form-select form-select-sm" style="max-width:280px">
+    <select id="sde-qa-ticker-select" class="form-select form-select-sm" style="max-width:280px"
+            onchange="qaLoadData()">
       <option value="">Chargement…</option>
     </select>
     <p class="text-muted mt-1 mb-0" style="font-size:.72rem">
       Uniquement tes positions et ta watchlist.
     </p>
   </div>
+
+  <!-- Chiffres clés (ligne pour un ticker, tableau pour tout le portefeuille) -->
+  <div class="mb-3" id="sde-qa-data-wrap"></div>
 
   <div class="mb-3">
     <label class="form-label small fw-semibold">Ta question</label>
@@ -87,6 +91,7 @@
     btnT.setAttribute("style", (scope === "ticker" ? ON : OFF) + ";border-radius:7px;font-weight:600");
     btnP.setAttribute("style", (scope === "portefeuille" ? ON : OFF) + ";border-radius:7px;font-weight:600");
     document.getElementById("sde-qa-ticker-wrap").classList.toggle("d-none", scope !== "ticker");
+    qaLoadData();
   }
 
   function qaLoadTickers() {
@@ -99,6 +104,7 @@
           return;
         }
         sel.innerHTML = d.tickers.map(t => `<option value="${t}">${t}</option>`).join("");
+        qaLoadData();   // charge les chiffres clés du 1er ticker sélectionné par défaut
       })
       .catch(() => {
         document.getElementById("sde-qa-ticker-select").innerHTML =
@@ -106,7 +112,80 @@
       });
   }
 
+  function _pct(v) {
+    if (v == null) return "—";
+    return (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+  }
+
+  /* ── Chiffres clés : ligne (1 ticker) ou tableau (portefeuille) ── */
+  function qaLoadData() {
+    const wrap = document.getElementById("sde-qa-data-wrap");
+    if (_scope === "ticker") {
+      const ticker = document.getElementById("sde-qa-ticker-select").value;
+      if (!ticker) { wrap.innerHTML = ""; return; }
+    }
+    wrap.innerHTML = `<p class="text-muted small mb-0"><span class="spinner-border spinner-border-sm me-1"></span>Chargement des chiffres…</p>`;
+
+    const ticker = document.getElementById("sde-qa-ticker-select").value;
+    const qs = new URLSearchParams({ scope: _scope, ticker: ticker || "" });
+    fetch(`/portfolio/questions/data?${qs}`)
+      .then(r => r.json())
+      .then(d => {
+        if (!d.ok) { wrap.innerHTML = `<p class="text-muted small mb-0">${d.error || "Aucune donnée."}</p>`; return; }
+        wrap.innerHTML = (_scope === "ticker") ? _renderLigne(d.lignes[0]) : _renderTableau(d.lignes);
+      })
+      .catch(() => { wrap.innerHTML = `<p class="text-muted small mb-0">Erreur de chargement.</p>`; });
+  }
+
+  function _renderLigne(l) {
+    const varColor = (l.var_1d || 0) >= 0 ? "#1D9E75" : "#D85A30";
+    const items = [];
+    if (l.price != null) {
+      items.push(`<strong>${l.sym}${l.price.toFixed(2)}</strong>
+        <span style="color:${varColor}">${_pct(l.var_1d)}</span>`);
+    }
+    if (l.shares != null) {
+      items.push(`${l.shares.toLocaleString("en-US", {maximumFractionDigits:4})} actions · coût moyen ${l.sym}${l.cout_moyen.toFixed(2)} · P&L position ${_pct(l.pnl_position_pct)}`);
+    }
+    if (l.action != null) {
+      items.push(`Conseil : <strong>${l.action}</strong> (${l.score}/100)`);
+    }
+    if (l.taux_pct != null) {
+      items.push(`Fiabilité ${l.taux_pct}% (${l.total_evalues} conseils)`);
+    }
+    if (l.earnings_txt) {
+      items.push(`Résultats : ${l.earnings_txt}`);
+    }
+    return `<div class="sde-card py-2 px-3" style="font-size:.78rem;display:flex;flex-wrap:wrap;gap:14px;align-items:center;background:#F8FAFC">
+      ${items.map(i => `<span>${i}</span>`).join(`<span style="color:var(--sde-border)">·</span>`)}
+    </div>`;
+  }
+
+  function _renderTableau(lignes) {
+    const rows = lignes.map(l => `
+      <tr>
+        <td class="fw-semibold">${l.ticker}</td>
+        <td>${l.price != null ? l.sym + l.price.toFixed(2) : "—"}</td>
+        <td style="color:${(l.var_1d || 0) >= 0 ? '#1D9E75' : '#D85A30'}">${_pct(l.var_1d)}</td>
+        <td>${l.shares != null ? l.shares.toLocaleString("en-US", {maximumFractionDigits:4}) : "—"}</td>
+        <td>${l.cout_moyen != null ? l.sym + l.cout_moyen.toFixed(2) : "—"}</td>
+        <td>${_pct(l.pnl_position_pct)}</td>
+        <td>${l.action != null ? `${l.action} (${l.score}/100)` : "—"}</td>
+        <td>${l.taux_pct != null ? `${l.taux_pct}% (${l.total_evalues})` : "—"}</td>
+      </tr>`).join("");
+    return `<div class="table-responsive">
+      <table class="table table-sm table-hover mb-0" style="font-size:.76rem">
+        <thead class="table-light">
+          <tr><th>Ticker</th><th>Prix</th><th>Var.</th><th>Actions</th>
+              <th>Coût moyen</th><th>P&amp;L position</th><th>Conseil</th><th>Fiabilité</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }
+
   window.qaSetScope = qaSetScope;
+  window.qaLoadData = qaLoadData;
 
   window.qaAsk = function () {
     const errEl  = document.getElementById("sde-qa-error");

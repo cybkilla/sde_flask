@@ -520,6 +520,23 @@ def questions_tickers():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@bp.route("/questions/data")
+@login_required
+def questions_data():
+    """Chiffres clés structurés (pas le texte du prompt LLM) pour affichage
+    immédiat sur la page — ligne unique si scope=ticker, une ligne par
+    position détenue si scope=portefeuille."""
+    try:
+        from analysis.qa_positions import donnees_affichage
+        scope  = request.args.get("scope", "")
+        ticker = request.args.get("ticker")
+        return jsonify(donnees_affichage(current_user.id, scope, ticker))
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc(), flush=True)
+        return jsonify({"ok": False, "error": "Erreur interne — voir les logs serveur."}), 500
+
+
 @bp.route("/questions/ask", methods=["POST"])
 @login_required
 def questions_ask():
