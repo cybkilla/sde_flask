@@ -27,7 +27,7 @@ def _reset_mocks():
     positions_mod.get_positions = lambda u, t=None: []
     watchlist_mod.get_watchlist = lambda u: []
     market_mod.get_live_price   = lambda t: {}
-    market_mod.get_next_earnings = lambda t: None
+    market_mod.get_next_earnings = lambda t, retro_jours=3: None
     positions_mod.get_portfolio_summary = lambda u, t, p: None
     advisor_mod.get_today_advice   = lambda u, t: None
     advisor_mod.get_advice_history = lambda u, t, limit=1: []
@@ -62,7 +62,7 @@ advisor_mod.get_today_advice = lambda u, t: {
 evaluator_mod.get_ticker_stats_bulk = lambda u, ts: {
     "TMC": {"total": 31, "bons": 25, "taux_pct": 80.6},
 }
-market_mod.get_next_earnings = lambda t: {
+market_mod.get_next_earnings = lambda t, retro_jours=3: {
     "date": "2026-08-13", "jours": -5, "statut": "publie",
     "eps_estimate": -0.06, "eps_actual": -0.14,
 }
@@ -79,6 +79,31 @@ _reset_mocks()
 bloc_vide = qa._bloc_ticker("admin", "XYZ")
 assert bloc_vide is None
 print("✓ _bloc_ticker : aucune donnée -> None")
+
+# ── Fenêtre earnings élargie (retro_jours=100) pour la Q&A ──
+# Signalé le 18.08.2026 : "quel est le dernier résultat publié ?" refusé
+# car get_next_earnings() par défaut (retro_jours=3, pensé pour le badge
+# qui doit s'effacer vite) ne remontait plus jusqu'aux résultats de TMC
+# publiés 5 jours plus tôt. La Q&A doit pouvoir répondre sur tout le
+# dernier trimestre, pas seulement les derniers jours.
+_reset_mocks()
+positions_mod.get_positions = lambda u, t=None: [{"ticker": "TMC", "type": "achat"}]
+market_mod.get_live_price = lambda t: {"price": 3.77, "var_1d": -1.0}
+captured_kwargs = {}
+
+
+def _earnings_capture(t, retro_jours=3):
+    captured_kwargs["retro_jours"] = retro_jours
+    return {"date": "2026-08-13", "jours": -5, "statut": "publie",
+            "eps_estimate": -0.06, "eps_actual": -0.14}
+
+
+market_mod.get_next_earnings = _earnings_capture
+bloc_earn = qa._bloc_ticker("admin", "TMC")
+assert captured_kwargs["retro_jours"] == 100, \
+    "la Q&A doit interroger avec une fenêtre bien plus large que le badge (3j)"
+assert "BPA -0.14$" in bloc_earn
+print("✓ _bloc_ticker : interroge get_next_earnings avec retro_jours=100 (pas le défaut 3j du badge)")
 
 
 # ── _contexte : scope ticker, portée refusée si hors positions/watchlist ──

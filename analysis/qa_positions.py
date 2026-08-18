@@ -59,7 +59,14 @@ def _donnees_ticker(username: str, ticker: str) -> dict | None:
         advice = hist[0] if hist else None
 
     stats    = get_ticker_stats_bulk(username, [ticker]).get(ticker)
-    earnings = get_next_earnings(ticker)
+    # retro_jours élargi (100, ~1 trimestre) par rapport au défaut (3,
+    # pensé pour le badge qui doit s'effacer après quelques jours) —
+    # signalé le 18.08.2026 : "quel est le dernier résultat publié ?"
+    # refusé car les résultats de TMC (13.08) étaient déjà sortis de la
+    # fenêtre de 3 jours 5 jours plus tard. Une question EXPLICITE doit
+    # pouvoir remonter au dernier trimestre, pas seulement aux derniers
+    # jours — n'affecte pas le badge (get_next_earnings_bulk ailleurs).
+    earnings = get_next_earnings(ticker, retro_jours=100)
 
     if price is None and summary is None and advice is None:
         return None
