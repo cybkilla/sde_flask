@@ -68,15 +68,22 @@ def _yaml_save(config: dict) -> None:
         yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
 
 
+# Si Supabase EST configuré (_db_ok() True) mais qu'une requête échoue
+# (panne réseau passagère), l'exception remonte désormais dans toutes
+# les fonctions ci-dessous — PAS de repli silencieux sur le YAML local,
+# qui ne connaît jamais les comptes créés depuis la migration Supabase.
+# Signalé le 21.08.2026 : connexion admin impossible pendant un hoquet
+# réseau, déguisée en "identifiant ou mot de passe incorrect" au lieu
+# d'une erreur réseau honnête (même famille de bug déjà corrigée le
+# 18.08.2026 sur get_positions()/get_watchlist()). Chaque route gère
+# l'exception à sa façon (cf. plus bas) ; load_user() (rechargé à
+# CHAQUE page, pas seulement au login) reste volontairement une
+# exception à cette règle — voir son propre commentaire.
+
 def _find_user(username: str) -> dict | None:
     if _db_ok():
-        try:
-            from db import find_one
-            result = find_one("users", {"username": username}, {"_id": 0})
-            if result:
-                return result
-        except Exception:
-            pass
+        from db import find_one
+        return find_one("users", {"username": username}, {"_id": 0})
     config = _yaml_load()
     data   = config.get("credentials", {}).get("usernames", {}).get(username)
     if data:
@@ -90,11 +97,8 @@ def _find_user_by_email(email: str) -> dict | None:
     if not email:
         return None
     if _db_ok():
-        try:
-            from db import find_one
-            return find_one("users", {"email": email})
-        except Exception:
-            pass
+        from db import find_one
+        return find_one("users", {"email": email})
     config = _yaml_load()
     for uname, data in config.get("credentials", {}).get("usernames", {}).items():
         if data.get("email", "").lower() == email.lower():
@@ -105,14 +109,11 @@ def _find_user_by_email(email: str) -> dict | None:
 def _create_user(username: str, name: str, email: str, hashed: str,
                  email_verified: bool = True) -> None:
     if _db_ok():
-        try:
-            from db import insert_one
-            insert_one("users", {"username": username, "name": name,
-                                 "email": email, "password": hashed,
-                                 "email_verified": email_verified})
-            return
-        except Exception:
-            pass
+        from db import insert_one
+        insert_one("users", {"username": username, "name": name,
+                             "email": email, "password": hashed,
+                             "email_verified": email_verified})
+        return
     config = _yaml_load()
     config.setdefault("credentials", {}).setdefault("usernames", {})[username] = {
         "name": name, "email": email, "password": hashed,
@@ -122,12 +123,9 @@ def _create_user(username: str, name: str, email: str, hashed: str,
 
 def _update_password(username: str, hashed: str) -> bool:
     if _db_ok():
-        try:
-            from db import update_one
-            update_one("users", {"username": username}, {"$set": {"password": hashed}})
-            return True
-        except Exception:
-            pass
+        from db import update_one
+        update_one("users", {"username": username}, {"$set": {"password": hashed}})
+        return True
     config = _yaml_load()
     users  = config.get("credentials", {}).get("usernames", {})
     if username not in users:
@@ -139,23 +137,17 @@ def _update_password(username: str, hashed: str) -> bool:
 
 def _activate_user(username: str) -> None:
     if _db_ok():
-        try:
-            from db import update_one
-            update_one("users", {"username": username},
-                       {"$set": {"email_verified": True}})
-            return
-        except Exception:
-            pass
+        from db import update_one
+        update_one("users", {"username": username},
+                   {"$set": {"email_verified": True}})
+        return
     # YAML : pas de colonne email_verified → compte toujours actif
 
 
 def _username_exists(username: str) -> bool:
     if _db_ok():
-        try:
-            from db import count_documents
-            return count_documents("users", {"username": username}) > 0
-        except Exception:
-            pass
+        from db import count_documents
+        return count_documents("users", {"username": username}) > 0
     config = _yaml_load()
     return username in config.get("credentials", {}).get("usernames", {})
 
@@ -163,7 +155,19 @@ def _username_exists(username: str) -> bool:
 # ── Callback Flask-Login ──────────────────────────────────────────────────────
 
 def load_user(username: str):
-    data = _find_user(username)
+    """
+    Rechargé par Flask-Login à CHAQUE page vue par un utilisateur déjà
+    connecté (pas seulement au login) — contrairement à _find_user() ci-
+    dessus, une exception ici NE DOIT PAS remonter : ça planterait TOUTE
+    page pendant un hoquet Supabase, pas seulement la connexion. Dégrader
+    en "déconnecté" (None, traité comme anonyme par Flask-Login) est la
+    moindre gêne — l'utilisateur retente simplement de se connecter.
+    """
+    try:
+        data = _find_user(username)
+    except Exception as e:
+        print(f"[Auth] load_user({username}) erreur : {e}", flush=True)
+        return None
     if not data:
         return None
     return User(data["username"], data.get("name", username),
@@ -199,8 +203,24 @@ def login():
                 )
             else:
                 _rate_hit(ip)
-                data = _find_user(username)
-                if data and bcrypt.checkpw(password.encode(), data["password"].encode()):
+                data = None
+                try:
+                    data = _find_user(username)
+                except Exception as e:
+                    print(f"[Auth] login {username} — Supabase indisponible : {e}", flush=True)
+                    # Distinct de "Identifiant ou mot de passe incorrect" plus
+                    # bas : une panne réseau n'est pas un mauvais mot de
+                    # passe, et ne doit jamais être présentée comme tel
+                    # (signalé le 21.08.2026, connexion admin impossible
+                    # pendant un hoquet réseau).
+                    errors["general"] = (
+                        "Service temporairement indisponible — réessayez "
+                        "dans quelques instants."
+                    )
+
+                if errors.get("general"):
+                    pass   # panne réseau ou rate-limit déjà géré ci-dessus
+                elif data and bcrypt.checkpw(password.encode(), data["password"].encode()):
                     # Vérification compte activé
                     if data.get("email_verified") is False:
                         errors["general"] = (
@@ -262,14 +282,30 @@ def register():
         if password and not errors.get("password") and confirm != password:
             errors["confirm"] = "Les mots de passe ne correspondent pas."
 
-        if "username" not in errors and _username_exists(username):
-            errors["username"] = "Cet identifiant est déjà pris."
+        if "username" not in errors and not errors.get("general"):
+            try:
+                if _username_exists(username):
+                    errors["username"] = "Cet identifiant est déjà pris."
+            except Exception as e:
+                print(f"[Auth] register {username} — Supabase indisponible : {e}", flush=True)
+                errors["general"] = (
+                    "Service temporairement indisponible — réessayez "
+                    "dans quelques instants."
+                )
 
         if not errors:
             needs_activation = bool(email)
             hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-            _create_user(username, name, email, hashed,
-                         email_verified=not needs_activation)
+            try:
+                _create_user(username, name, email, hashed,
+                             email_verified=not needs_activation)
+            except Exception as e:
+                print(f"[Auth] register {username} — création échouée : {e}", flush=True)
+                errors["general"] = (
+                    "Service temporairement indisponible — réessayez "
+                    "dans quelques instants."
+                )
+                return render_template("auth/register.html", errors=errors, prefill=prefill)
 
             if needs_activation:
                 try:
@@ -299,7 +335,12 @@ def activate(token: str):
     if not username:
         flash("Lien d'activation invalide ou expiré.", "danger")
         return redirect(url_for("auth.login"))
-    _activate_user(username)
+    try:
+        _activate_user(username)
+    except Exception as e:
+        print(f"[Auth] activate {username} — Supabase indisponible : {e}", flush=True)
+        flash("Service temporairement indisponible — réessayez dans quelques instants.", "danger")
+        return redirect(url_for("auth.login"))
     consume(token)
     flash("Compte activé ! Vous pouvez maintenant vous connecter.", "success")
     return redirect(url_for("auth.login"))
@@ -313,7 +354,13 @@ def forgot_password():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         if email:
-            user = _find_user_by_email(email)
+            try:
+                user = _find_user_by_email(email)
+            except Exception as e:
+                print(f"[Auth] forgot_password — Supabase indisponible : {e}", flush=True)
+                user = None   # dégrade en "aucun envoi" — même comportement affiché
+                              # qu'un email inconnu, cohérent avec le choix de sécurité
+                              # ci-dessous (ne jamais révéler si un compte existe)
             if user:
                 try:
                     from auth.auth_tokens import generate, send_reset
@@ -349,7 +396,15 @@ def reset_password(token: str):
 
         if not errors:
             hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-            _update_password(username, hashed)
+            try:
+                _update_password(username, hashed)
+            except Exception as e:
+                print(f"[Auth] reset_password {username} — Supabase indisponible : {e}", flush=True)
+                errors["password"] = (
+                    "Service temporairement indisponible — réessayez "
+                    "dans quelques instants."
+                )
+                return render_template("auth/reset_password.html", token=token, errors=errors)
             consume(token)
             flash("Mot de passe modifié avec succès ! Connectez-vous.", "success")
             return redirect(url_for("auth.login", username=username))
