@@ -38,14 +38,17 @@ def _jsave(path: Path, data: dict):
 # ── Watchlist ─────────────────────────────────────────────────────────────────
 
 def get_watchlist(username: str) -> list:
+    """
+    Si Supabase EST configuré mais que la requête échoue, l'exception
+    remonte — pas de repli silencieux sur le JSON local (quasi toujours
+    vide en production). Même correction que
+    portfolio/positions.py::get_positions, même jour (18.08.2026, repli
+    silencieux affichant "Aucune watchlist" au lieu d'une erreur)."""
     if _db_ok():
-        try:
-            from db import find
-            docs = find("watchlist", {"username": username}, {"_id": 0, "username": 0})
-            if docs is not None:   # liste vide [] est valide — on reste sur Supabase
-                return docs
-        except Exception:
-            pass
+        from db import find
+        docs = find("watchlist", {"username": username}, {"_id": 0, "username": 0})
+        return docs if docs is not None else []
+    # Fallback local — UNIQUEMENT si Supabase n'est pas configuré du tout
     return _jload(WL_FILE).get(username, [])
 
 

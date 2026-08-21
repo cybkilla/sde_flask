@@ -29,19 +29,30 @@ def _jsave(data: list):
 # ── Lecture ───────────────────────────────────────────────────────────────────
 
 def get_positions(username: str, ticker: str = None) -> list:
-    """Retourne les lots d'achat d'un utilisateur, optionnellement filtrés par ticker."""
+    """
+    Retourne les lots d'achat d'un utilisateur, optionnellement filtrés
+    par ticker.
+
+    Si Supabase EST configuré mais que la requête échoue (panne réseau
+    passagère), l'exception remonte — PAS de repli silencieux sur le
+    fichier local, quasi toujours vide en production (les positions
+    vivent dans Supabase depuis la migration). Signalé en réel le
+    18.08.2026 : un repli silencieux affichait "Aucune position
+    enregistrée" (donnée honnête en apparence) au lieu d'une erreur
+    invitant à réessayer — de quoi croire à une perte de données. Chaque
+    appelant a déjà son propre try/except (route Flask, boucle
+    scheduler par utilisateur…) : laisser l'erreur remonter jusqu'à eux
+    est plus honnête qu'un repli invisible.
+    """
     if _db_ok():
-        try:
-            from db import _init, _client
-            _init()
-            q = _client.table("positions").select("*").eq("username", username)
-            if ticker:
-                q = q.eq("ticker", ticker.upper())
-            rows = q.order("date_achat").execute().data or []
-            return rows
-        except Exception as e:
-            print(f"[Portfolio] get_positions erreur : {e}", flush=True)
-    # Fallback local
+        from db import _init, _client
+        _init()
+        q = _client.table("positions").select("*").eq("username", username)
+        if ticker:
+            q = q.eq("ticker", ticker.upper())
+        return q.order("date_achat").execute().data or []
+    # Fallback local — UNIQUEMENT si Supabase n'est pas configuré du tout
+    # (dev hors-ligne, cf. docstring)
     rows = _jload()
     rows = [r for r in rows if r["username"] == username]
     if ticker:
