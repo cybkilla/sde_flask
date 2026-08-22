@@ -19,6 +19,19 @@ csrf          = CSRFProtect()
 def create_app() -> Flask:
     app = Flask(__name__)
 
+    # ── IP réelle du visiteur derrière le proxy Render ────────────────
+    # Render fait toujours transiter les requêtes par un proxy interne :
+    # sans ça, request.remote_addr vaut "127.0.0.1" pour TOUT LE MONDE
+    # (vérifié en réel le 21.08.2026 dans les logs d'accès). Conséquence
+    # concrète : le rate-limit de connexion (auth.py, 5 tentatives/15min)
+    # partageait le même compteur entre TOUS les visiteurs du site, pas
+    # par personne — un verrouillage se déclenchait bien plus vite que
+    # prévu. ProxyFix lit X-Forwarded-For posé par le proxy Render
+    # (x_for=1 : on ne fait confiance qu'à UN SEUL proxy, celui de
+    # Render — ne pas augmenter sans un proxy supplémentaire réel devant).
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
+
     # ── Secret de session : JAMAIS de valeur par défaut fixe ─────────
     # Un fallback codé en dur rend les sessions FORGEABLES (n'importe qui
     # peut signer un cookie admin) si la variable d'env manque un jour —
