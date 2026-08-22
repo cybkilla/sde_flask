@@ -12,6 +12,21 @@ ROOT = Path(__file__).parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# .env chargé ICI, explicitement, avant tout — jusqu'ici ça ne se produisait
+# qu'en important config.py, lui-même importé seulement plus tard (via les
+# blueprints) dans create_app(). Résultat concret : la vérification
+# FLASK_SECRET_KEY juste en dessous s'exécutait AVANT que le .env soit lu,
+# donc échouait toujours (clé aléatoire de dev générée à chaque démarrage,
+# sessions jamais persistantes) — vérifié en réel le 21.08.2026, reproduit
+# sur ce poste de dev qui fonctionne pourtant normalement par ailleurs
+# (Supabase etc. finissaient par se charger un peu plus tard, donc jamais
+# remarqué avant).
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 login_manager = LoginManager()
 csrf          = CSRFProtect()
 
