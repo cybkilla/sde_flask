@@ -27,7 +27,8 @@ env/
 .ipynb_checkpoints/
 
 # IDE
-.vscode/
+.vscode/*
+!.vscode/tasks.json
 .idea/
 *.swp
 *.swo
