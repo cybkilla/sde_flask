@@ -20,6 +20,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def filter_french(jobs):
+    markers = ["m/w/d", "mitarbeiter", "sachbearbeiter", "kaufmann", "kauffrau", "gesucht", "wir suchen", "ihre aufgaben", "erfahrung in", "kenntnisse"]
+    result = []
+    for job in jobs:
+        text = job.title.lower()
+        hits = sum(1 for w in markers if w in text)
+        if hits == 0:
+            result.append(job)
+    return result
+
+
 def load_config() -> dict:
     config_path = Path(__file__).parent.parent / "config" / "keywords.yml"
     with open(config_path, "r", encoding="utf-8") as f:
@@ -92,6 +103,7 @@ def main():
     # 3. Dédoublonner et filtrer
     all_jobs = deduplicate(all_jobs)
     all_jobs = filter_jobs(all_jobs, exclude)
+    all_jobs = filter_french(all_jobs)
     all_jobs = consolidate_keywords(all_jobs, keywords)
 
     logger.info(f"Total après filtrage : {len(all_jobs)} offres")
