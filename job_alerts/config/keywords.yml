@@ -1,0 +1,48 @@
+# ============================================================
+#  CONFIGURATION DES ALERTES EMPLOI – Vladimir Andriana
+#  Modifie ce fichier pour personnaliser tes recherches
+# ============================================================
+
+# Mots-clés de recherche (OR entre eux — toute offre contenant
+# l'un de ces termes sera incluse dans l'alerte)
+keywords:
+  - "SQL Server"
+  - "Data Engineer"
+  - "Sybase"
+  - "DBA Applicatif"
+  - "Business Analyst Data"
+  - "BI Developer"
+  - "Python Data"
+  - "ETL Developer"
+  - "Analyste Data"
+  - "Data Analyst"
+  - "SSIS"
+  - "Power BI"
+
+# Localisations à rechercher (OR entre elles)
+locations:
+  - "Genève"
+  - "Geneva"
+  - "Lausanne"
+  - "Suisse romande"
+
+# Ancienneté max des offres à inclure (en jours)
+max_age_days: 1
+
+# Sites à scraper
+sources:
+  indeed: true
+  jobup: true      # jobup.ch – portail suisse
+  jobscout: true   # jobscout24.ch
+
+# Filtre d'exclusion : offres contenant ces termes seront ignorées
+exclude_keywords:
+  - "stage"
+  - "apprentissage"
+  - "internship"
+  - "junior (< 2 ans)"
+
+# Destinataire de l'alerte email
+email:
+  to: "vladimir.andriana@gmail.com"
+  subject: "🔔 Nouvelles offres d'emploi – {date}"
