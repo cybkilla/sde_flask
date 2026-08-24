@@ -52,6 +52,9 @@ def build_html(jobs: list[Job], date: str) -> str:
         </div>"""
 
     total = len(jobs)
+    no_jobs_message = '<p style="color:#595959;text-align:center;">Aucune nouvelle offre aujourd’hui.</p>'
+    body_content = source_blocks if source_blocks else no_jobs_message
+
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -66,58 +69,10 @@ def build_html(jobs: list[Job], date: str) -> str:
 
       <!-- BODY -->
       <div style="background:#FAFAFA;padding:24px 28px;border:1px solid #E0E0E0;border-top:none;">
-        {source_blocks if source_blocks else
-          '<p style="color:#595959;text-align:center;">Aucune nouvelle offre aujourd\'hui.</p>'}
+        {body_content}
       </div>
 
       <!-- FOOTER -->
       <div style="background:#F2F2F2;padding:14px 28px;border-radius:0 0 8px 8px;
                   border:1px solid #E0E0E0;border-top:none;text-align:center;">
-        <p style="color:#888;font-size:11px;margin:0;">
-          Alerte générée automatiquement · Modifie tes mots-clés dans <code>config/keywords.yml</code>
-        </p>
-      </div>
-
-    </body>
-    </html>"""
-
-    return html
-
-
-def send_email(
-    jobs: list[Job],
-    to_address: str,
-    subject_template: str,
-    smtp_host: str,
-    smtp_port: int,
-    smtp_user: str,
-    smtp_password: str,
-    use_tls: bool = True,
-) -> None:
-    """Envoie l'email de résumé via SMTP."""
-
-    date_str = datetime.now().strftime("%d/%m/%Y")
-    subject = subject_template.format(date=date_str)
-    html_body = build_html(jobs, date_str)
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = smtp_user
-    msg["To"] = to_address
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
-
-    try:
-        if use_tls:
-            server = smtplib.SMTP(smtp_host, smtp_port)
-            server.starttls()
-        else:
-            server = smtplib.SMTP_SSL(smtp_host, smtp_port)
-
-        server.login(smtp_user, smtp_password)
-        server.sendmail(smtp_user, to_address, msg.as_string())
-        server.quit()
-        logger.info(f"Email envoyé à {to_address} ({len(jobs)} offres)")
-
-    except Exception as e:
-        logger.error(f"Erreur envoi email : {e}")
-        raise
+        <p
