@@ -48,16 +48,16 @@ def deduplicate(jobs: list[Job]) -> list[Job]:
     return unique
 
 
-def filter_jobs(jobs: list[Job], exclude_keywords: list[str]) -> list[Job]:
-    """Retire les offres contenant des mots-clés à exclure."""
-    filtered = []
-    exclude_lower = [kw.lower() for kw in exclude_keywords]
-    for job in jobs:
-        text = f"{job.title} {job.description}".lower()
-        if not any(excl in text for excl in exclude_lower):
-            filtered.append(job)
-    return filtered
 
+def filter_french(jobs):
+    markers = ["m/w/d", "mitarbeiter", "sachbearbeiter", "kaufmann", "kauffrau", "gesucht", "wir suchen", "ihre aufgaben", "erfahrung in", "kenntnisse", "und", "der", "die", "das", "mit", "fur", "eine", "einen", "ist", "sind", "wird", "ihre", "unsere", "unser", "auf", "von", "im", "am", "bei", "aufgaben", "anforderungen", "unternehmen", "stelle als", "tatigkeit", "abteilung", "mind.", "wir bieten", "ihr profil", "zuerich", "zurich", "bern", "basel"]
+    result = []
+    for job in jobs:
+        text = (job.title + " " + job.location).lower()
+        hits = sum(1 for w in markers if w in text)
+        if hits == 0:
+            result.append(job)
+    return result
 
 def consolidate_keywords(jobs: list[Job], all_keywords: list[str]) -> list[Job]:
     """Ajoute tous les mots-clés correspondants à chaque offre."""
