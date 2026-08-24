@@ -27,11 +27,11 @@ locations:
   - "Suisse romande"
 
 # Ancienneté max des offres à inclure (en jours)
-max_age_days: 1
+max_age_days: 7
 
 # Sites à scraper
 sources:
-  indeed: true
+  indeed: false
   jobup: true      # jobup.ch – portail suisse
   jobscout: true   # jobscout24.ch
 
