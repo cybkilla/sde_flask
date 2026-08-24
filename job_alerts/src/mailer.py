@@ -1,58 +1,32 @@
-"""
-job_alerts/src/mailer.py
-Generation et envoi de l'email de resume des offres
-"""
-
-import smtplib
-import logging
+import smtplib, logging
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
-from .scraper import Job
-
 logger = logging.getLogger(__name__)
 
-
 def build_html(jobs, date):
-    """Genere le corps HTML de l'email."""
+    lines = []
+    for j in jobs:
+        kw = ", ".join(j.matched_keywords)
+        lines.append('<p><a href="' + j.url + '">' + j.title + '</a><br>' + j.company + ' - ' + j.location + '<br>Source: ' + j.source + ' | Mots-cles: ' + kw + '</p><hr>')
+    body = "".join(lines) if lines else "<p>Aucune nouvelle offre aujourd hui.</p>"
+    return '<html><body><h2>Offres emploi - ' + date + '</h2><p>' + str(len(jobs)) + ' offre(s) trouvee(s)</p>' + body + '</body></html>'
 
-    by_source = {}
-    for job in jobs:
-        by_source.setdefault(job.source, []).append(job)
-
-    source_blocks_parts = []
-
-    for source, source_jobs in by_source.items():
-        rows_parts = []
-        for j in source_jobs:
-            badges = []
-            for kw in j.matched_keywords:
-                badges.append(
-                    '<span style="background:#E8F0FE;color:#1F4E79;padding:2px 8px;'
-                    'border-radius:12px;font-size:11px;margin-right:4px;">' + kw + '</span>'
-                )
-            kw_badges = " ".join(badges)
-
-            row = (
-                '<tr>'
-                '<td style="padding:12px 8px;border-bottom:1px solid #F0F0F0;vertical-align:top;">'
-                '<a href="' + j.url + '" style="color:#1F4E79;font-weight:bold;'
-                'text-decoration:none;font-size:14px;">' + j.title + '</a><br>'
-                '<span style="color:#595959;font-size:13px;">'
-                'Entreprise: ' + j.company + ' | Lieu: ' + j.location + '</span><br>'
-                '<div style="margin-top:5px;">' + kw_badges + '</div>'
-                '</td>'
-                '</tr>'
-            )
-            rows_parts.append(row)
-
-        rows_html = "".join(rows_parts)
-
-        block = (
-            '<div style="margin-bottom:24px;">'
-            '<h3 style="color:#2E75B6;border-bottom:2px solid #D6E4F0;'
-            'padding-bottom:6px;margin-bottom:0;">' + source + ' - ' +
-            str(len(source_jobs)) + ' offre(s)</h3>'
-            '<table style="width:100%;border-collapse:collapse;">' + rows_html + '</table>'
-            '</div>'
-        )
+def send_email(jobs, to_address, subject_template, smtp_host, smtp_port, smtp_user, smtp_password, use_tls=True):
+    date_str = datetime.now().strftime("%d/%m/%Y")
+    subject = subject_template.format(date=date_str)
+    html_body = build_html(jobs, date_str)
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = smtp_user
+    msg["To"] = to_address
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+    if use_tls:
+        server = smtplib.SMTP(smtp_host, smtp_port)
+        server.starttls()
+    else:
+        server = smtplib.SMTP_SSL(smtp_host, smtp_port)
+    server.login(smtp_user, smtp_password)
+    server.sendmail(smtp_user, to_address, msg.as_string())
+    server.quit()
+    logger.info("Email envoye a " + to_address)
