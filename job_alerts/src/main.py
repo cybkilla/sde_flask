@@ -1,53 +1,33 @@
-"""
-job_alerts/src/main.py
-Point d'entrée principal – lancé par GitHub Actions chaque matin
-"""
-
-import os
-import sys
-import logging
-import yaml
+import os, sys, logging, yaml
 from pathlib import Path
 from .scraper import scrape_indeed, scrape_jobup, scrape_jobscout, Job
 from .mailer import send_email
 
-# ─── Logging ────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
 logger = logging.getLogger(__name__)
 
-
-def filter_french(jobs):
-    markers = ["m/w/d", "mitarbeiter", "sachbearbeiter", "kaufmann", "kauffrau", "gesucht", "wir suchen", "ihre aufgaben", "erfahrung in", "kenntnisse"]
-    result = []
-    for job in jobs:
-        text = job.title.lower()
-        hits = sum(1 for w in markers if w in text)
-        if hits == 0:
-            result.append(job)
-    return result
-
-
-def load_config() -> dict:
+def load_config():
     config_path = Path(__file__).parent.parent / "config" / "keywords.yml"
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
-
-def deduplicate(jobs: list[Job]) -> list[Job]:
-    """Supprime les doublons basés sur l'URL."""
+def deduplicate(jobs):
     seen = set()
-    unique = []
+    result = []
     for job in jobs:
         if job.url not in seen:
             seen.add(job.url)
-            unique.append(job)
-    return unique
+            result.append(job)
+    return result
 
-
+def filter_jobs(jobs, exclude_keywords):
+    exclude_lower = [kw.lower() for kw in exclude_keywords]
+    result = []
+    for job in jobs:
+        text = (job.title + " " + (job.description or "")).lower()
+        if not any(excl in text for excl in exclude_lower):
+            result.append(job)
+    return result
 
 def filter_french(jobs):
     markers = ["m/w/d", "mitarbeiter", "sachbearbeiter", "kaufmann", "kauffrau", "gesucht", "wir suchen", "ihre aufgaben", "erfahrung in", "kenntnisse", "und", "der", "die", "das", "mit", "fur", "eine", "einen", "ist", "sind", "wird", "ihre", "unsere", "unser", "auf", "von", "im", "am", "bei", "aufgaben", "anforderungen", "unternehmen", "stelle als", "tatigkeit", "abteilung", "mind.", "wir bieten", "ihr profil", "zuerich", "zurich", "bern", "basel"]
@@ -59,78 +39,52 @@ def filter_french(jobs):
             result.append(job)
     return result
 
-def consolidate_keywords(jobs: list[Job], all_keywords: list[str]) -> list[Job]:
-    """Ajoute tous les mots-clés correspondants à chaque offre."""
+def consolidate_keywords(jobs, all_keywords):
     for job in jobs:
-        text = f"{job.title} {job.description}".lower()
+        text = (job.title + " " + (job.description or "")).lower()
         job.matched_keywords = [kw for kw in all_keywords if kw.lower() in text]
         if not job.matched_keywords:
-            job.matched_keywords = ["(correspondance titre)"]
+            job.matched_keywords = ["(titre)"]
     return jobs
 
-
 def main():
-    logger.info("=== Démarrage de l'alerte emploi ===")
-
-    # 1. Charger la config
+    logger.info("=== Demarrage ===")
     config = load_config()
-    keywords: list[str] = config["keywords"]
-    locations: list[str] = config["locations"]
-    exclude: list[str] = config.get("exclude_keywords", [])
-    sources: dict = config.get("sources", {})
-    email_cfg: dict = config["email"]
+    keywords = config["keywords"]
+    locations = config["locations"]
+    exclude = config.get("exclude_keywords", [])
+    sources = config.get("sources", {})
+    email_cfg = config["email"]
 
-    logger.info(f"Mots-clés : {keywords}")
-    logger.info(f"Localisations : {locations}")
-
-    # 2. Scraper les sources activées
-    all_jobs: list[Job] = []
-
+    all_jobs = []
     if sources.get("indeed", True):
-        logger.info("Scraping Indeed CH...")
         all_jobs += scrape_indeed(keywords, locations)
-
     if sources.get("jobup", True):
-        logger.info("Scraping Jobup.ch...")
         all_jobs += scrape_jobup(keywords, locations)
-
     if sources.get("jobscout", True):
-        logger.info("Scraping Jobscout24.ch...")
         all_jobs += scrape_jobscout(keywords, locations)
 
-    logger.info(f"Total brut : {len(all_jobs)} offres")
+    logger.info("Total brut : " + str(len(all_jobs)))
 
-    # 3. Dédoublonner et filtrer
     all_jobs = deduplicate(all_jobs)
     all_jobs = filter_jobs(all_jobs, exclude)
     all_jobs = filter_french(all_jobs)
     all_jobs = consolidate_keywords(all_jobs, keywords)
 
-    logger.info(f"Total après filtrage : {len(all_jobs)} offres")
+    logger.info("Total apres filtrage : " + str(len(all_jobs)))
 
-    # 4. Récupérer les credentials SMTP depuis les secrets GitHub
     smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", "587"))
     smtp_user = os.environ.get("SMTP_USER", "")
     smtp_password = os.environ.get("SMTP_PASSWORD", "")
 
     if not smtp_user or not smtp_password:
-        logger.error("SMTP_USER ou SMTP_PASSWORD non définis dans les secrets GitHub.")
+        logger.error("SMTP_USER ou SMTP_PASSWORD manquants")
         sys.exit(1)
 
-    # 5. Envoyer l'email (même si aucune offre — pour confirmer que le job tourne)
-    send_email(
-        jobs=all_jobs,
-        to_address=email_cfg["to"],
-        subject_template=email_cfg["subject"],
-        smtp_host=smtp_host,
-        smtp_port=smtp_port,
-        smtp_user=smtp_user,
-        smtp_password=smtp_password,
-    )
-
-    logger.info("=== Terminé ===")
-
+    send_email(all_jobs, email_cfg["to"], email_cfg["subject"], smtp_host, smtp_port, smtp_user, smtp_password)
+    logger.info("=== Termine ===")
 
 if __name__ == "__main__":
     main()
+    
