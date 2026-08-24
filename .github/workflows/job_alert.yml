@@ -1,0 +1,42 @@
+name: 🔔 Alerte Emploi Quotidienne
+
+on:
+  schedule:
+    # Tous les jours à 07h00 heure de Genève (UTC+2 en été = 05:00 UTC)
+    - cron: "0 5 * * 1-5"   # Lun–Ven seulement
+
+  # Permet aussi de lancer manuellement depuis l'onglet Actions de GitHub
+  workflow_dispatch:
+
+jobs:
+  job-alert:
+    name: Scrape & Envoyer les offres
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout du repo
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Setup Python
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # 3. Installer les dépendances
+      - name: Installer les dépendances
+        run: |
+          pip install -r job_alerts/requirements.txt
+
+      # 4. Lancer le script d'alerte
+      - name: Lancer l'alerte emploi
+        env:
+          SMTP_HOST:     ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:     ${{ secrets.SMTP_PORT }}
+          SMTP_USER:     ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          cd job_alerts
+          python -m src.main
